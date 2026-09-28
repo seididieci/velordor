@@ -15,6 +15,19 @@ fn spin_brief() {
     }
 }
 
+/// Attesa brevissima per le continuazioni ESC (Fase 43b-fix): i byte della
+/// sequenza sono gia' in coda (il tty li spinge insieme per scancode), quindi
+/// bastano microsecondi. `spin_brief` (1M spin × 50 iterazioni ≈ decimi di
+/// secondo) allargava la finestra fino al tasto successivo — un ESC solitario
+/// mangiava il primo carattere digitato dopo (flaky su host veloci, dove la
+/// digitazione arriva entro la finestra). Bound totale ~pochi ms: >> gap del
+/// burst (µs), << digitazione umana/test (≥ 60 ms).
+fn spin_esc() {
+    for _ in 0..1_000 {
+        core::hint::spin_loop();
+    }
+}
+
 pub(crate) fn term_init() -> bool {
     // Il mount /dev/input viene registrato da usertty al suo avvio:
     // ritenta se l'open iniziale fallisce (race di boot).
@@ -139,8 +152,9 @@ fn term_echo(data: &[u8]) {
 
 /// Legge un byte con attesa bounded (continuazioni ESC): i byte della
 /// sequenza sono gia' in coda (il tty li spinge insieme), quindi basta un
-/// bound corto in spin puri IF=1 (mai `get_ticks` in loop). `None` = Esc
-/// solitario (ignorato, mai hang).
+/// bound corto in wall-time (`spin_esc`, mai `spin_brief`: vedi sopra).
+/// Spin puri IF=1 (mai `get_ticks` in loop). `None` = Esc solitario
+/// (ignorato, mai hang, mai mangiato il tasto successivo).
 fn read_byte_bounded() -> Option<u8> {
     let mut buf = [0u8; 1];
     for _ in 0..50 {
@@ -148,7 +162,7 @@ fn read_byte_bounded() -> Option<u8> {
         if n > 0 {
             return Some(buf[0]);
         }
-        spin_brief();
+        spin_esc();
     }
     None
 }

@@ -25,10 +25,10 @@ def main():
         out = sh.run_source(SH + "/p42a.txt")
         found = b"hello42" in out
         c.check("42 pipe base (echo | cat)", found)
-        # cat aggiunge sempre un \n finale: il file da 25B/1 riga diventa
-        # 26B/2 righe nella pipe (coerente col redirect su file).
-        found = b"2 4 26 -" in out
-        c.check("42 cat | wc (2 4 26)", found)
+        # cat aggiunge sempre un \n finale: hello.txt da 27B/1 riga diventa
+        # 28B/2 righe nella pipe (coerente col redirect su file).
+        found = b"2 4 28 -" in out
+        c.check("42 cat | wc (2 4 28)", found)
         found = b"b" in out and b"[exit" not in out
         c.check("42 pipe 3 stadi", found)
 
@@ -88,7 +88,9 @@ def main():
         c.check("42 pipe EOF (1 0 1)", found)
 
         # Streaming oltre la capacita' pipe (8192): raddoppi via >> poi pipe.
-        out = sh.run_source(SH + "/p42j.txt")
+        # p42j: 25 comandi + ~10 KiB di copie/pipe (lento per natura):
+        # sleep esplicito, altrimenti lo slice si chiude a meta'.
+        out = sh.run_source(SH + "/p42j.txt", sleep=4.0)
         m = re.search(rb"(\d+) (\d+) (\d+) -", out)
         # Atteso >> cap (seed 19B con \n di echo+cat, 9 raddoppi + \n di cat
         # a ogni giro: 10239B): conta linee/parole/byte.

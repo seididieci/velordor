@@ -89,8 +89,8 @@ def main():
         out = sh.run_source(SH + "/base2.txt")
         found = b"hello world" in out
         c.check("echo hello world", found)
-        found = b"1 4 25 hello.txt" in out
-        c.check("wc hello.txt (=1 4 25)", found)
+        found = b"1 4 27 hello.txt" in out
+        c.check("wc hello.txt (=1 4 27)", found)
         found = b"48 65 6c 6c 6f" in out
         c.check("hexdump hello.txt", found)
         found = b"/prova" in out
@@ -102,13 +102,13 @@ def main():
 
         # Fase 19.2 (stretch ls -l): tipo + size via R_STAT (1 RT per entry).
         out = sh.run_source(SH + "/base3.txt")
-        found = b"- 25 hello.txt" in out
+        found = b"- 27 hello.txt" in out
         c.check("ls -l (tipo + size)", found)
         found = b"d 0 lldir" in out
         c.check("ls -l (marcatore dir)", found)
         # /fat in script separato: l'assenza di (ro) e' sullo slice.
         out = sh.run_source(SH + "/base3b.txt")
-        found = b"- 25 HELLO.TXT" in out and b"(ro)" not in out
+        found = b"- 27 HELLO.TXT" in out and b"(ro)" not in out
         c.check("ls -l /fat (scrivibile)", found)
 
         # kill errori + ps.

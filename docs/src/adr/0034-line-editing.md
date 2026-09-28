@@ -37,7 +37,10 @@ Left/Right (cursore), con set completo (Home/End/Delete/Esc). Vincoli:
 3. **History shell** (static, sessione): Enter accoda (non vuota, no duplicato
    consecutivo); Up/Down con `stash` della riga in corso; heredoc
    (`> `) non registrati. Solo ASCII; righe oltre 80 colonne non editabili
-   (wrap VGA, documentato); Esc solitario con attesa bounded (mai hang).
+   (wrap VGA, documentato); Esc solitario con attesa bounded in wall-time
+   (`spin_esc`, mai hang e mai mangiato il tasto successivo — fix post-50:
+   il bound precedente in iterazioni da 1M spin copriva decimi di secondo e
+   su host veloci divorava il primo carattere digitato dopo l'ESC).
 4. **Test** `test-shell-43b.py` (9 check, digitazione reale via sendkey):
    assert sull'EFFETTO (output su seriale), mai sull'eco; helper
    `has_line`/`count_lines` in harness per gli anchor posizionali

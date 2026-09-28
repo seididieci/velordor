@@ -1593,6 +1593,17 @@
          `[size:8][kind:8][mtime:8]`, `libr::Stat.mtime`. t38 esteso (Time
          monotono/plausibile, mtime ramfs plausibile+crescente su 120 tick,
          FAT noto): nessun nuovo numero, gate invariato 5/5 + 7/7 + 57/57,
-         zero FAIL/PANIC/FAULT. Nota: `test-shell source smoke (pipe)` fallisce
-         identico sul baseline (pre-esistente, `2 4 28` vs `2 4 26` attesi:
-         hello.txt e' 27 B da sempre) — non regressione di fase.
+         zero FAIL/PANIC/FAULT.
+   - [x] Fix test shell (post-50, stesso gate kernel). Aspettative stale
+         (mai verdi: verificate rotte anche sul baseline pre-50):
+         `hello.txt` e' 27 B da sempre, non 25 — `wc` (`1 4 27`), `ls -l`
+         (`- 27`, anche su FAT) e `cat | wc` in pipe (`2 4 28`, base/source/
+         42). Bug vero in `term.rs` (`spin_esc`): la bounded-read delle
+         continuazioni ESC usava `spin_brief` (50×1M spin ≈ decimi di secondo)
+         e su host veloci mangiava il tasto dopo un ESC solitario
+         (`unknown command: cho`, 43b esc falliva anche pre-50); ora finestra
+         in wall-time (~ms: >> burst µs, << digitazione 60 ms). Sleep espliciti
+         per gli slice pesanti (`smoke` 2 s con run da disco, `red4` 3 s con
+         bg+wait, `p42j` 4 s con ~10 KiB di copie/pipe): lo sleep fisso
+         0.4 s si chiudeva a meta' sotto carico host (failure mobili tra i
+         run). Risultato: shell 10/10 fasi PASS + gate kernel invariato.

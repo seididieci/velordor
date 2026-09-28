@@ -65,7 +65,9 @@ def main():
         c.check("redirect senza target", found)
 
         # run con redirect (handoff grant via argv-magic, claim nello startup).
-        out = sh.run_source(SH + "/red4.txt")
+        # red4: 3 run da disco + job bg + wait: sleep esplicito (il bg
+        # segue il fork da disco, piu' lento dello sleep fisso).
+        out = sh.run_source(SH + "/red4.txt", sleep=3.0)
         found = b"runhello: hello" in out and b"non utf8" not in out
         c.check("run > file (magic nascosto)", found)
         found = b"[exit 3]" in out

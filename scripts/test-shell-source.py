@@ -25,7 +25,9 @@ def main():
         sh.boot()
         # smoke: 15+ comandi in 1 riga digitata (builtin, redirect, pipe,
         # heredoc, run, vars, $?, mkdir/cd/rmdir).
-        out = sh.run_source(SH + "/smoke.txt")
+        # smoke: ~20 comandi + 1 run da disco (lento a freddo): sleep
+        # esplicito, altrimenti lo slice si chiude a meta' (flaky su KVM).
+        out = sh.run_source(SH + "/smoke.txt", sleep=2.0)
         c.check("source smoke (echo)", b"src-smoke-hi" in out)
         c.check("source smoke (vars)", b"val-abc" in out)
         c.check("source smoke (;)", b"one" in out and b"two" in out)
@@ -34,8 +36,8 @@ def main():
         c.check("source smoke ($?)", b"after-0" in out)
         c.check("source smoke (cat)", b"Hello from Velordor ramfs!" in out)
         # cat in pipe aggiunge un \n in coda (come in test-shell-42.py:
-        # file 25B -> la pipe vede 2 linee, 26 byte).
-        c.check("source smoke (pipe)", b"2 4 26 -" in out)
+        # hello.txt 27B/1 riga -> la pipe vede 2 linee, 28 byte).
+        c.check("source smoke (pipe)", b"2 4 28 -" in out)
         c.check("source smoke (heredoc)", b"hd-line-one" in out)
         c.check("source smoke (redirect)", b"payload" in out)
         c.check("source smoke (run)", b"runhello: hello" in out)
