@@ -30,7 +30,7 @@ use libr::println;
 /// del driver.
 use libr::{DISK_HELLO, DISK_OPEN, DISK_READ, DISK_RESOLVE, DISK_WRITE};
 /// Topologia P2 (Fase 51): LIST/INFO (single source in `syscall-numbers`).
-use libr::{DISK_INFO, DISK_LIST};
+use libr::{DISK_INFO, DISK_LIST, DISK_FLUSH};
 
 /// Finestra del request ring di userdisk (stessa VA del server: ogni processo
 /// ha le proprie page table, nessun conflitto). userfs e' l'unico writer.
@@ -363,6 +363,39 @@ impl IpcDisk {
             Err(_) => {
                 self.drop_conn();
                 None
+            }
+        }
+    }
+
+    /// Barriera write-cache del drive (Fase 52, P3): FLUSH CACHE sul disco
+    /// del proprio handle (vale la parte disco, sub ignorata). Niente OPEN
+    /// né frame (info di connessione, non di nodo). Stessa disciplina di
+    /// `resolve`: un retry solo a canale caduto, mai su risposta ERR.
+    pub fn flush_cache(&self) -> bool {
+        let chan = match self.connect() {
+            Some(c) => c,
+            None => return false,
+        };
+        if self.try_flush(chan, self.handle) {
+            return true;
+        }
+        if self.chan.get().is_some() {
+            return false;
+        }
+        let chan = match self.connect() {
+            Some(c) => c,
+            None => return false,
+        };
+        self.try_flush(chan, self.handle)
+    }
+
+    /// Un tentativo di FLUSH (nessun retry qui: lo fa il chiamante).
+    fn try_flush(&self, chan: u64, handle: u32) -> bool {
+        match libr::send(chan, DISK_FLUSH, handle as u64, 0) {
+            Ok(rep) => rep.w0 != ERR,
+            Err(_) => {
+                self.drop_conn();
+                false
             }
         }
     }

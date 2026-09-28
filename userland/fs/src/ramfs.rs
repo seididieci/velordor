@@ -1,5 +1,5 @@
 use super::*;
-use crate::provider::{LocalFs, EntrySink, Meta, AnyHandle};
+use crate::provider::{LocalFs, EntrySink, Meta, StatVfs, AnyHandle};
 
 // ── ramfs ──────────────────────────────────────────────────────────
 
@@ -129,6 +129,23 @@ impl RamFs {
             FsNode::File { data, .. } => Some(data),
             FsNode::Dir { .. } => None,
         }
+    }
+
+    /// Byte dati contenuti nell'albero (Fase 52, P3: sensore statvfs).
+    /// Solo payload file (niente overhead nodi: stima per difetto onesta,
+    /// mai gonfiata — la quota futura misuri per eccesso altrove).
+    pub fn used_bytes(&self) -> u64 {
+        fn sum(dir: &BTreeMap<String, FsNode>, acc: &mut u64) {
+            for node in dir.values() {
+                match node {
+                    FsNode::File { data, .. } => *acc += data.len() as u64,
+                    FsNode::Dir { entries, .. } => sum(entries, acc),
+                }
+            }
+        }
+        let mut acc = 0u64;
+        sum(&self.root, &mut acc);
+        acc
     }
 
     /// Lista le entry di una directory.
@@ -399,6 +416,18 @@ impl LocalFs for RamFs {
             Err(crate::ERR_NOTFOUND)
         }
     }
+
+    fn statvfs(&mut self, _rel: &str) -> Result<StatVfs, u64> {
+        // ramfs memory-backed (Fase 52, P3): blocchi usati camminati,
+        // libero/available illimitati (= u64::MAX: cresce con l'heap fino a
+        // OOM — il sensore vero del tetto e' `SYS_MEMINFO`, mai questo).
+        Ok(StatVfs {
+            bsize: 512,
+            blocks: self.used_bytes().div_ceil(512),
+            bfree: u64::MAX,
+            bavail: u64::MAX,
+        })
+    }
 }
 
 // ── Implementazione LocalFsDyn per RamFs (Fase 49: `MountedFs::Local`
@@ -438,5 +467,9 @@ impl crate::provider::LocalFsDyn for RamFs {
 
     fn remove_dyn(&mut self, rel: &str) -> Result<(), u64> {
         <Self as LocalFs>::remove(self, rel)
+    }
+
+    fn statvfs_dyn(&mut self, rel: &str) -> Result<StatVfs, u64> {
+        <Self as LocalFs>::statvfs(self, rel)
     }
 }

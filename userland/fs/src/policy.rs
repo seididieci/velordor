@@ -27,10 +27,11 @@ use super::*;
 // incorporano service_hashes (t51) ma NON test_policy, quindi niente ciclo
 // (stesso motivo dell'esclusione userinit/userfs in Fase 36).
 
-/// Default fail-closed per hash ignoto (Fase 45): ALL senza MOUNT (0x20),
-/// UMOUNT (0x40), GRANT (0x200), PIPE (0x400) = 0x19F. OPEN/READ/WRITE/
-/// READDIR/MKDIR/DELETE/SEEK restano: un programma ignoto legge/scrive file
-/// ma non monta, non crea pipe, non concede fd.
+/// Default fail-closed per hash ignoto (Fase 45, SYNC escluso in Fase 52):
+/// ALL senza MOUNT (0x20), UMOUNT (0x40), GRANT (0x200), PIPE (0x400),
+/// SYNC (0x800) = 0x19F. OPEN/READ/WRITE/READDIR/MKDIR/DELETE/SEEK restano:
+/// un programma ignoto legge/scrive file ma non monta, non crea pipe, non
+/// concede fd e non pilota FLUSH (anti sync-storm).
 pub const DEFAULT_UNKNOWN_OPS: u32 = 0x19F;
 
 /// Tetto ops per il canale `chan` (chiamato una volta all'handshake).

@@ -79,6 +79,11 @@ pub fn op_bit(op_tag: u32) -> Option<u32> {
         // Topologia dischi (Fase 51, P2): lettura globale come il listing
         // (niente subtree: non e' un path del VFS).
         R_DISK_LIST | R_DISK_INFO => Some(libr::RIGHTS_READDIR),
+        // Barriera di durabilita' (Fase 52, P3): bit proprio (anti
+        // sync-storm: negabile senza negare le write, gia' stabili).
+        R_SYNC => Some(libr::RIGHTS_SYNC),
+        // Spazio del mount (Fase 52): lettura globale come R_STAT.
+        R_STATVFS => Some(libr::RIGHTS_READDIR),
         // Handoff fd e pipe (Fase 45): GRANT crea capability per altri
         // (negabile), PIPE crea stato condiviso nel server (negabile).
         R_DUP_GRANT => Some(libr::RIGHTS_GRANT),

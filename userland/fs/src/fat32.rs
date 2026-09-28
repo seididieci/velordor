@@ -95,6 +95,20 @@ impl<B: BlockSource> crate::provider::LocalFs for Fat32<B> {
         }
     }
 
+    fn statvfs(&mut self, _rel: &str) -> Result<crate::provider::StatVfs, u64> {
+        // Spazio FAT (Fase 52, P3): blocchi = cluster (bsize reale), liberi
+        // da FSInfo (clamp al totale: il bump e' best-effort e puo' derivare).
+        // Senza FSInfo: nessuno spazio noto → ERR (mai numeri inventati).
+        let total = self.cluster_total();
+        let free = self.fsinfo_free().ok_or(crate::ERR)?;
+        Ok(crate::provider::StatVfs {
+            bsize: self.cluster_bytes() as u64,
+            blocks: total,
+            bfree: (free as u64).min(total),
+            bavail: (free as u64).min(total),
+        })
+    }
+
     fn mkdir(&mut self, _rel: &str) -> Result<(), u64> {
         // mkdir su FAT e' fuori scope (niente unlink/mkdir).
         Err(crate::ERR_READONLY)
@@ -144,6 +158,10 @@ impl<B: BlockSource> crate::provider::LocalFsDyn for Fat32<B> {
 
     fn stat_dyn(&mut self, rel: &str) -> Result<crate::provider::Meta, u64> {
         <Self as crate::provider::LocalFs>::stat(self, rel)
+    }
+
+    fn statvfs_dyn(&mut self, rel: &str) -> Result<crate::provider::StatVfs, u64> {
+        <Self as crate::provider::LocalFs>::statvfs(self, rel)
     }
 
     fn mkdir_dyn(&mut self, rel: &str) -> Result<(), u64> {

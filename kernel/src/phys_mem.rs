@@ -402,6 +402,11 @@ pub fn free_frames() -> u64 {
     FREE.load(Ordering::Relaxed)
 }
 
+/// Frame totali censiti (Fase 52, sensore `SYS_MEMINFO`).
+pub fn total_frames() -> u64 {
+    TOTAL.load(Ordering::Relaxed)
+}
+
 /// Usato solo dai selftest (`#[cfg(feature = "selftest")]` in main.rs).
 #[allow(dead_code)]
 pub fn used_frames() -> u64 {

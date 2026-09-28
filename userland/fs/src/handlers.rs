@@ -652,6 +652,95 @@ pub fn handle_disk_info(
     Ok(info.sectors)
 }
 
+/// R_SYNC (Fase 52, P3 durabilita'): imposta l'aspettativa del canale e
+/// ritorna il modo precedente (pattern umask, testabile). `GROUP` esegue
+/// anche la barriera subito: FLUSH di tutti i mount FAT attivi (ramfs
+/// volatile per disegno, mai promessa). Two-phase: modo invalidato o
+/// barriera fallita → `Err`, stato invariato (mai stabilita' presunta).
+/// Default per-canale `SYNC_NONE` (nessuna pretesa registrata).
+pub fn handle_sync(
+    mounts_fat: &mut Vec<mount::FsMount>,
+    sync_expect: &mut BTreeMap<u64, u32>,
+    chan: u64,
+    mode: u32,
+) -> Result<u64, u64> {
+    if mode != libr::SYNC_NONE && mode != libr::SYNC_GROUP && mode != libr::SYNC_PERWRITE {
+        return Err(ERR_INVALID);
+    }
+    let prev = sync_expect.get(&chan).copied().unwrap_or(libr::SYNC_NONE);
+    if mode == libr::SYNC_GROUP {
+        // Barriera sui mount FAT attivi (quelli inattivi non hanno connessioni
+        // con pendenze: write-through, niente dirty da spingere altrove).
+        for m in mounts_fat.iter() {
+            let ok = match m.fat() {
+                Some(f) => f.disk().flush_cache(),
+                // Mount `Local` (ramfs tmpfs): niente da flusare, per disegno.
+                None => true,
+            };
+            if !ok {
+                return Err(ERR);
+            }
+        }
+    }
+    sync_expect.insert(chan, mode);
+    Ok(prev as u64)
+}
+
+/// R_STATVFS (Fase 52): spazio del mount del path (precedenza come open,
+/// senza shadow). Self-written (`[0:8][0:8]` + 32 B): il dispatch non
+/// riscrive. Device e padri sintetizzati → ERR_INVALID (nessun device da
+/// contabilizzare); mount noto ma inattivo → ERR (stesso contratto di open).
+pub fn handle_statvfs(
+    fs: &mut ramfs::RamFs,
+    mounts_fat: &mut Vec<mount::FsMount>,
+    mounts: &[mount_legacy::Mount],
+    rings: &BTreeMap<u64, (u64, u64)>,
+    chan: u64,
+    path: &str,
+    fgen: &mut u64,
+) -> Result<u64, u64> {
+    use crate::provider::LocalFs;
+    if path.is_empty() || path.len() > MAX_PATH {
+        return Err(ERR_INVALID);
+    }
+    let reply_vfs = |rings: &BTreeMap<u64, (u64, u64)>, v: &crate::provider::StatVfs| -> u64 {
+        if rings.get(&chan).is_some() {
+            rings::map_client_resp_ring(rings, chan);
+            let mut payload = [0u8; 32];
+            payload[..8].copy_from_slice(&v.bsize.to_le_bytes());
+            payload[8..16].copy_from_slice(&v.blocks.to_le_bytes());
+            payload[16..24].copy_from_slice(&v.bfree.to_le_bytes());
+            payload[24..32].copy_from_slice(&v.bavail.to_le_bytes());
+            rings::resp_ring_write(0, 0, &payload);
+        }
+        0
+    };
+    // Root ramfs: esiste sempre.
+    if path == "/" {
+        let v = LocalFs::statvfs(fs, path)?;
+        return Ok(reply_vfs(rings, &v));
+    }
+    // Device: foglie senza blocchi (mai contabilizzati).
+    if mount_legacy::resolve_mount(path, mounts).is_some() {
+        return Err(ERR_INVALID);
+    }
+    // FAT/Local con attivazione lazy (find fresco a ogni chiamata, come stat).
+    if let Some((mid, rel)) = mount::resolve_fsmount(mounts_fat, path, fgen) {
+        let fat = mount::by_id_mut(mounts_fat, mid).ok_or(ERR)?.local_dyn().ok_or(ERR)?;
+        let v = fat.statvfs_dyn(rel)?;
+        return Ok(reply_vfs(rings, &v));
+    }
+    match mount_legacy::resolve_local(mounts_fat, path) {
+        Some(mount_legacy::FsKind::Fat) | Some(mount_legacy::FsKind::Local) => Err(ERR),
+        Some(mount_legacy::FsKind::Ram) => {
+            let v = LocalFs::statvfs(fs, path)?;
+            Ok(reply_vfs(rings, &v))
+        }
+        // Sintetizzati (`/dev`): esistono come nomi, non come spazio.
+        None => Err(ERR_INVALID),
+    }
+}
+
 pub fn handle_mkdir(
     fs: &mut ramfs::RamFs,
     mounts_fat: &mut Vec<mount::FsMount>,

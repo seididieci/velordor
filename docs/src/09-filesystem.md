@@ -210,6 +210,21 @@ usertests 17/17, shell 3/3.
 17   Diritti per-canale lato server ([ADR-0014](../adr/0014-channel-rights-serverside.md): tabella chan→{ops,subtree}, DROP solo-shrink + GET, fd capability pure) [x]
 19.2 Metadati senza open (R_STAT 0x1B, risposta self-written `[size:8][kind:8]` + `[mtime:8]` dalla Fase 50: ramfs size reale, FAT mai readonly dalla Fase 20, device size 0, check RIGHTS_READDIR+subtree, `libr::stat`, t38) [x]
 51   P2 vocabolario disco (relay topologia): `DISK_LIST/INFO` (0x56/0x57: entry `[sectors:8][flags:8]`, INFO + frame 76 B modello/seriale) + `R_DISK_LIST/INFO` (0x21/0x22, gate READDIR, self-written) + `IpcDisk::list/info` + `libr::disk_list/info` (`DiskDesc` con accessori flags); t32 esteso [x]
+52   P3 durabilita' (contratto + barriera + sensori): `R_SYNC` (0x23, modi `SYNC_NONE/GROUP/PERWRITE`, ritorna prev umask-like, `GROUP` = FLUSH dei mount FAT via `DISK_FLUSH` 0x58, gate `RIGHTS_SYNC` 0x800) + `R_STATVFS` (0x24, `StatVfs` nel trait, FAT da FSInfo, ramfs illimitata) + `SYS_MEMINFO` 52 (frame free/total/used); t32/t37 estesi [x]
+
+## Contratto di durabilita' (Fase 52, P3)
+
+Cosa e' stabile, e quando (misurato, non presunto):
+
+| Op | Stabile quando |
+|----|----------------|
+| ramfs write/create/mkdir | Mai su disco: visibile al `read` dopo la reply, perso a restart/reboot (ogni modo, per disegno) |
+| FAT overwrite entro size | Al ritorno `n`: ogni chunk e' oltre `FLUSH CACHE` (PIO per-settore/per-run, DMA via `finish_dma`) |
+| FAT grow/create/truncate | `size`/entry stabile a `patch_entry` flushato (commit point); crash prima = vecchia size + cluster orfani fsck-fixabili |
+| `R_SYNC(GROUP)` | Barriera subito: FLUSH CACHE su ogni mount FAT attivo (write-cache del drive); ramfs intoccata |
+| `R_SYNC(NONE/PERWRITE)` | Dichiarazioni registrate per-canale (prev ritornato); `PERWRITE` e' gia' il FAT, ramfs resta volatile |
+
+Sensori: `R_STATVFS` (spazio mount: FAT blocchi=cluster da FSInfo con clamp, ramfs usati camminati + `MAX` illimitato) e `SYS_MEMINFO` (frame liberi/totali/usati del PMM; il kernel non decide mai: niente OOM-kill). Ganci per quota (A3) e swap (B1).
 50   P1 orologio (mtime veri): `usertime` (CMOS+Time), baseline lazy in userfs (`wall.rs`, niente IPC per-op), `mtime` su `FsNode`/decode DOS WrtTime/Date + stamp a create/grow/truncate, `Meta.mtime` via trait, `libr::Stat.mtime`; t38 esteso (Time monotono, mtime plausibile+crescente, FAT noto) [x]
 20   FAT32 scrivibile ([ADR-0016](../adr/0016-fat-writable.md): DISK_WRITE + write PIO + overwrite/grow/alloc/O_CREAT write-through, `testfat` 7/7, fsck pulito) [x]
 21   Servizi da disco: userfs con cache FileInfo per-fd + generazione (bump a ogni mutazione FAT; stat sempre fresca) e `IpcDisk` con OPEN-once per connessione (re-OPEN solo a canale caduto) — dimezza i round-trip DISK dei load da disco [x]

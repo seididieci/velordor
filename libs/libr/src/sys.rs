@@ -371,3 +371,13 @@ pub fn cow_count() -> u64 {
     let (_, _, _, rdx, _) = unsafe { syscall4_out(SYS_TEXT_STATS, 0, 0, 0, 0) };
     rdx
 }
+
+/// Fase 52 (P3 durabilita') — `meminfo()`: fermo immagine RAM del PMM come
+/// `(free, total, used)` in frame (4 KiB). Mai fallisce (nessun argomento).
+/// Sensore per swap futuro (B1) e quota (A3); nessuna decisione qui (il
+/// kernel non fa OOM-kill: negativa ADR-0028).
+#[inline]
+pub fn meminfo() -> (u64, u64, u64) {
+    let (rax, rdi, rsi, _, _) = unsafe { syscall4_out(SYS_MEMINFO, 0, 0, 0, 0) };
+    (rax as u64, rdi, rsi)
+}

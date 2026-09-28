@@ -109,4 +109,34 @@ impl<B: BlockSource> Fat32<B> {
         sec[492..496].copy_from_slice(&next_free.to_le_bytes());
         self.disk.write_sector(1, &sec)
     }
+
+    /// Legge il free count da FSInfo (settore 1, Fase 52 P3 sensore): `None`
+    /// se illeggibile o senza firme (volume senza FSInfo). Snapshot senza
+    /// lock (single-threaded): tra lettura e uso il valore puo' cambiare —
+    /// sensore, mai contabilita' (la quota futura conta per eccesso altrove).
+    pub(crate) fn fsinfo_free(&self) -> Option<u32> {
+        let mut sec = [0u8; 512];
+        if !self.disk.read_sector(1, &mut sec) {
+            return None;
+        }
+        if u32::from_le_bytes([sec[0], sec[1], sec[2], sec[3]]) != 0x41615252
+            || u32::from_le_bytes([sec[484], sec[485], sec[486], sec[487]]) != 0x61417272
+            || sec[510] != 0x55
+            || sec[511] != 0xAA
+        {
+            return None;
+        }
+        // 0xFFFFFFFF = "sconosciuto" per spec: trattato come assente.
+        match u32::from_le_bytes([sec[488], sec[489], sec[490], sec[491]]) {
+            0xFFFF_FFFF => None,
+            free => Some(free),
+        }
+    }
+
+    /// Cluster dati stimati (Fase 52): entry FAT addressabili meno i 2
+    /// riservati (0/1). Stima per difetto onesta senza dimensione disco
+    /// (il driver non la espone): la quota futura misuri per eccesso altrove.
+    pub(crate) fn cluster_total(&self) -> u64 {
+        (self.fat_size as u64).saturating_mul(128).saturating_sub(2)
+    }
 }

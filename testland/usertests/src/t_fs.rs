@@ -325,6 +325,14 @@ pub fn t_ps() -> bool {
             return false;
         }
     }
+    // Fase 52 (P3 durabilita'): sensore RAM `SYS_MEMINFO` — totali positivi,
+    // liberi entro i totali, usati = totali - liberi (coerenza istantanea).
+    let (free, total, used) = libr::meminfo();
+    if total == 0 || free > total || free + used != total {
+        println!("[usertests] t37: meminfo assurda ({}/{}/{})", free, total, used);
+        return false;
+    }
+    println!("[usertests] t37: meminfo free={} total={} used={} frame", free, total, used);
     true
 }
 

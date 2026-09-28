@@ -89,24 +89,25 @@ for p in bins:
     const = "HASH_" + "".join(c.upper() if (c.isalnum()) else "_" for c in stem)
     lines.append("pub const %s: u64 = 0x%016X; // %s (%d B)" % (const, fnv1a(data), os.path.basename(p), len(data)))
 
-# Mask per-binario (Fase 45): nome stem -> mask ops (bit RIGHTS_* di
-# syscall-numbers: OPEN=0x1 READ=0x2 WRITE=0x4 READDIR=0x8 MKDIR=0x10
-# MOUNT=0x20 UMOUNT=0x40 DELETE=0x80 SEEK=0x100 GRANT=0x200 PIPE=0x400,
-# ALL=0x7FF). Default ALL (servizi TCB); programmi di terzi restrittivi.
+# Mask per-binario (Fase 45, SYNC in 52): nome stem -> mask ops (bit RIGHTS_*
+# di syscall-numbers: OPEN=0x1 READ=0x2 WRITE=0x4 READDIR=0x8 MKDIR=0x10
+# MOUNT=0x20 UMOUNT=0x40 DELETE=0x80 SEEK=0x100 GRANT=0x200 PIPE=0x400
+# SYNC=0x800, ALL=0xFFF). Default ALL (servizi TCB); programmi di terzi
+# restrittivi.
 # NOTA: `run`+redirect scrive su fd concessi (il check WRITE scatta sul
 # canale del FIGLIO) e legge stdin ridiretta: runhello ha bisogno di
-# OPEN+READ+WRITE+READDIR (0x0F). Senza WRITE `run ./x > /o` si rompe (Fase
-# 40.4). Resta negato: MKDIR/DELETE/SEEK/MOUNT/UMOUNT/GRANT/PIPE.
+# OPEN+READ+WRITE+READDIR (0x00F). Senza WRITE `run ./x > /o` si rompe (Fase
+# 40.4). Resta negato: MKDIR/DELETE/SEEK/MOUNT/UMOUNT/GRANT/PIPE/SYNC.
 POLICY = {
     "userrunhello": 0x00F,  # OPEN|READ|WRITE|READDIR (programma di terzi)
 }
-DEFAULT_MASK = 0x7FF  # ALL (servizi TCB)
+DEFAULT_MASK = 0xFFF  # ALL (servizi TCB)
 
 pol = [
     "// Generato da scripts/gen-service-hashes.sh — MAI modificare a mano.",
     "// Sandbox build (Fase 45): tetto ops per hash noto, applicato da userfs",
     "// (`userland/fs/src/policy.rs`) come `drop_mask & policy_mask`. Le mask",
-    "// usano i bit RIGHTS_* di syscall-numbers (ALL=0x7FF con GRANT+PIPE).",
+    "// usano i bit RIGHTS_* di syscall-numbers (ALL=0xFFF con GRANT+PIPE+SYNC).",
     "// Consumato via `include!(env!(\"VELORDOR_SERVICE_POLICY\"))` SOLO da",
     "// userfs (dopo service_hashes: referenzia le HASH_*). Rigenerato a build.",
     "pub const SERVICE_POLICY: &[(u64, u32)] = &[",

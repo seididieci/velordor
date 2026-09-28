@@ -65,6 +65,9 @@ use libr::DISK_OPEN;
 /// `[sectors:8][flags:8]` per disco) e INFO (w0 = handle → settori/flags +
 /// frame `[model_len:8][model][serial_len:8][serial]`).
 use libr::{DISK_LIST, DISK_INFO};
+/// Barriera write-cache del drive (Fase 52, P3 durabilita'): w0 = handle
+/// (vale la parte disco), reply 0/ERR. Usata da `R_SYNC(GROUP)`.
+use libr::DISK_FLUSH;
 /// Legge UN settore (w0 = handle, w1 = lba nel nodo).
 /// Frame: [512:8][0:8][settore]. Fuori range/errore → reply ERR, niente frame.
 use libr::DISK_READ;

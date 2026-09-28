@@ -269,6 +269,60 @@ pub fn t_disk() -> bool {
         println!("[usertests] t32: disk_info(99) accettato?!");
         return false;
     }
+    // Fase 52 (P3 durabilita'): ciclo modi R_SYNC (ritorna il precedente,
+    // umask-like, deterministico da qualunque stato: None -> Group ->
+    // PerWrite -> None) + modo ignoto rifiutato senza stato.
+    match libr::disk_sync(libr::SYNC_GROUP) {
+        Ok(_) => {}
+        Err(_) => {
+            println!("[usertests] t32: disk_sync(GROUP) FAILED");
+            return false;
+        }
+    }
+    match libr::disk_sync(libr::SYNC_PERWRITE) {
+        Ok(prev) if prev == libr::SYNC_GROUP as u64 => {}
+        Ok(prev) => {
+            println!("[usertests] t32: prev inatteso ({}, atteso GROUP)", prev);
+            return false;
+        }
+        Err(_) => {
+            println!("[usertests] t32: disk_sync(PERWRITE) FAILED");
+            return false;
+        }
+    }
+    match libr::disk_sync(libr::SYNC_NONE) {
+        Ok(prev) if prev == libr::SYNC_PERWRITE as u64 => {}
+        Ok(prev) => {
+            println!("[usertests] t32: prev inatteso ({}, atteso PERWRITE)", prev);
+            return false;
+        }
+        Err(_) => {
+            println!("[usertests] t32: disk_sync(NONE) FAILED");
+            return false;
+        }
+    }
+    if libr::disk_sync(9).is_ok() {
+        println!("[usertests] t32: disk_sync(9) accettato?!");
+        return false;
+    }
+    // Barriera Group riuscita sopra (primo disk_sync): i FLUSH sono
+    // atterrati senza Err. Sensore spazio: FAT con blocchi/libéri coerenti,
+    // ramfs illimitata (MAX) con bsize 512.
+    let mut vfs = libr::StatVfs { bsize: 0, blocks: 0, bfree: 0, bavail: 0 };
+    if libr::statvfs("/fat", &mut vfs).is_err() || vfs.bsize == 0 || vfs.blocks == 0 || vfs.bfree > vfs.blocks {
+        println!("[usertests] t32: statvfs /fat assurdo ({}/{}/{})", vfs.bsize, vfs.blocks, vfs.bfree);
+        return false;
+    }
+    println!("[usertests] t32: statvfs /fat bsize={} blocks={} bfree={}", vfs.bsize, vfs.blocks, vfs.bfree);
+    if libr::statvfs("/", &mut vfs).is_err() || vfs.bsize != 512 || vfs.bfree != u64::MAX {
+        println!("[usertests] t32: statvfs / assurdo ({}/{}/{})", vfs.bsize, vfs.blocks, vfs.bfree);
+        return false;
+    }
+    // Device/sintetici: nessuno spazio da contabilizzare.
+    if libr::statvfs("/dev/null", &mut vfs).is_ok() {
+        println!("[usertests] t32: statvfs /dev/null accettato?!");
+        return false;
+    }
     true
 }
 

@@ -1626,3 +1626,23 @@
          512/512B, `QEMU HARDDISK` QM00001/02. Lettura: niente vincoli 4K su
          questo HW (3584 = 7 settori torna); rotation ignota + TRIM=si = hint
          SSD-like ma non decisione — i numeri S1/S2 si fissano in ADR-0039.
+   - [x] Fase 52 (P3, durabilita': terzo passo OS-first verso ArcaFS).
+         Verita' misurata: ogni FAT stabile e' gia' oltre FLUSH CACHE
+         (PIO/DMA), cache write-through, `size` commit point; ramfs volatile
+         sempre. `R_SYNC` 0x23 (modi NONE/GROUP/PERWRITE, prev umask-like,
+         `GROUP` = FLUSH dei mount FAT via `DISK_FLUSH` 0x58, `w0>2` senza
+         stato) con aspettativa per-canale (purge su EXIT, default NONE) e
+         gate `RIGHTS_SYNC` 0x800 (`ALL` 0x7FF→0xFFF; ignoti restano a 0x19F
+         senza SYNC: anti sync-storm). `R_STATVFS` 0x24 (`StatVfs` nel trait
+         per quota futura: FAT da FSInfo mai letta prima + clamp, ramfs usati
+         camminati + MAX illimitato). `SYS_MEMINFO` 52 (free/total/used dal
+         PMM, pattern `text_stats`) + `libr::meminfo`. t32 (ciclo modi +
+         barrier + statvfs) e t37 (meminfo) estesi: nessun nuovo numero di
+         test, gate 5/5 + 7/7 + 57/57, zero FAIL/PANIC/FAULT.
+         Bug trovati e fissati: (1) `disk_sync` non consumava l'header RESP
+         16 B → coda client slittata di un risultato (ogni op dopo leggeva lo
+         stale: mkdir FAILED, mount-sda1 accettato da risposta vecchia) —
+         lezione: ogni op senza payload consuma comunque l'header, come
+         `mkdir`; (2) `TEST_POLICY` letterale 0x7FF senza SYNC → GROUP negato
+         alla suite (fail-closed corretto, mask da allineare a ogni nuovo
+         bit: checklist di fase).

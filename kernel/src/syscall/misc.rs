@@ -172,6 +172,22 @@ pub(super) fn sys_text_stats() -> i64 {
     hits as i64
 }
 
+/// Fase 52 (P3 durabilita') — `meminfo()`: fermo immagine RAM del PMM.
+/// Multi-registro come `text_stats`: rax = frame liberi, rdi = totali,
+/// rsi = usati. Mai fallisce (nessun argomento, nessun lock). Sensore per
+/// swap/quota futuri; il kernel non decide nulla (niente OOM-kill).
+pub(super) fn sys_meminfo() -> i64 {
+    let free = crate::phys_mem::free_frames();
+    let total = crate::phys_mem::total_frames();
+    unsafe {
+        let p = addr_of_mut!(PERCPU);
+        (*p).ipc_override = 1;
+        (*p).ret_rdi = total;
+        (*p).ret_rsi = total.wrapping_sub(free);
+    }
+    free as i64
+}
+
 /// Fase 19.1 — `ps_info(pid)`: snapshot del processo per `ps`. 0 se lo slot e'
 /// vivo (campi nei registri, layout in `syscall-numbers`), -1 se vuoto o
 /// terminato (lo slot si salta, come `ps` salta i PID morti).

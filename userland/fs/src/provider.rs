@@ -17,6 +17,17 @@ pub struct Meta {
     pub mtime: u64,
 }
 
+/// Spazio del filesystem (presentazione statvfs, Fase 52 P3): blocco in byte
+/// + conteggi in blocchi. `bfree == bavail == u64::MAX` = illimitato
+/// (ramfs memory-backed: vedi `SYS_MEMINFO`, mai disco).
+#[derive(Clone, Copy)]
+pub struct StatVfs {
+    pub bsize: u64,
+    pub blocks: u64,
+    pub bfree: u64,
+    pub bavail: u64,
+}
+
 /// Provider di filesystem locale (ramfs, FAT, ArcaFS, ...).
 /// La trait e' la presentazione POSIX: il core del FS resta nativo.
 pub trait LocalFs {
@@ -30,6 +41,10 @@ pub trait LocalFs {
     fn stat(&mut self, rel: &str) -> Result<Meta, u64>;
     fn mkdir(&mut self, rel: &str) -> Result<(), u64>;
     fn remove(&mut self, rel: &str) -> Result<(), u64>;
+    /// Spazio del mount (Fase 52, P3: sensore per quota/swap futuri). Il
+    /// `rel` e' ignorato (spazio del mount, non del path): la risoluzione
+    /// mount resta negli handler, mai nel provider.
+    fn statvfs(&mut self, rel: &str) -> Result<StatVfs, u64>;
 }
 
 /// Filesystem montato su un target. Le varianti tengono l'istanza viva;
@@ -64,4 +79,5 @@ pub trait LocalFsDyn {
     fn stat_dyn(&mut self, rel: &str) -> Result<Meta, u64>;
     fn mkdir_dyn(&mut self, rel: &str) -> Result<(), u64>;
     fn remove_dyn(&mut self, rel: &str) -> Result<(), u64>;
+    fn statvfs_dyn(&mut self, rel: &str) -> Result<StatVfs, u64>;
 }

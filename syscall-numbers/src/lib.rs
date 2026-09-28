@@ -148,6 +148,13 @@ pub const SYS_SUSPEND: u64 = 50;
 /// Rimette in schedulazione un processo sospeso (Fase 44a, job control):
 /// no-op ok se gia' running. Stessi gate di `SYS_SUSPEND`.
 pub const SYS_RESUME: u64 = 51;
+/// Fermo immagine RAM del PMM (Fase 52, P3 durabilita'): nessun argomento.
+/// Multi-registro (pattern `text_stats`): rax = frame liberi, rdi = frame
+/// totali, rsi = usati (= totali - liberi). Istantanea senza lock (atomici):
+/// due chiamate possono differire sotto allocazione concorrente. Sensore per
+/// swap futuro (B1) e quota (A3); mai decisioni kernel (il kernel non fa
+/// OOM-kill: negativa ADR-0028).
+pub const SYS_MEMINFO: u64 = 52;
 /// Cap pagine di `SYS_DMA_ALLOC` (38.1: 1 pagina = PRD + 7 settori bastano).
 pub const DMA_PAGES_MAX: usize = 4;
 /// Bound del payload argv+env serializzato (Fase 37.1, esteso in 43a):
@@ -301,6 +308,10 @@ pub const DISK_WRITE: u64 = 0x55;
 // altrimenti RPM), bit 32-47 = settore logico (B), bit 48-63 = fisico (B).
 pub const DISK_LIST: u64 = 0x56;
 pub const DISK_INFO: u64 = 0x57;
+// - FLUSH (0x58, Fase 52): `w0` = handle (vale la parte disco), niente frame;
+//   emette FLUSH CACHE sul drive (barriera della write-cache del device).
+//   Reply 0 o ERR. Usato dalla barriera `R_SYNC(GROUP)`.
+pub const DISK_FLUSH: u64 = 0x58;
 
 // ── Tag delle operazioni FS (nel frame del ring, non nell'IPC) ────────────
 // Single source of truth (Fase 17): prima duplicati in `libr`, `userfs` e
@@ -361,6 +372,22 @@ pub const R_PIPE_CREATE: u32 = 0x20;
 //   (topologia globale).
 pub const R_DISK_LIST: u32 = 0x21;
 pub const R_DISK_INFO: u32 = 0x22;
+// ── Durabilita' e sensori (Fase 52, P3) ─────────────────────────────
+// - R_SYNC (0x23): w0 = modo (`SYNC_NONE/GROUP/PERWRITE`), niente payload.
+//   Imposta l'aspettativa di durabilita' del canale e ritorna il modo
+//   precedente (pattern umask, testabile); `GROUP` esegue anche la barriera
+//   subito (FLUSH di tutti i mount FAT attivi). Solo risultato, mai frame.
+// - R_STATVFS (0x24): payload = path; risposta self-written
+//   `[0:8][0:8][bsize:8][blocks:8][bfree:8][bavail:8]` (32 B). Nessun fd.
+pub const R_SYNC: u32 = 0x23;
+pub const R_STATVFS: u32 = 0x24;
+/// Modi `R_SYNC` (Fase 52, P3): nessuna garanzia richiesta / barriera
+/// esplicita (flush+barriera) / ogni write stabile prima della reply.
+/// `PERWRITE` e' gia' il comportamento FAT (write-through); ramfs resta
+/// volatile in ogni modo (dichiarato nel contratto, mai promesso).
+pub const SYNC_NONE: u32 = 0;
+pub const SYNC_GROUP: u32 = 1;
+pub const SYNC_PERWRITE: u32 = 2;
 /// `kind` per R_STAT (Fase 19.2): bit 0-1 tipo + bit 7 readonly.
 pub const STAT_FILE: u64 = 0;
 pub const STAT_DIR: u64 = 1;
@@ -415,7 +442,13 @@ pub const RIGHTS_SEEK: u32 = 0x100;
 pub const RIGHTS_GRANT: u32 = 0x200;
 /// Creazione pipe (Fase 45, `R_PIPE_CREATE`): senza, `pipe()` e' negato.
 pub const RIGHTS_PIPE: u32 = 0x400;
-pub const RIGHTS_ALL: u32 = 0x7FF;
+/// Barriera di durabilita' (Fase 52, `R_SYNC` Group): senza, la sync
+/// esplicita e' negata ma le write restano stabili per costruzione
+/// (write-through: il diniego non indebolisce le write, nega solo il costo
+/// di un FLUSH pilotato — anti sync-storm). Bit 11: primo oltre lo storico
+/// 0x7FF (discriminanti 0-10 intoccati).
+pub const RIGHTS_SYNC: u32 = 0x800;
+pub const RIGHTS_ALL: u32 = 0xFFF;
 
 // ── Sentinelle di errore FS (Fase 40, P1) ─────────────────────────────
 // userfs distingue i rifiuti invece del generico ERR: il client li mappa

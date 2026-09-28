@@ -568,6 +568,18 @@ fn real_main(_sp: u64) -> ! {
             let _ = libr::reply(0, info.sectors, info.topo_flags());
             continue;
         }
+        if msg.tag == DISK_FLUSH {
+            // Barriera write-cache del drive (Fase 52, P3): FLUSH CACHE sul
+            // disco di `w0` (vale la parte disco, sub ignorata). Sincrono
+            // puro, niente frame. Indice ignoto → ERR (mai flush altrui).
+            let di = (msg.w0 as u32 >> 16) as usize;
+            let ok = match disks.get(di) {
+                Some(d) => d.flush_write_cache(),
+                None => false,
+            };
+            let _ = libr::reply(0, if ok { 0 } else { ERR }, 0);
+            continue;
+        }
 
         // ── Relay DEV_* (open raw /dev/sdX dai client via userfs) ──
         // w0 di DEV_OPEN = handle codificato (disco<<16|sub, 0 = whole):

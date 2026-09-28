@@ -217,6 +217,7 @@ extern "C" fn syscall_handler() -> i64 {
 | `ps_info` | 37 | snapshot `ps` di un processo: 0 o -1; nome (16 B) in rdi+rsi, `rdx` packed (stato 0/1/2=Stopped in 44a/prio/parent+1/ipc), `r10` tick consumati (Fase 19.1) |
 | `kill` | 35 | termina un processo user (Fase 14, ADR-0010) |
 | `suspend`/`resume` | 50/51 | congela/rimette in schedulazione un processo user (Fase 44a, job control, ADR-0035) |
+| `meminfo` | 52 | fermo immagine RAM del PMM (Fase 52, P3): rax=frame liberi, rdi=totali, rsi=usati; mai fallisce, sensore per swap/quota (il kernel non decide mai) |
 | `JOB_CANCEL` | — | tag cancel cooperativo parent→figlio sul canale di nascita (44b, w0=2/SIGINT informativo): il figlio puo' gestirlo o ignorarlo (escalation a kill) |
 | `EXIT_SIGINT` | — | causa di morte 130 = 128+SIGINT per Ctrl-C su job non cooperante (44b, convenzione al bordo come `FAULT_EXIT_CODE`) |
 | `spawn` | 20 | Crea un processo dal binario embedded `name` e ritorna il **canale di nascita** verso il figlio |
@@ -466,7 +467,8 @@ implementa: `0=exit`, `2=write`, `8=getpid`, `16=send`, `17=recv`, `18=reply`,
 `35=kill`, `36=service_pid`, `37=ps_info`, `38=spawn_image` (Fase 21),
 `39=mmap`, `40=munmap`, `41=mprotect`, `42=shm_create`, `43=shm_map`,
 `44=text_stats`, `45=fork`, `46=peer_pid`, `47=peer_info`, `48=exec`,
-`49=dma_alloc`, `50=suspend`, `51=resume` (Fase 44a, job control).
+`49=dma_alloc`, `50=suspend`, `51=resume` (Fase 44a, job control),
+`52=meminfo` (Fase 52, P3).
 
 Le vecchie syscall 3-7/23-24 (FS relay) sono state rimosse con la Fase 9.6:
 le operazioni FS sono ora IPC dirette client→userfs.

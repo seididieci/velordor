@@ -401,6 +401,68 @@ pub fn disk_info(idx: u32) -> Result<DiskDesc, Error> {
     }
 }
 
+/// Fase 52 (P3 durabilita') — `disk_sync(mode)`: imposta l'aspettativa di
+/// durabilita' del canale (`SYNC_NONE/GROUP/PERWRITE`) e ritorna il modo
+/// precedente (pattern umask). `GROUP` esegue anche la barriera subito
+/// (FLUSH dei mount FAT). `Err` a modo ignoto (stato invariato) o canale
+/// senza diritto SYNC.
+#[inline]
+pub fn disk_sync(mode: u32) -> Result<u64, Error> {
+    session::fs_gate()?;
+    if !ring::req_ring_write(R_SYNC, mode as u64, 0, &[]) {
+        return Err(Error::RingFull);
+    }
+    match session::fs_notify_result(FS_NOTIFY, || {
+        ring::req_ring_write(R_SYNC, mode as u64, 0, &[])
+    }) {
+        // Solo risultato (modo precedente): consuma l'header 16 B come ogni
+        // op senza payload (senza, la coda RESP slitta e l'op successiva
+        // legge questo risultato stale — osservato in t32).
+        Some((result, _, _)) => {
+            ring::resp_ring_consume(16);
+            session::fs_reply_check(result)
+        }
+        None => Err(Error::NotReady),
+    }
+}
+
+/// Fase 52 — spazio del mount di `path` (statvfs, zero kernel come `stat`).
+/// `bsize` = byte per blocco; `blocks`/`bfree`/`bavail` in blocchi;
+/// `bfree == bavail == u64::MAX` = illimitato (ramfs memory-backed).
+#[derive(Clone, Copy, Debug)]
+pub struct StatVfs {
+    pub bsize: u64,
+    pub blocks: u64,
+    pub bfree: u64,
+    pub bavail: u64,
+}
+
+/// `statvfs(path)`: spazio senza aprire — relay `R_STATVFS` (payload path),
+/// risposta self-written `[0:8][0:8]` + 32 B. `Err` su device/sintetici
+/// (nessun device da contabilizzare) e mount inattivi.
+#[inline]
+pub fn statvfs(path: &str, out: &mut StatVfs) -> Result<(), Error> {
+    session::fs_gate()?;
+    if !ring::req_ring_write(R_STATVFS, path.len() as u64, 0, path.as_bytes()) {
+        return Err(Error::RingFull);
+    }
+    match session::fs_notify_result(FS_NOTIFY, || {
+        ring::req_ring_write(R_STATVFS, path.len() as u64, 0, path.as_bytes())
+    }) {
+        Some((result, _, _)) => {
+            let mut buf = [0u8; 32];
+            ring::resp_ring_read_payload(&mut buf, 32);
+            session::fs_reply_check(result)?;
+            out.bsize = u64::from_le_bytes(buf[..8].try_into().unwrap_or([0; 8]));
+            out.blocks = u64::from_le_bytes(buf[8..16].try_into().unwrap_or([0; 8]));
+            out.bfree = u64::from_le_bytes(buf[16..24].try_into().unwrap_or([0; 8]));
+            out.bavail = u64::from_le_bytes(buf[24..32].try_into().unwrap_or([0; 8]));
+            Ok(())
+        }
+        None => Err(Error::NotReady),
+    }
+}
+
 /// Scrive un frame "source\0target\0" e lo notifica (helper di `mount`).
 fn mount_frame(source: &str, target: &str) -> bool {
     // Path lunghi al massimo MAX_PATH (256) l'uno + 2 NUL.

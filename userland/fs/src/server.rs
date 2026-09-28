@@ -85,6 +85,11 @@ fn real_main(_sp: u64) -> ! {
     // automatica a morte driver come gli IpcDisk dei mount).
     let topo_disk = ipc_disk::IpcDisk::new(0);
 
+    // Aspettative di durabilita' per-canale (Fase 52, P3): modo SYNC_* da
+    // R_SYNC (default SYNC_NONE = nessuna pretesa registrata). Effimere
+    // come rights/policy: col peer muore la riga (purge su EXIT_NOTIFY).
+    let mut sync_expect: BTreeMap<u64, u32> = BTreeMap::new();
+
     // Pre-populate: file di esempio
     if let Some(data) = fs.create_file("hello.txt") {
         data.extend_from_slice(b"Hello from Velordor ramfs!\n");
@@ -251,6 +256,9 @@ fn real_main(_sp: u64) -> ! {
             // Baseline wall-clock (Fase 50): se il morto era il server Time,
             // cade (al prossimo bisogno si rilegge, mai wall stale).
             wall::note_peer_death(chan);
+            // Aspettative di durabilita' (Fase 52): effimere come rights —
+            // al re-handshake il peer ridichiara (default SYNC_NONE).
+            sync_expect.remove(&chan);
             // Diritti effimeri (Fase 17): col peer muore anche la sua riga —
             // al re-handshake riparte da default {ALL, root} (limite dichiarato).
             rights.remove(&chan);
@@ -332,6 +340,10 @@ fn real_main(_sp: u64) -> ! {
             // Topologia dischi (Fase 51): LIST nessun payload, INFO w0 =
             // indice disco nei registri (mai payload).
             R_DISK_LIST | R_DISK_INFO => 0,
+            // Durabilita'/sensori (Fase 52): SYNC w0 = modo nei registri
+            // (mai payload), STATVFS path in w0 come R_STAT.
+            R_SYNC => 0,
+            R_STATVFS => w0 as usize,
             R_READ | R_CLOSE | R_RIGHTS_GET | R_DUP_GRANT => 0,
             _ => {
                 // Tag impossibile: scarta tutto e riallinea (vedi req_resync).
@@ -401,7 +413,7 @@ fn real_main(_sp: u64) -> ! {
         // il path aperto). UTF-8 invalido o spec malformata: passa oltre, lo
         // rifiuta l'handler (i diritti non decidono la validita').
         let subtree_ok = match op_tag {
-            R_OPEN | R_MKDIR | R_READDIR | R_DELETE | R_STAT => match core::str::from_utf8(payload) {
+            R_OPEN | R_MKDIR | R_READDIR | R_DELETE | R_STAT | R_STATVFS => match core::str::from_utf8(payload) {
                 Ok(p) => rights::within_subtree(rights::rights_subtree(&rights, chan), rights::normalize_sub_view(p)),
                 Err(_) => true,
             },
@@ -506,6 +518,18 @@ fn real_main(_sp: u64) -> ! {
                 handlers::handle_disk_info(&topo_disk, &rings, chan, w0 as u32)
             }
 
+            R_SYNC => {
+                handlers::handle_sync(&mut fat_mounts, &mut sync_expect, chan, w0 as u32)
+            }
+
+            R_STATVFS => {
+                match core::str::from_utf8(&payload) {
+                    Ok("") | Ok("/") => handlers::handle_statvfs(&mut fs, &mut fat_mounts, &mounts, &rings, chan, "/", &mut fat_gen),
+                    Ok(path) => handlers::handle_statvfs(&mut fs, &mut fat_mounts, &mounts, &rings, chan, path, &mut fat_gen),
+                    Err(_) => Err(ERR_INVALID),
+                }
+            }
+
             R_LSEEK => {
                 // w0 = fd, w1 = offset (bit reinterpretati come i64),
                 // payload[0] = whence (expect = 1 garantisce il byte).
@@ -565,11 +589,12 @@ fn real_main(_sp: u64) -> ! {
         // Scrivi il response frame (se non e' gia' stato scritto dall'handler).
         // Gli handler locali (read, readdir) scrivono direttamente nella response
         // ring; qui scriviamo solo il result frame per conferma.
-        // NOTA: handle_read, handle_readdir, handle_rights_get e handle_stat
-        // scrivono payload+result, quindi qui NON dobbiamo scrivere di nuovo.
+        // NOTA: handle_read, handle_readdir, handle_rights_get, handle_stat,
+        // handle_disk_list/info e handle_statvfs scrivono payload+result,
+        // quindi qui NON dobbiamo scrivere di nuovo.
         // Per gli altri handler, scriviamo solo il result.
         match op_tag {
-            R_READ | R_READDIR | R_RIGHTS_GET | R_STAT | R_DISK_LIST | R_DISK_INFO => {
+            R_READ | R_READDIR | R_RIGHTS_GET | R_STAT | R_DISK_LIST | R_DISK_INFO | R_STATVFS => {
                 // Gli handler locali hanno gia' scritto nella response ring.
                 // Per i remote, il driver ha gia' scritto nella response ring.
                 // Non fare nulla — il result e' gia' nel frame.
