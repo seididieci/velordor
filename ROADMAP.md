@@ -11,7 +11,7 @@ ricompilare se stesso. Ordina le priorita' (storage veloce prima, servizi
 fuori dal kernel poi, personalita' per software reale dopo) senza pianificare
 nulla da solo.
 
-## Stato (completate 1-52)
+## Stato (completate 1-53)
 
 Gate: `[testfs] PASS 5/5` + `[testfat] PASS 7/7` + `[usertests] PASS 57/57` +
 shell, zero FAIL/PANIC/FAULT.
@@ -68,6 +68,7 @@ shell, zero FAIL/PANIC/FAULT.
 | 50 | Orologio P1 (`Service::Time`, `usertime` CMOS+`TIME_NOW`, `mtime` veri ramfs+FAT via trait, t38 esteso) | ✅ Completata |
 | 51 | Vocabolario disco P2 (`DISK/R_DISK_LIST+INFO`, IDENTIFY estesa, relay userfs, `libr::disk_*`, t32 esteso, dati S1/S2) | ✅ Completata |
 | 52 | Durabilita' P3 (`R_SYNC` modi+barriera, `RIGHTS_SYNC`, `R_STATVFS` nel trait, `SYS_MEMINFO`, contratto, t32/t37 estesi) | ✅ Completata |
+| 53 | Misura bulk P4 (audit CAP, sweep 4K/16K/64K ramfs+FAT hot/cold in userbench, tabella costo-vs-dimensione) | ✅ Completata |
 
 ## Pianificate
 
@@ -81,13 +82,10 @@ Voci con scope e vittoria dichiarati (non date).
       formato, API, mapping, diritti, quota, tool, multi-device, swap,
       vector, logging §15) + piano OS-first P1–P5 (§13). P1/50 chiusa
       (orologio), P2/51 chiusa (vocabolario disco + dati S1/S2), P3/52 chiusa
-      (durabilita': contratto + barriera + sensori). Prossimo: 53–54, poi
-      stesura di dettaglio + ADR, poi 55.
+      (durabilita': contratto + barriera + sensori), P4/53 chiusa (misura
+      bulk: tabella costo-vs-dimensione in `13-performance.md`). Prossimo:
+      54, poi stesura di dettaglio + ADR, poi 55.
       Vittoria: spec scritta + primo mount.
-- [ ] **53 (P4) misura bulk** (dopo 52): bench round-trip-vs-dimensione
-      (4K/16K/64K, ramfs + FAT caldo/freddo), CAP single-source verificata;
-      zero cambi di formato, zero pagine extra.
-      Vittoria: grafo costo-vs-dimensione misurato; decisione rinviata ai numeri.
 - [ ] **54 (P5) integrita' + attrezzi** (dopo 53): BLAKE2s con cancelli in-place
       (standard da registry se: build freestanding no_std senza alloc, size
       entro `SPAWN_IMAGE_MAX`, vettori RFC 7693, niente heap nel per-op;

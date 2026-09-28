@@ -458,7 +458,9 @@ impl Tty {
         if now.wrapping_sub(self.flush_wait_until) < 0 {
             return;
         }
-        let n = self.out.len().min(4000);
+        // Bound operativo del frame (single source in `libr`, audit CAP P4):
+        // `write_async` rifiuta oltre `RING_MAX_PAYLOAD`, mai magic number.
+        let n = self.out.len().min(libr::RING_MAX_PAYLOAD);
         if let Ok(req) = libr::write_async(self.con_fd, &self.out[..n]) {
             self.pending = Some(Pending { req, kind: OpKind::ConWrite });
         } else {

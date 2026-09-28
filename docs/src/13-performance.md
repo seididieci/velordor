@@ -150,3 +150,66 @@ Cosa NON ha funzionato (tenuto a lezione, come 24.2-heap):
 Gate invariato (5/5 + 7/7 + 52/52 + shell verde); `ev_wait`≈transfer,
 `fb=0`, `abort=0` su 4000+ transfer; `irq_drained` conta i re-fire
 level-triggered (deterministici: identici tra run).
+
+## 53 — Misura bulk P4 (round-trip vs dimensione)
+
+Solo misura (Fase 53, P1–P5 OS-first verso ArcaFS): sweep 4K/16K/64K su
+ramfs + FAT caldo/freddo, zero cambi di formato, zero pagine extra. Righe
+`bulk_*` in `testland/bench` (stesso harness/`bench.sh`, mai nel gate).
+
+Metodologia (lezioni apprese incluse):
+
+- Freddo = **file distinti + spoiler unico**: ogni iter tocca settori mai
+  visti (dati + catene FAT freddi; la dir padre va hot dopo iter 1, caveat
+  documentato). Il primo tentativo (spoiler prima di OGNI iter) misurava
+  spoiler+op con varianza dello spoiler (±25%) superiore al segnale —
+  scartato dopo una campagna che lo ha provato: i cold venivano flat ~1.1G
+  e persino inferiori agli hot. I numeri sotto sono op puri.
+- `bulk_spoil_300sec` resta come riferimento metodologico (300 settori ≈
+  costo eviction, ~1.1G cyc su questo host).
+- Metodologia uniforme open/op/close per iter a offset 0 (steady state);
+  b4/b5 restano gli anchor storici (grow-walk / oow). ramfs: serie singola
+  (hot=cold in RAM, niente DISK/cache). Iter decrescenti con la size.
+- Audit CAP single-source: `RING_DATA_CAP=4088` + `RING_MAX_PAYLOAD=4000`
+  restano l'unica sorgente in `libr` (unico straggler trovato e fissato:
+  `usertty` clippava a letterale `4000`). Bound distinti intoccati: server
+  `expect` 4096 (scratch per-op), `DISK_MAX_SECTORS` 7×512=3584 (fit ring),
+  DEV relay 4096 (pre-esistente).
+
+Campagna sullo stesso host (KVM, media 3 run, TSC ~1.66 GHz; tabelle
+precedenti di altri host NON confrontabili; spread = max−min sui 3 run):
+
+| Op | cyc/op medio | KiB/s medi | Spread | Lettura |
+|----|--------------|------------|--------|---------|
+| `bulk_ramfs_16K_write` | ~340 K | ~79 K | 10% | lineare da b4 |
+| `bulk_ramfs_16K_read` | ~348 K | ~78 K | 15% | come write |
+| `bulk_ramfs_64K_write` | ~1.30 M | ~83 K | 16% | ~20 cyc/B costanti |
+| `bulk_ramfs_64K_read` | ~1.29 M | ~84 K | 11% | zero-copy al floor memcpy |
+| `bulk_fat_4K_write_hot` | ~19.2 M | ~355 | 29% | ~4.7K cyc/B |
+| `bulk_fat_4K_read_hot` | ~2.05 M | ~3.3 K | 45% | metadata ~2M fissi |
+| `bulk_fat_16K_write_hot` | ~63.7 M | ~381 | 37% | ~3.9K cyc/B |
+| `bulk_fat_16K_read_hot` | ~12.8 M | ~2.2 K | 62% | costo/B che cresce |
+| `bulk_fat_64K_write_hot` | ~275 M | ~419 | 63% | ~4.2K cyc/B, lineare |
+| `bulk_fat_64K_read_hot` | ~83 M | ~1.3 K | 18% | superlineare (v. sotto) |
+| `bulk_fat_4K_write_cold` | ~20.8 M | ~328 | 31% | ≈ hot (write-through) |
+| `bulk_fat_4K_read_cold` | ~3.76 M | ~2.1 K | 95% | 1.8x hot (metadata) |
+| `bulk_fat_16K_write_cold` | ~75 M | ~365 | 30% | ≈ hot |
+| `bulk_fat_16K_read_cold` | ~11.9 M | ~2.4 K | 54% | ≈ hot entro rumore |
+| `bulk_fat_64K_write_cold` | ~253 M | ~425 | 11% | ≈ hot |
+| `bulk_fat_64K_read_cold` | ~67.8 M | ~1.6 K | 8% | ≈ hot entro rumore |
+
+Lettura per A2 (decisione rinviata ai numeri — eccoli):
+
+- **Costo ~lineare nei chunk**: FS a 4000 B/chunk + DISK a 7 settori/run
+  dominano; frame più grandi = meno round-trip (write ~4.2K cyc/B costanti,
+  read con quota fissa metadata ~2M cyc ≈ 1.3 ms per op).
+- **Read superlineare** (501 → 783 → 1269 cyc/B da 4K a 64K): walk di
+  catena + run per cluster, un IPC DISK per settore — il fan-out
+  (`R_OBJ_MGET`: un IPC, N blob) attacca esattamente questo.
+- **Cold ≈ hot sul bulk dati** (write identiche per write-through; read
+  grandi entro rumore): la cache salva i metadati, non i dati — A2 non può
+  contarci per il bulk.
+- ramfs al floor (~20 cyc/B): lo zero-copy c'è già; il multi-frame serve
+  al FAT, non alla RAM.
+
+Gate invariato (5/5 + 7/7 + 57/57 + shell verde); bench mai nel gate.

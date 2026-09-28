@@ -1646,3 +1646,20 @@
          `mkdir`; (2) `TEST_POLICY` letterale 0x7FF senza SYNC → GROUP negato
          alla suite (fail-closed corretto, mask da allineare a ogni nuovo
          bit: checklist di fase).
+   - [x] Fase 53 (P4, misura bulk: quarto passo OS-first verso ArcaFS, solo
+         misura). Audit CAP: `RING_DATA_CAP`/`RING_MAX_PAYLOAD` single-source
+         confermata (unico straggler: `usertty` clippava a `4000` letterale,
+         ora const; bound distinti 4096-expect / 7-settori / DEV-4096
+         documentati, intoccati). `userbench` esteso (16 righe `bulk_*` +
+         `bulk_spoil_300sec`, stesso harness `bench.sh`, mai nel gate):
+         metodologia uniforme open/op/close a offset 0, ramfs serie singola,
+         FAT hot (pre-pass) + cold (file distinti + spoiler unico).
+         Lezione metodologica: spoiler-per-iter misura spoiler+op con varianza
+         superiore al segnale (cold flat ~1.1G, persino < hot) — scartato dopo
+         una campagna che lo ha provato; i numeri finali sono op puri.
+         Campagna KVM 3 run (TSC ~1.66 GHz): ramfs ~20 cyc/B costanti;
+         FAT write ~4.2K cyc/B lineari; FAT read superlineari (quota fissa
+         metadata ~2M + walk catena); cold≈hot sul bulk (cache salva solo
+         metadati). Tabella in `13-performance.md`: input per `R_OBJ_MGET` e
+         framing multi-frame in A2 (decisione ancora aperta, ora con numeri).
+         Gate invariato 5/5 + 7/7 + 57/57, zero FAIL/PANIC/FAULT.

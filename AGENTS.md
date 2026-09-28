@@ -119,7 +119,7 @@ velordor/
 
 Gate: `[testfs] PASS 5/5` + `[testfat] PASS 7/7` + `[usertests] PASS 57/57` + shell, zero FAIL/PANIC/FAULT (vedi `docs/src/11-testing.md`).
 
-- **Stato e futuro**: `ROADMAP.md` (sorgente unica: tabella completate 1-52, Pianificate, Parcheggiate).
+- **Stato e futuro**: `ROADMAP.md` (sorgente unica: tabella completate 1-53, Pianificate, Parcheggiate).
 - **Storia dettagliata**: `docs/src/14-cronologia-fasi.md` (log per fase: decisioni, bug trovati, lezioni, validazioni).
 
 ## Important Notes
