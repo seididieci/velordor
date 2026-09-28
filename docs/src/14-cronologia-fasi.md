@@ -1607,3 +1607,22 @@
          bg+wait, `p42j` 4 s con ~10 KiB di copie/pipe): lo sleep fisso
          0.4 s si chiudeva a meta' sotto carico host (failure mobili tra i
          run). Risultato: shell 10/10 fasi PASS + gate kernel invariato.
+   - [x] Fase 51 (P2, vocabolario disco: secondo passo OS-first verso ArcaFS).
+         `detect.rs`: word 169.0 (TRIM, capability-only mai usata), word 217
+         (rotation), word 106+117-118 (settori logico/fisico, default 512/512)
+         + `udma_neg` spostato dal vettore in `DiskInfo` (single source per
+         INFO). `DISK_LIST` 0x56 (reply count + frame N×16 B) + `DISK_INFO`
+         0x57 (w0=handle, reply settori/flags + frame fisso 76 B
+         modello/seriale) — sincrone pure, mai `recv` interno; header `result`
+         = byte payload (convenzione READ). Relay userfs `R_DISK_LIST/INFO`
+         0x21/0x22 (expect 0, self-written, gate READDIR senza subtree) via
+         `IpcDisk::list/info` (connessione topologia persistente in userfs) +
+         `libr::disk_list/info` (`DiskDesc` con accessori flags: stesso path
+         di `arca list` in P5). t32 esteso (LIST≥2, coerenza LIST/INFO, fatti
+         strutturali, UDMA≤2, `info(99)` rifiutato): nessun nuovo numero,
+         gate 5/5 + 7/7 + 57/57, zero FAIL/PANIC/FAULT.
+         Dati S1/S2 misurati su QEMU (mai a stima, §14): 2 dischi, 527000
+         settori, LBA48, TRIM=si, UDMA2 negoziato, rotation 0 (ignota),
+         512/512B, `QEMU HARDDISK` QM00001/02. Lettura: niente vincoli 4K su
+         questo HW (3584 = 7 settori torna); rotation ignota + TRIM=si = hint
+         SSD-like ma non decisione — i numeri S1/S2 si fissano in ADR-0039.

@@ -52,6 +52,9 @@ pub use syscall_numbers::image_hash;
 /// `syscall-numbers`, Fase 16c): handshake/open/read/close + resolve
 /// nome→handle di proprieta' del driver.
 pub use syscall_numbers::{DISK_CLOSE, DISK_HELLO, DISK_OPEN, DISK_READ, DISK_RESOLVE, DISK_WRITE};
+/// Topologia disco (Fase 51, P2): LIST/INFO userfs→userdisk + relay R_*
+/// verso i client (riusato da `arca list` in P5).
+pub use syscall_numbers::{DISK_LIST, DISK_INFO, R_DISK_LIST, R_DISK_INFO};
 
 // ── Tag delle operazioni (nel frame del ring, non nell'IPC) ────────
 // Single source in `syscall-numbers` (Fase 17): prima duplicati qui, in

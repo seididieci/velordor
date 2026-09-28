@@ -61,6 +61,10 @@ use libr::{DEV_CLOSE, DEV_OPEN, DEV_READ, DEV_READDIR, DEV_WRITE};
 use libr::DISK_HELLO;
 /// Valida un nodo (w0 = handle codificato). Reply OK/ERR, niente frame.
 use libr::DISK_OPEN;
+/// Topologia dischi (Fase 51, P2 vocabolario): LIST (count + entry
+/// `[sectors:8][flags:8]` per disco) e INFO (w0 = handle → settori/flags +
+/// frame `[model_len:8][model][serial_len:8][serial]`).
+use libr::{DISK_LIST, DISK_INFO};
 /// Legge UN settore (w0 = handle, w1 = lba nel nodo).
 /// Frame: [512:8][0:8][settore]. Fuori range/errore → reply ERR, niente frame.
 use libr::DISK_READ;

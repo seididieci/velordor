@@ -48,6 +48,43 @@ pub struct DiskInfo {
     /// Modi UDMA supportati (IDENTIFY word 88, bit 0-6, Fase 38.1b): il bit
     /// piu' alto e' il modo max del drive (PIIX3 arriva a UDMA2).
     pub udma_modes: u16,
+    /// TRIM capability (IDENTIFY word 169 bit 0 = DATA SET MANAGEMENT,
+    /// Fase 51 P2): solo rilevata, MAI usata (nessun comando DSM emesso).
+    pub trim: bool,
+    /// Rotation rate nominale (IDENTIFY word 217, Fase 51): `1` =
+    /// non-rotazionale (SSD), `0` = non riportato, altrimenti RPM.
+    pub rotation: u16,
+    /// Settore logico in byte (IDENTIFY word 117-118, Fase 51): 512 se la
+    /// word 106 e' invalida o la size e' zero (tutti i dischi reali/QEMU).
+    pub sec_logical: u32,
+    /// Settore fisico in byte (IDENTIFY word 106 bit 13 + exp bit 0-3,
+    /// Fase 51): = logico se non multiplo (quasi sempre 512/4096).
+    pub sec_physical: u32,
+    /// Modo UDMA negoziato (Fase 51, assegnato in `server.rs` dopo
+    /// `set_dma_mode`): `None` = PIO (nessun UDMA o BM assente).
+    pub udma_neg: Option<u8>,
+}
+
+impl DiskInfo {
+    /// Flags topologia (Fase 51, layout single-source in `syscall-numbers`):
+    /// bit 0 = LBA48, bit 1 = TRIM capability (mai usata), bit 8-11 = modo
+    /// UDMA negoziato (0-2) o 0xF = PIO, bit 16-31 = rotation word 217
+    /// (1 = SSD, altrimenti RPM), bit 32-47 = settore logico (B), bit 48-63
+    /// = settore fisico (B). Condiviso da DISK_LIST/INFO e R_DISK_*.
+    pub fn topo_flags(&self) -> u64 {
+        let mut f = 0u64;
+        if self.lba48 {
+            f |= 1;
+        }
+        if self.trim {
+            f |= 1 << 1;
+        }
+        f |= ((self.udma_neg.unwrap_or(0xF) as u64) & 0xF) << 8;
+        f |= (self.rotation as u64) << 16;
+        f |= ((self.sec_logical as u64) & 0xFFFF) << 32;
+        f |= ((self.sec_physical as u64) & 0xFFFF) << 48;
+        f
+    }
 }
 
 /// Esito del probe di un singolo drive.
@@ -192,6 +229,26 @@ fn probe_drive(ch: &AtaChannel, drive: u8) -> Probe {
     let model_len = decode_model(&words, &mut model);
     let mut serial = [0u8; 20];
     let serial_len = decode_serial(&words, &mut serial);
+    // Topologia P2 (Fase 51): capability e geometria per S1/S2 di ArcaFS.
+    // Word 169 bit 0 = DATA SET MANAGEMENT (TRIM) supportato.
+    let trim = words[169] & 1 != 0;
+    // Word 217 = rotation rate (1 = SSD, 0 = non riportato, else RPM).
+    let rotation = words[217];
+    // Word 106 bit 15/14 = 0/1 se valida; bit 13 = multipli logici per
+    // fisico (exp in bit 0-3); word 117-118 = size logica in word.
+    let w106 = words[106];
+    let log_words = ((words[118] as u32) << 16) | words[117] as u32;
+    let sec_logical = if w106 & 0xC000 == 0x4000 && log_words > 0 {
+        log_words.saturating_mul(2)
+    } else {
+        512
+    };
+    let exp = (w106 & 0x000F) as u32;
+    let sec_physical = if w106 & 0xC000 == 0x4000 && w106 & 0x2000 != 0 && exp <= 8 {
+        sec_logical.saturating_mul(1 << exp)
+    } else {
+        sec_logical
+    };
     Probe::Ata(DiskInfo {
         cmd: ch.cmd,
         drive,
@@ -203,6 +260,11 @@ fn probe_drive(ch: &AtaChannel, drive: u8) -> Probe {
         serial_len,
         mdma_modes: words[63],
         udma_modes: words[88],
+        trim,
+        rotation,
+        sec_logical,
+        sec_physical,
+        udma_neg: None,
     })
 }
 

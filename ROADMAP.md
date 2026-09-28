@@ -11,7 +11,7 @@ ricompilare se stesso. Ordina le priorita' (storage veloce prima, servizi
 fuori dal kernel poi, personalita' per software reale dopo) senza pianificare
 nulla da solo.
 
-## Stato (completate 1-50)
+## Stato (completate 1-51)
 
 Gate: `[testfs] PASS 5/5` + `[testfat] PASS 7/7` + `[usertests] PASS 57/57` +
 shell, zero FAIL/PANIC/FAULT.
@@ -66,6 +66,7 @@ shell, zero FAIL/PANIC/FAULT.
 | 48 | Wiring trait per FAT32 (U2: `LocalFsDyn`, fix stat readonly) | ✅ Completata |
 | 49 | Terreno pre-ArcaFS (T0: `AnyHandle`, mount-id stabili, `Source`+`fstype`, `Local` vivo, create/truncate nel trait) | ✅ Completata |
 | 50 | Orologio P1 (`Service::Time`, `usertime` CMOS+`TIME_NOW`, `mtime` veri ramfs+FAT via trait, t38 esteso) | ✅ Completata |
+| 51 | Vocabolario disco P2 (`DISK/R_DISK_LIST+INFO`, IDENTIFY estesa, relay userfs, `libr::disk_*`, t32 esteso, dati S1/S2) | ✅ Completata |
 
 ## Pianificate
 
@@ -78,12 +79,9 @@ Voci con scope e vittoria dichiarati (non date).
       Sessione A0 completata: bozza in `arcafs.md` (modello, indice,
       formato, API, mapping, diritti, quota, tool, multi-device, swap,
       vector, logging §15) + piano OS-first P1–P5 (§13). P1/50 chiusa
-      (orologio). Prossimo: 51–54, poi stesura di dettaglio + ADR, poi 55.
+      (orologio), P2/51 chiusa (vocabolario disco + dati S1/S2). Prossimo:
+      52–54, poi stesura di dettaglio + ADR, poi 55.
       Vittoria: spec scritta + primo mount.
-- [ ] **51 (P2) vocabolario disco** (dopo 50): `DISK_LIST`/`DISK_INFO` minimale
-      (settori, LBA48, modello/seriale, modo UDMA) + sonda TRIM
-      capability-only, mai uso.
-      Vittoria: `arca` stampa la topologia dei dischi; S1/S2 decidibili su dati.
 - [ ] **52 (P3) durabilita'** (dopo 51): `R_SYNC` None/Group/PerWrite
       (Group = flush+barriera) + contratto scritto + sensori
       `statvfs`/`SYS_MEMINFO`.
@@ -96,9 +94,11 @@ Voci con scope e vittoria dichiarati (non date).
       (standard da registry se: build freestanding no_std senza alloc, size
       entro `SPAWN_IMAGE_MAX`, vettori RFC 7693, niente heap nel per-op;
       altrimenti reimplementazione propria) + `sys.content_hash` riempito +
-      `arca create` skeleton + harness `testsarca` + `arca.img` come terzo
+      `arca create` skeleton + `arca list` (topologia via `R_DISK_*` della
+      Fase 51) + harness `testsarca` + `arca.img` come terzo
       drive opt-in (`ARCA_IMG=1`, boot default intatto).
-      Vittoria: `arca create`, `negotiate()` → `arcafs`, suite verde.
+      Vittoria: `arca create`, `arca list`, `negotiate()` → `arcafs`,
+      suite verde.
 - [ ] **55 (A1+N0)** (dopo 54, mai A1 da solo): `R_OBJ_PUT/GET` via
       `MountedFs::Local` + `init` dual-mode (nativo da bucket `sys` per
       `object_id`, fallback FAT) + `SvcMeta.bucket/key`; hash manomesso

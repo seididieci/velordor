@@ -76,6 +76,9 @@ pub fn op_bit(op_tag: u32) -> Option<u32> {
         R_LSEEK => Some(libr::RIGHTS_SEEK),
         // R_STAT e' metadato di listing: stesso bit di READDIR (Fase 19.2).
         R_STAT => Some(libr::RIGHTS_READDIR),
+        // Topologia dischi (Fase 51, P2): lettura globale come il listing
+        // (niente subtree: non e' un path del VFS).
+        R_DISK_LIST | R_DISK_INFO => Some(libr::RIGHTS_READDIR),
         // Handoff fd e pipe (Fase 45): GRANT crea capability per altri
         // (negabile), PIPE crea stato condiviso nel server (negabile).
         R_DUP_GRANT => Some(libr::RIGHTS_GRANT),

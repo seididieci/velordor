@@ -208,6 +208,67 @@ pub fn t_disk() -> bool {
         println!("[usertests] t32: /fat/HELLO.TXT post-restart corrotto");
         return false;
     }
+    // Fase 51 (P2 vocabolario disco): topologia via protocollo (relay R_
+    // verso DISK_*), non dal log. QEMU ne ha 2 (fat+fat2, come t36).
+    let list = match libr::disk_list() {
+        Ok(v) => v,
+        Err(_) => {
+            println!("[usertests] t32: disk_list FAILED");
+            return false;
+        }
+    };
+    if list.len() < 2 {
+        println!("[usertests] t32: disk_list count={} (< 2)", list.len());
+        return false;
+    }
+    for (i, (sectors, flags)) in list.iter().enumerate() {
+        if *sectors == 0 {
+            println!("[usertests] t32: disco {} senza settori", i);
+            return false;
+        }
+        let d = match libr::disk_info(i as u32) {
+            Ok(d) => d,
+            Err(_) => {
+                println!("[usertests] t32: disk_info({}) FAILED", i);
+                return false;
+            }
+        };
+        // Coerenza LIST vs INFO + fatti strutturali (mai valori QEMU
+        // hardcodati: il gate gira su qualunque ATA reale).
+        if d.sectors != *sectors || d.flags != *flags {
+            println!("[usertests] t32: LIST/INFO incoerenti su disco {}", i);
+            return false;
+        }
+        if d.model_len == 0 || d.sec_logical() == 0 || d.sec_physical() < d.sec_logical() {
+            println!("[usertests] t32: descrittore assurdo su disco {}", i);
+            return false;
+        }
+        if let Some(m) = d.udma() {
+            if m > 2 {
+                println!("[usertests] t32: UDMA{} oltre il cap PIIX3", m);
+                return false;
+            }
+        }
+        // Dump topologia (dati S1/S2 per ArcaFS, §14: mai a stima).
+        println!(
+            "[usertests] t32: sd{} settori={} lba48={} trim={} udma={} rot={} sec={}/{}B modello='{}' seriale='{}'",
+            (b'a' + i as u8) as char,
+            d.sectors,
+            d.lba48(),
+            d.trim(),
+            d.udma().map(|m| m as i64).unwrap_or(-1),
+            d.rotation(),
+            d.sec_logical(),
+            d.sec_physical(),
+            d.model_str(),
+            d.serial_str(),
+        );
+    }
+    // Indice oltre i dischi: rifiuto, mai frame parziale.
+    if libr::disk_info(99).is_ok() {
+        println!("[usertests] t32: disk_info(99) accettato?!");
+        return false;
+    }
     true
 }
 

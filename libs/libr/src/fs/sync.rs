@@ -288,6 +288,119 @@ pub fn stat(path: &str, out: &mut Stat) -> Result<(), Error> {
     }
 }
 
+/// Fase 51 (P2 vocabolario disco) — descrittore disco da `R_DISK_INFO`
+/// (relay userfs verso DISK_*). `flags` con layout single-source in
+/// `syscall-numbers`; stringhe IDENTIFY a lunghezza esplicita (max 40+20).
+#[derive(Clone, Copy, Debug)]
+pub struct DiskDesc {
+    pub sectors: u64,
+    pub flags: u64,
+    pub model: [u8; 40],
+    pub model_len: usize,
+    pub serial: [u8; 20],
+    pub serial_len: usize,
+}
+
+impl DiskDesc {
+    /// LBA48 (word 83.10) vs LBA28.
+    pub fn lba48(&self) -> bool {
+        self.flags & 1 != 0
+    }
+    /// TRIM capability rilevata (word 169.0, mai usata dal sistema).
+    pub fn trim(&self) -> bool {
+        self.flags & (1 << 1) != 0
+    }
+    /// Modo UDMA negoziato (None = PIO).
+    pub fn udma(&self) -> Option<u8> {
+        match (self.flags >> 8) & 0xF {
+            0xF => None,
+            m => Some(m as u8),
+        }
+    }
+    /// Rotation rate word 217 (1 = SSD, 0 = non riportato, else RPM).
+    pub fn rotation(&self) -> u16 {
+        ((self.flags >> 16) & 0xFFFF) as u16
+    }
+    /// true se SSD/non-rotazionale; false = HDD o ignoto.
+    pub fn is_ssd(&self) -> bool {
+        self.rotation() == 1
+    }
+    /// Settore logico / fisico in byte (word 106+117-118).
+    pub fn sec_logical(&self) -> u16 {
+        ((self.flags >> 32) & 0xFFFF) as u16
+    }
+    pub fn sec_physical(&self) -> u16 {
+        ((self.flags >> 48) & 0xFFFF) as u16
+    }
+    /// Modello/seriale come str (IDENTIFY e' ASCII: mai panico qui).
+    pub fn model_str(&self) -> &str {
+        core::str::from_utf8(&self.model[..self.model_len]).unwrap_or("?")
+    }
+    pub fn serial_str(&self) -> &str {
+        core::str::from_utf8(&self.serial[..self.serial_len]).unwrap_or("?")
+    }
+}
+
+/// `disk_list()`: topologia dischi (sda=0, ...) come `(settori, flags)` —
+/// relay `R_DISK_LIST` (expect 0), risposta self-written con entry 16 B.
+/// Usato dai test (t32) e da `arca list` (P5).
+#[inline]
+pub fn disk_list() -> Result<alloc::vec::Vec<(u64, u64)>, Error> {
+    session::fs_gate()?;
+    if !ring::req_ring_write(R_DISK_LIST, 0, 0, &[]) {
+        return Err(Error::RingFull);
+    }
+    match session::fs_notify_result(FS_NOTIFY, || {
+        ring::req_ring_write(R_DISK_LIST, 0, 0, &[])
+    }) {
+        // Risposta `[count:8][0:8][entry...]`: result=count, payload N×16 B.
+        Some((result, _, _)) => {
+            let n = (session::fs_reply_check(result)? as usize).min(16);
+            let mut buf = [0u8; 16 * 16];
+            ring::resp_ring_read_payload(&mut buf, n * 16);
+            let mut out = alloc::vec::Vec::new();
+            for k in 0..n {
+                let s = u64::from_le_bytes(buf[k * 16..k * 16 + 8].try_into().unwrap_or([0; 8]));
+                let f = u64::from_le_bytes(buf[k * 16 + 8..k * 16 + 16].try_into().unwrap_or([0; 8]));
+                out.push((s, f));
+            }
+            Ok(out)
+        }
+        None => Err(Error::NotReady),
+    }
+}
+
+/// `disk_info(idx)`: dettaglio disco `idx` (sda=0, ...) — relay `R_DISK_INFO`
+/// (w0 = indice, niente payload), risposta self-written con settori/flags +
+/// frame fisso 76 B (il client sa sempre cosa leggere).
+#[inline]
+pub fn disk_info(idx: u32) -> Result<DiskDesc, Error> {
+    session::fs_gate()?;
+    if !ring::req_ring_write(R_DISK_INFO, idx as u64, 0, &[]) {
+        return Err(Error::RingFull);
+    }
+    match session::fs_notify_result(FS_NOTIFY, || {
+        ring::req_ring_write(R_DISK_INFO, idx as u64, 0, &[])
+    }) {
+        Some((result, w1, _)) => {
+            let mut buf = [0u8; 76];
+            ring::resp_ring_read_payload(&mut buf, 76);
+            let sectors = session::fs_reply_check(result)?;
+            let ml = u64::from_le_bytes(buf[..8].try_into().unwrap_or([0xFF; 8])) as usize;
+            let sl = u64::from_le_bytes(buf[48..56].try_into().unwrap_or([0xFF; 8])) as usize;
+            if ml > 40 || sl > 20 {
+                return Err(Error::Failed);
+            }
+            let mut model = [0u8; 40];
+            model[..ml].copy_from_slice(&buf[8..8 + ml]);
+            let mut serial = [0u8; 20];
+            serial[..sl].copy_from_slice(&buf[56..56 + sl]);
+            Ok(DiskDesc { sectors, flags: w1, model, model_len: ml, serial, serial_len: sl })
+        }
+        None => Err(Error::NotReady),
+    }
+}
+
 /// Scrive un frame "source\0target\0" e lo notifica (helper di `mount`).
 fn mount_frame(source: &str, target: &str) -> bool {
     // Path lunghi al massimo MAX_PATH (256) l'uno + 2 NUL.

@@ -607,6 +607,51 @@ pub fn handle_stat(
     }
 }
 
+/// R_DISK_LIST (Fase 51, P2): topologia dischi via `IpcDisk::list`.
+/// Self-written come R_STAT (`[count:8][0:8][entry...]`, entry 16 B):
+/// il dispatch non riscrive. `topo` e' la connessione topologia di userfs
+/// (riconnessione automatica a morte driver, come i mount).
+pub fn handle_disk_list(
+    topo: &ipc_disk::IpcDisk,
+    rings: &BTreeMap<u64, (u64, u64)>,
+    chan: u64,
+) -> Result<u64, u64> {
+    let entries = topo.list().ok_or(ERR)?;
+    let n = entries.len().min(16);
+    let mut payload = [0u8; 256];
+    for (k, (s, f)) in entries.iter().take(16).enumerate() {
+        payload[k * 16..k * 16 + 8].copy_from_slice(&s.to_le_bytes());
+        payload[k * 16 + 8..k * 16 + 16].copy_from_slice(&f.to_le_bytes());
+    }
+    if rings.get(&chan).is_some() {
+        rings::map_client_resp_ring(rings, chan);
+        rings::resp_ring_write(n as u64, 0, &payload[..n * 16]);
+    }
+    Ok(n as u64)
+}
+
+/// R_DISK_INFO (Fase 51): dettaglio disco `idx` (sda=0, ...) via
+/// `IpcDisk::info`. Self-written (`[sectors:8][flags:8]` + frame fisso 76 B
+/// come DISK_INFO). Indice oltre i dischi → ERR (mai frame parziale).
+pub fn handle_disk_info(
+    topo: &ipc_disk::IpcDisk,
+    rings: &BTreeMap<u64, (u64, u64)>,
+    chan: u64,
+    idx: u32,
+) -> Result<u64, u64> {
+    let info = topo.info((idx as u32) << 16).ok_or(ERR)?;
+    let mut payload = [0u8; 76];
+    payload[..8].copy_from_slice(&(info.model_len as u64).to_le_bytes());
+    payload[8..8 + info.model_len].copy_from_slice(&info.model[..info.model_len]);
+    payload[48..56].copy_from_slice(&(info.serial_len as u64).to_le_bytes());
+    payload[56..56 + info.serial_len].copy_from_slice(&info.serial[..info.serial_len]);
+    if rings.get(&chan).is_some() {
+        rings::map_client_resp_ring(rings, chan);
+        rings::resp_ring_write(info.sectors, info.flags, &payload);
+    }
+    Ok(info.sectors)
+}
+
 pub fn handle_mkdir(
     fs: &mut ramfs::RamFs,
     mounts_fat: &mut Vec<mount::FsMount>,

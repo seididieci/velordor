@@ -209,6 +209,7 @@ usertests 17/17, shell 3/3.
 16d  Identità stabile UUID/LABEL + listing + register multi-prefix     [x]
 17   Diritti per-canale lato server ([ADR-0014](../adr/0014-channel-rights-serverside.md): tabella chan→{ops,subtree}, DROP solo-shrink + GET, fd capability pure) [x]
 19.2 Metadati senza open (R_STAT 0x1B, risposta self-written `[size:8][kind:8]` + `[mtime:8]` dalla Fase 50: ramfs size reale, FAT mai readonly dalla Fase 20, device size 0, check RIGHTS_READDIR+subtree, `libr::stat`, t38) [x]
+51   P2 vocabolario disco (relay topologia): `DISK_LIST/INFO` (0x56/0x57: entry `[sectors:8][flags:8]`, INFO + frame 76 B modello/seriale) + `R_DISK_LIST/INFO` (0x21/0x22, gate READDIR, self-written) + `IpcDisk::list/info` + `libr::disk_list/info` (`DiskDesc` con accessori flags); t32 esteso [x]
 50   P1 orologio (mtime veri): `usertime` (CMOS+Time), baseline lazy in userfs (`wall.rs`, niente IPC per-op), `mtime` su `FsNode`/decode DOS WrtTime/Date + stamp a create/grow/truncate, `Meta.mtime` via trait, `libr::Stat.mtime`; t38 esteso (Time monotono, mtime plausibile+crescente, FAT noto) [x]
 20   FAT32 scrivibile ([ADR-0016](../adr/0016-fat-writable.md): DISK_WRITE + write PIO + overwrite/grow/alloc/O_CREAT write-through, `testfat` 7/7, fsck pulito) [x]
 21   Servizi da disco: userfs con cache FileInfo per-fd + generazione (bump a ogni mutazione FAT; stat sempre fresca) e `IpcDisk` con OPEN-once per connessione (re-OPEN solo a canale caduto) — dimezza i round-trip DISK dei load da disco [x]

@@ -287,6 +287,20 @@ pub const DISK_CLOSE: u64 = 0x53;
 pub const DISK_RESOLVE: u64 = 0x54;
 /// Scrive un settore (Fase 20, FAT scrivibile): vedi sopra.
 pub const DISK_WRITE: u64 = 0x55;
+// ── Topologia disco (Fase 51, P2 vocabolario) ───────────────────────
+// - LIST (0x56): nessun input (w0=w1=0, niente frame REQ); reply `w0` =
+//   numero dischi + 1 frame RESP con N entry fisse da 16 B ciascuna
+//   `[sectors:8][flags:8]` (ordine dischi: sda=0, sdb=1, ...).
+// - INFO (0x57): `w0` = handle (vale la parte disco, sub ignorata), niente
+//   frame REQ; reply `w0` = settori, `w1` = flags + 1 frame RESP fisso 76 B
+//   `[model_len:8][model:40][serial_len:8][serial:20]` (il client sa sempre
+//   cosa leggere; lunghezze reali nei primi u64 di ogni meta').
+// Layout `flags` (u64, condiviso LIST/INFO/R_DISK_*): bit 0 = LBA48, bit 1 =
+// TRIM capability (word 169.0, solo rilevata mai usata), bit 8-11 = modo UDMA
+// negoziato (0-2) o 0xF = PIO, bit 16-31 = rotation rate word 217 (1 = SSD,
+// altrimenti RPM), bit 32-47 = settore logico (B), bit 48-63 = fisico (B).
+pub const DISK_LIST: u64 = 0x56;
+pub const DISK_INFO: u64 = 0x57;
 
 // ── Tag delle operazioni FS (nel frame del ring, non nell'IPC) ────────────
 // Single source of truth (Fase 17): prima duplicati in `libr`, `userfs` e
@@ -305,7 +319,7 @@ pub const R_UMOUNT: u32 = 0x17;
 /// Solo ramfs (su FAT manca l'unlink e i device remoti rifiutano con ERR).
 pub const R_DELETE: u32 = 0x1A;
 /// Metadati del path (Fase 19.2, zero kernel): payload = path; risposta
-/// self-written `[size:8][kind:8]`, payload vuoto. Nessun fd coinvolto.
+/// self-written `[size:8][kind:8]` + `[mtime:8]` (Fase 50). Nessun fd coinvolto.
 pub const R_STAT: u32 = 0x1B;
 /// Sposta l'offset di un fd LOCALE (Fase 40, P1): w0 = fd, w1 = offset (bit
 /// reinterpretati come i64: negativi leciti per SEEK_END/SEEK_CUR), payload
@@ -336,6 +350,17 @@ pub const R_DUP_CANCEL: u32 = 0x1F;
 /// throttled), a writer chiusi → 0 (EOF); write a piena → parziale, a lettori
 /// chiusi → ERR_CLOSED. Mai blocco del server single-threaded.
 pub const R_PIPE_CREATE: u32 = 0x20;
+// ── Topologia disco via userfs (Fase 51, P2: relay verso DISK_*, riusato da
+// `arca list` in P5) ───────────────────────────────────────────────────
+// - R_DISK_LIST (0x21): nessun payload (expect 0); risposta self-written
+//   `[count:8][0:8][entry...]` con entry fisse 16 B `[sectors:8][flags:8]`
+//   (layout flags come DISK_LIST, ordine dischi sda=0, ...).
+// - R_DISK_INFO (0x22): w0 = indice disco, nessun payload; risposta
+//   self-written `[sectors:8][flags:8]` + frame fisso 76 B come DISK_INFO.
+//   Solo lettura (mai settori): gate RIGHTS_READDIR, niente subtree
+//   (topologia globale).
+pub const R_DISK_LIST: u32 = 0x21;
+pub const R_DISK_INFO: u32 = 0x22;
 /// `kind` per R_STAT (Fase 19.2): bit 0-1 tipo + bit 7 readonly.
 pub const STAT_FILE: u64 = 0;
 pub const STAT_DIR: u64 = 1;

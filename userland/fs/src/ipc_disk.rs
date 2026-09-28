@@ -29,6 +29,8 @@ use libr::println;
 /// validazione nodo, lettura settoriale, resolve nome→handle di proprieta'
 /// del driver.
 use libr::{DISK_HELLO, DISK_OPEN, DISK_READ, DISK_RESOLVE, DISK_WRITE};
+/// Topologia P2 (Fase 51): LIST/INFO (single source in `syscall-numbers`).
+use libr::{DISK_INFO, DISK_LIST};
 
 /// Finestra del request ring di userdisk (stessa VA del server: ogni processo
 /// ha le proprie page table, nessun conflitto). userfs e' l'unico writer.
@@ -45,6 +47,17 @@ const HELLO_BOUND_TICKS: i64 = 500;
 /// 24.2 — settori max per IPC DISK (bound del ring: 8 + 7*512 = 3592 nella
 /// request, 16 + 7*512 = 3600 nella response, entrambi < 4087).
 const DISK_MAX_SECTORS: usize = 7;
+
+/// Dettaglio disco da DISK_INFO (Fase 51, P2): settori/flags (layout in
+/// `syscall-numbers`) + stringhe IDENTIFY a lunghezza esplicita.
+pub struct IpcDiskInfo {
+    pub sectors: u64,
+    pub flags: u64,
+    pub model: [u8; 40],
+    pub model_len: usize,
+    pub serial: [u8; 20],
+    pub serial_len: usize,
+}
 
 pub struct IpcDisk {
     /// Handle nodo di mount codificato (disco<<16|sub): 0 = sda whole-disk.
@@ -352,6 +365,101 @@ impl IpcDisk {
                 None
             }
         }
+    }
+
+    /// Dettaglio disco (Fase 51, P2): settori/flags + modello/seriale per
+    /// l'handle `handle` (vale la parte disco, sub ignorata). Niente OPEN
+    /// (info di connessione, non di nodo). Stessa disciplina di `resolve`:
+    /// un retry solo a canale caduto, mai su risposta ERR.
+    pub fn info(&self, handle: u32) -> Option<IpcDiskInfo> {
+        let chan = self.connect()?;
+        if let Some(i) = self.try_info(chan, handle) {
+            return Some(i);
+        }
+        if self.chan.get().is_some() {
+            return None;
+        }
+        let chan = self.connect()?;
+        self.try_info(chan, handle)
+    }
+
+    /// Un tentativo di INFO (nessun retry qui: lo fa il chiamante).
+    /// Frame RESP fisso 76 B `[model_len:8][model:40][serial_len:8]`
+    /// `[serial:20]`; settori/flags in w0/w1 di reply.
+    fn try_info(&self, chan: u64, handle: u32) -> Option<IpcDiskInfo> {
+        let rep = match libr::send(chan, DISK_INFO, handle as u64, 0) {
+            Ok(r) => r,
+            Err(_) => {
+                self.drop_conn();
+                return None;
+            }
+        };
+        if rep.w0 == ERR {
+            return None;
+        }
+        let mut buf = [0u8; 76];
+        if !unsafe { Self::frame_read(&mut buf, 76) } {
+            return None;
+        }
+        let ml = u64::from_le_bytes(buf[..8].try_into().unwrap_or([0xFF; 8])) as usize;
+        let sl = u64::from_le_bytes(buf[48..56].try_into().unwrap_or([0xFF; 8])) as usize;
+        if ml > 40 || sl > 20 {
+            return None;
+        }
+        let mut model = [0u8; 40];
+        model[..ml].copy_from_slice(&buf[8..8 + ml]);
+        let mut serial = [0u8; 20];
+        serial[..sl].copy_from_slice(&buf[56..56 + sl]);
+        Some(IpcDiskInfo {
+            sectors: rep.w0,
+            flags: rep.w1,
+            model,
+            model_len: ml,
+            serial,
+            serial_len: sl,
+        })
+    }
+
+    /// Topologia dischi (Fase 51, P2): `(settori, flags)` per disco
+    /// (sda=0, ...). Bound 16 come il server (oltre: il count in reply resta
+    /// vero ma il frame porta solo i primi 16 — qui si ritorna il frame).
+    pub fn list(&self) -> Option<alloc::vec::Vec<(u64, u64)>> {
+        let chan = self.connect()?;
+        if let Some(v) = self.try_list(chan) {
+            return Some(v);
+        }
+        if self.chan.get().is_some() {
+            return None;
+        }
+        let chan = self.connect()?;
+        self.try_list(chan)
+    }
+
+    /// Un tentativo di LIST (nessun retry qui: lo fa il chiamante).
+    /// Reply w0 = count; frame RESP con entry 16 B `[sectors:8][flags:8]`.
+    fn try_list(&self, chan: u64) -> Option<alloc::vec::Vec<(u64, u64)>> {
+        let rep = match libr::send(chan, DISK_LIST, 0, 0) {
+            Ok(r) => r,
+            Err(_) => {
+                self.drop_conn();
+                return None;
+            }
+        };
+        if rep.w0 == ERR {
+            return None;
+        }
+        let n = (rep.w0 as usize).min(16);
+        let mut buf = [0u8; 16 * 16];
+        if !unsafe { Self::frame_read(&mut buf, n * 16) } {
+            return None;
+        }
+        let mut out = alloc::vec::Vec::new();
+        for k in 0..n {
+            let s = u64::from_le_bytes(buf[k * 16..k * 16 + 8].try_into().unwrap_or([0; 8]));
+            let f = u64::from_le_bytes(buf[k * 16 + 8..k * 16 + 16].try_into().unwrap_or([0; 8]));
+            out.push((s, f));
+        }
+        Some(out)
     }
 
     /// Risolve un nome nodo corto ("sda", "sda1") in handle presso userdisk

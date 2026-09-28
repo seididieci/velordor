@@ -85,6 +85,22 @@ fn real_main(_sp: u64) -> ! {
         println!("[userdisk] sd{}: modello '{}'", letter, model);
         let serial = core::str::from_utf8(&info.serial[..info.serial_len]).unwrap_or("?");
         println!("[userdisk] sd{}: seriale '{}'", letter, serial);
+        // Topologia P2 (Fase 51): capability + geometria per S1/S2 di ArcaFS.
+        // `alloc::format!` qui (non nel println diretto): il match con
+        // `rpm` lega un valore da interpolare.
+        let rot = match info.rotation {
+            0 => alloc::format!("rotazione ignota"),
+            1 => alloc::format!("SSD"),
+            rpm => alloc::format!("{} RPM", rpm),
+        };
+        println!(
+            "[userdisk] sd{}: TRIM={}, settore {}/{}B, {}",
+            letter,
+            if info.trim { "si" } else { "no" },
+            info.sec_logical,
+            info.sec_physical,
+            rot,
+        );
         disks.push(block::AtaDisk::open(info.cmd, info.drive, info.lba48));
     }
     if atapi > 0 {
@@ -127,6 +143,8 @@ fn real_main(_sp: u64) -> ! {
     for (i, disk) in disks.iter().enumerate() {
         let letter = (b'a' + i as u8) as char;
         let mode = disk.set_dma_mode(infos[i].udma_modes);
+        // Modo negoziato in `DiskInfo` (Fase 51): single source per DISK_INFO.
+        infos[i].udma_neg = mode;
         match mode {
             Some(m) => println!(
                 "[userdisk] sd{}: UDMA mode {} negoziato — data-plane ancora PIO fino a 38.1c",
@@ -504,6 +522,50 @@ fn real_main(_sp: u64) -> ! {
                 None => None,
             };
             let _ = libr::reply(0, result.unwrap_or(ERR), 0);
+            continue;
+        }
+        if msg.tag == DISK_LIST {
+            // Topologia dischi (Fase 51, P2): reply w0 = count + 1 frame
+            // RESP con entry fisse 16 B `[sectors:8][flags:8]` (sda=0, ...).
+            // Bound 16 dischi (stack, mai heap nel per-op): oltre si tronca
+            // (QEMU ne ha 2; il count in w0 resta quello vero).
+            let n = infos.len();
+            let mut payload = [0u8; 16 * 16];
+            let mut k = 0usize;
+            for info in infos.iter().take(16) {
+                payload[k * 16..k * 16 + 8].copy_from_slice(&info.sectors.to_le_bytes());
+                payload[k * 16 + 8..k * 16 + 16].copy_from_slice(&info.topo_flags().to_le_bytes());
+                k += 1;
+            }
+            // Header `result` = byte payload (convenzione READ, letta dal
+            // client per dimensionare la lettura); il count vero in w0.
+            unsafe { rings::disk_resp_write((k * 16) as u64, 0, &payload[..k * 16]) };
+            let _ = libr::reply(0, n as u64, 0);
+            continue;
+        }
+        if msg.tag == DISK_INFO {
+            // Dettaglio disco (Fase 51): w0 = handle (vale la parte disco,
+            // sub ignorata), niente frame REQ; reply w0 = settori, w1 = flags
+            // + 1 frame `[model_len:8][model][serial_len:8][serial]`.
+            let di = (msg.w0 as u32 >> 16) as usize;
+            let info = match infos.get(di) {
+                Some(i) => i,
+                None => {
+                    let _ = libr::reply(0, ERR, 0);
+                    continue;
+                }
+            };
+            // Frame a dimensione FISSA (76 B: il client non conosce le
+            // lunghezze prima di leggere): `[model_len:8][model:40]`
+            // + `[serial_len:8][serial:20]`, resto azzerato.
+            let mut payload = [0u8; 76];
+            payload[..8].copy_from_slice(&(info.model_len as u64).to_le_bytes());
+            payload[8..8 + info.model_len].copy_from_slice(&info.model[..info.model_len]);
+            payload[48..56].copy_from_slice(&(info.serial_len as u64).to_le_bytes());
+            payload[56..56 + info.serial_len].copy_from_slice(&info.serial[..info.serial_len]);
+            // Header `result` = byte payload (come sopra); settori/flags in w0/w1.
+            unsafe { rings::disk_resp_write(76, info.topo_flags(), &payload) };
+            let _ = libr::reply(0, info.sectors, info.topo_flags());
             continue;
         }
 

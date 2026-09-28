@@ -80,6 +80,11 @@ fn real_main(_sp: u64) -> ! {
     // delle due estremita' (conteggio estremita', libera all'ultima close).
     let mut pipes = pipes::PipeTable::new();
 
+    // Connessione topologia verso userdisk (Fase 51, P2): serve il relay
+    // R_DISK_LIST/INFO (lookup+HELLO lazy al primo uso, riconnessione
+    // automatica a morte driver come gli IpcDisk dei mount).
+    let topo_disk = ipc_disk::IpcDisk::new(0);
+
     // Pre-populate: file di esempio
     if let Some(data) = fs.create_file("hello.txt") {
         data.extend_from_slice(b"Hello from Velordor ramfs!\n");
@@ -324,6 +329,9 @@ fn real_main(_sp: u64) -> ! {
             R_DUP_CLAIM | R_DUP_CANCEL => 8,
             // PIPE_CREATE: nessun payload (w0 = hint capacita').
             R_PIPE_CREATE => 0,
+            // Topologia dischi (Fase 51): LIST nessun payload, INFO w0 =
+            // indice disco nei registri (mai payload).
+            R_DISK_LIST | R_DISK_INFO => 0,
             R_READ | R_CLOSE | R_RIGHTS_GET | R_DUP_GRANT => 0,
             _ => {
                 // Tag impossibile: scarta tutto e riallinea (vedi req_resync).
@@ -490,6 +498,14 @@ fn real_main(_sp: u64) -> ! {
                 }
             }
 
+            R_DISK_LIST => {
+                handlers::handle_disk_list(&topo_disk, &rings, chan)
+            }
+
+            R_DISK_INFO => {
+                handlers::handle_disk_info(&topo_disk, &rings, chan, w0 as u32)
+            }
+
             R_LSEEK => {
                 // w0 = fd, w1 = offset (bit reinterpretati come i64),
                 // payload[0] = whence (expect = 1 garantisce il byte).
@@ -553,7 +569,7 @@ fn real_main(_sp: u64) -> ! {
         // scrivono payload+result, quindi qui NON dobbiamo scrivere di nuovo.
         // Per gli altri handler, scriviamo solo il result.
         match op_tag {
-            R_READ | R_READDIR | R_RIGHTS_GET | R_STAT => {
+            R_READ | R_READDIR | R_RIGHTS_GET | R_STAT | R_DISK_LIST | R_DISK_INFO => {
                 // Gli handler locali hanno gia' scritto nella response ring.
                 // Per i remote, il driver ha gia' scritto nella response ring.
                 // Non fare nulla — il result e' gia' nel frame.
