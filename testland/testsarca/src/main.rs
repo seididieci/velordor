@@ -1,19 +1,25 @@
 //! usertestsarca — test ArcaFS P5 (Fase 54): BLAKE2s + content_hash + volume.
 //!
-//! Assert (8 con il drive ArcaFS presente; 3 core senza, run manuale):
+//! Assert (con il drive ArcaFS presente; il core senza, run manuale):
 //!   1. vettori BLAKE2s (vuoto/abc/lungo, valori noti)
 //!   2. ramfs: hash BLAKE2s via `R_GET_HASH` == ricalcolo indipendente
 //!   3. tamper: contenuto diverso -> hash diverso
-//!   4. un disco espone il superblock ACFS (scan per magic, mai per lettera)
-//!   5. mount `/arca` del volume ArcaFS (stub P5) riesce
-//!   6. `open` sul mount stub rifiutato (mai dati inventati)
-//!   7. `readdir` sul mount stub rifiutato
-//!   8. umount `/arca` riesce (cleanup)
-//! Con `ARCA_IMG=1` (gate) il drive c'e' sempre: 8/8. Senza, il core
-//! (1-3) resta PASS — n/n adattivo, mai FAIL per drive assente.
+//!   4. object store nativo R_OBJ_PUT/GET: round-trip piccolo (Fase 55, A1)
+//!   5. chunking: blob > RING_MAX_PAYLOAD -> GET multi-round-trip
+//!   6. chiave assente -> errore (mai dati inventati)
+//!   7. un disco o partizione espone il superblock ACFS (scan per magic, mai
+//!      per lettera — Fase 55, Parte 4: esteso a sda1..sda4)
+//!   8. mount `/arca` del volume ArcaFS (stub P5) riesce
+//!   9. `open` sul mount stub rifiutato (mai dati inventati)
+//!  10. `readdir` sul mount stub rifiutato
+//!  11. umount `/arca` riesce (cleanup)
+//! Con `ARCA_IMG=1` (gate) il drive c'e' sempre; senza, il core (1-6) resta
+//! PASS — n/n adattivo, mai FAIL per drive assente.
 
 #![no_std]
 #![no_main]
+
+extern crate alloc;
 
 use libr;
 use libr::println;
@@ -36,41 +42,69 @@ impl Checks {
     }
 }
 
-/// Cerca un disco il cui LBA0 e' un superblock ArcaFS valido. Ritorna il nome
-/// breve (es. "sdc") in un buffer, o None. Scan per magic (lettera-agnostico).
-fn find_arca() -> Option<[u8; 3]> {
-    // Fino a 8 dischi (bound difensivo; QEMU ne ha 3 con ARCA_IMG=1).
+/// Cerca un disco o partizione il cui LBA0 e' un superblock ArcaFS valido.
+/// Ritorna il nome breve (es. "sdc" o "sda1") in un buffer, o None.
+/// Scan per magic (lettera-agnostico).
+fn find_arca() -> Option<[u8; 4]> {
+    // Fino a 8 dischi + 4 partizioni per disco (bound difensivo).
     for i in 0..8u64 {
-        let name: [u8; 3] = [b's', b'd', b'a' + i as u8];
+        let letter = b'a' + i as u8;
+        if letter > b'z' { break; }
+
+        // Whole-disk: sda, sdb, ...
+        let mut name = [b's', b'd', letter, 0];
+        let path_len = 8usize;
         let mut pbuf = [0u8; 16];
         pbuf[..5].copy_from_slice(b"/dev/");
-        pbuf[5..8].copy_from_slice(&name);
-        let path = core::str::from_utf8(&pbuf[..8]).unwrap_or("");
-        let Ok(fd) = libr::open(path, 0) else {
-            continue;
-        };
+        pbuf[5..8].copy_from_slice(&name[..3]);
+        let Ok(fd) = libr::open(core::str::from_utf8(&pbuf[..path_len]).unwrap_or(""), 0) else { continue };
         let mut sec = [0u8; 512];
         let n = libr::read_fs(fd, &mut sec, 512);
         let _ = libr::close(fd);
-        if n != Ok(512) {
-            continue;
-        }
+        if n != Ok(512) { continue; }
         let sb = &sec[..libr::ARCA_SUPER_LEN];
-        if sb[libr::ARCA_OFF_MAGIC..libr::ARCA_OFF_MAGIC + 4] != *libr::ARCA_MAGIC {
-            continue;
+        if sb[libr::ARCA_OFF_MAGIC..libr::ARCA_OFF_MAGIC + 4] == *libr::ARCA_MAGIC {
+            // Verifica completa: magic + versione + block-size + checksum
+            let u32le = |o: usize| u32::from_le_bytes([sb[o], sb[o + 1], sb[o + 2], sb[o + 3]]);
+            let u64le = |o: usize| {
+                u64::from_le_bytes([
+                    sb[o], sb[o + 1], sb[o + 2], sb[o + 3], sb[o + 4], sb[o + 5], sb[o + 6], sb[o + 7],
+                ])
+            };
+            if u32le(libr::ARCA_OFF_VERSION) == libr::ARCA_VERSION
+                && u32le(libr::ARCA_OFF_BLOCK_SIZE) == libr::ARCA_BLOCK_SIZE
+                && libr::image_hash(&sb[..libr::ARCA_OFF_CHECK]) == u64le(libr::ARCA_OFF_CHECK)
+            {
+                return Some([b's', b'd', letter, 0]);
+            }
         }
-        let u32le = |o: usize| u32::from_le_bytes([sb[o], sb[o + 1], sb[o + 2], sb[o + 3]]);
-        let u64le = |o: usize| {
-            u64::from_le_bytes([
-                sb[o], sb[o + 1], sb[o + 2], sb[o + 3], sb[o + 4], sb[o + 5], sb[o + 6],
-                sb[o + 7],
-            ])
-        };
-        if u32le(libr::ARCA_OFF_VERSION) == libr::ARCA_VERSION
-            && u32le(libr::ARCA_OFF_BLOCK_SIZE) == libr::ARCA_BLOCK_SIZE
-            && libr::image_hash(&sb[..libr::ARCA_OFF_CHECK]) == u64le(libr::ARCA_OFF_CHECK)
-        {
-            return Some(name);
+
+        // Partizioni: sda1..sda4, sdb1..sdb4, ...
+        for p in 1..=4u8 {
+            name = [b's', b'd', letter, b'0' + p];
+            let path_len = 9usize;
+            pbuf[..5].copy_from_slice(b"/dev/");
+            pbuf[5..9].copy_from_slice(&name);
+            let Ok(fd) = libr::open(core::str::from_utf8(&pbuf[..path_len]).unwrap_or(""), 0) else { continue };
+            let mut sec = [0u8; 512];
+            let n = libr::read_fs(fd, &mut sec, 512);
+            let _ = libr::close(fd);
+            if n != Ok(512) { continue; }
+            let sb = &sec[..libr::ARCA_SUPER_LEN];
+            if sb[libr::ARCA_OFF_MAGIC..libr::ARCA_OFF_MAGIC + 4] == *libr::ARCA_MAGIC {
+                let u32le = |o: usize| u32::from_le_bytes([sb[o], sb[o + 1], sb[o + 2], sb[o + 3]]);
+                let u64le = |o: usize| {
+                    u64::from_le_bytes([
+                        sb[o], sb[o + 1], sb[o + 2], sb[o + 3], sb[o + 4], sb[o + 5], sb[o + 6], sb[o + 7],
+                    ])
+                };
+                if u32le(libr::ARCA_OFF_VERSION) == libr::ARCA_VERSION
+                    && u32le(libr::ARCA_OFF_BLOCK_SIZE) == libr::ARCA_BLOCK_SIZE
+                    && libr::image_hash(&sb[..libr::ARCA_OFF_CHECK]) == u64le(libr::ARCA_OFF_CHECK)
+                {
+                    return Some(name);
+                }
+            }
         }
     }
     None
@@ -132,15 +166,35 @@ fn real_main(_sp: u64) -> ! {
     c.ok("tamper hash cambia", tamper_ok);
     let _ = libr::remove("/sarca.txt");
 
-    // 4-8. Volume ArcaFS (solo se il terzo drive ArcaFS e' presente).
+    // 4. Object store nativo R_OBJ_PUT/GET (Fase 55, A1): round-trip piccolo.
+    let small = b"nativo-arcafs-obj";
+    let put_ok = libr::obj_put(b"test", b"k1", small) == Ok(small.len() as u64);
+    c.ok(
+        "obj round-trip piccolo",
+        put_ok && matches!(libr::obj_get(b"test", b"k1"), Ok(v) if v == small),
+    );
+
+    // 5. Chunking: blob > RING_MAX_PAYLOAD (4000B) → GET multi-round-trip.
+    let big: alloc::vec::Vec<u8> = (0..10000u32).map(|i| (i % 251) as u8).collect();
+    let put_big = libr::obj_put(b"test", b"big", &big) == Ok(big.len() as u64);
+    c.ok(
+        "obj chunking 10000B",
+        put_big && matches!(libr::obj_get(b"test", b"big"), Ok(v) if v == big),
+    );
+
+    // 6. Chiave assente → errore (mai dati inventati).
+    c.ok("obj assente -> errore", libr::obj_get(b"test", b"nope").is_err());
+
+    // 4-8. Volume ArcaFS (solo se un disco/partizione espone superblock ACFS).
     match find_arca() {
         Some(name) => {
             c.ok("volume ACFS trovato", true);
-            let dev = core::str::from_utf8(&name).unwrap_or("sdc");
+            let len = if name[3] == 0 { 3 } else { 4 };
+            let dev = core::str::from_utf8(&name[..len]).unwrap_or("sdc");
             let mut src = [0u8; 16];
             src[..5].copy_from_slice(b"/dev/");
-            src[5..8].copy_from_slice(&name);
-            let src = core::str::from_utf8(&src[..8]).unwrap_or("/dev/sdc");
+            src[5..5 + len].copy_from_slice(&name[..len]);
+            let src = core::str::from_utf8(&src[..5 + len]).unwrap_or("/dev/sdc");
 
             let mounted = libr::mount(src, "/arca").is_ok();
             c.ok("mount /arca", mounted);

@@ -80,6 +80,7 @@ fn spawn_child(name: &[u8]) -> Option<i64> {
 struct SvcMeta {
     bin: &'static [u8],
     path: Option<&'static str>,
+    obj: Option<(&'static [u8], &'static [u8])>,
     prio: u8,
     io: &'static [(u16, u16)],
 }
@@ -148,8 +149,66 @@ fn spawn_file(meta: &SvcMeta) -> Option<i64> {
     }
 }
 
+/// Spawna un servizio da ArcaFS via `obj_get()` (Fase 55, N0).
+fn spawn_object(bucket: &[u8], key: &[u8]) -> Option<alloc::vec::Vec<u8>> {
+    match libr::obj_get(bucket, key) {
+        Ok(v) if !v.is_empty() => Some(v),
+        _ => None,
+    }
+}
+
+/// Spawna un binario da un vettore di byte (Fase 55, N0).
+fn spawn_image_from_vec(img: &[u8], meta: &SvcMeta) -> Option<i64> {
+    if img.len() > 262144 {
+        println!(" -> FAILED (image too large, {}B)", img.len());
+        return None;
+    }
+    let name = match core::str::from_utf8(meta.bin) {
+        Ok(s) => s,
+        Err(_) => return None,
+    };
+    match expected_hash(meta.bin) {
+        Some(expected) => {
+            if libr::image_hash(img) != expected {
+                println!(" -> FAILED (hash mismatch)");
+                return None;
+            }
+        }
+        None => {}
+    };
+    let sm = match libr::SpawnMeta::new(name, meta.prio, meta.io) {
+        Some(m) => m,
+        None => return None,
+    };
+    match libr::spawn_image(img, &sm) {
+        Ok(chan) => {
+            println!("{}B -> child chan={}", img.len(), chan);
+            Some(chan)
+        }
+        Err(_) => {
+            println!(" -> FAILED (spawn_image rifiutato)");
+            None
+        }
+    }
+}
+
 /// Spawna da manifest (embedded o disco) + log unificato.
 fn spawn_entry(meta: &SvcMeta) -> Option<i64> {
+    if let Some((bucket, key)) = meta.obj {
+        print_str!("[init] load obj ");
+        libr::write_raw(key.as_ptr(), key.len());
+        let img = match spawn_object(bucket, key) {
+            Some(v) => v,
+            _ => {
+                println!(" -> oggetto assente, ripiego su FAT");
+                return match meta.path {
+                    None => spawn_child(meta.bin),
+                    Some(_) => spawn_file(meta),
+                };
+            }
+        };
+        return spawn_image_from_vec(&img, meta);
+    }
     match meta.path {
         None => spawn_child(meta.bin),
         Some(_) => spawn_file(meta),
@@ -361,71 +420,65 @@ fn restart_service(e: &mut Supervised) {
 const SVC_CONSOLE: SvcMeta = SvcMeta {
     bin: b"userconsole",
     path: Some("/fat/bin/console.bin"),
+    obj: Some((b"sys", b"bin/userconsole.bin")),
     prio: 16,
     io: VGA_CURSOR_RANGES,
 };
 const SVC_UPTIME: SvcMeta = SvcMeta {
     bin: b"useruptime",
     path: Some("/fat/bin/uptime.bin"),
+    obj: None,
     prio: 1,
     io: &[],
 };
 const SVC_DEVFS: SvcMeta = SvcMeta {
     bin: b"userdevfs",
     path: Some("/fat/bin/devfs.bin"),
+    obj: None,
     prio: 16,
     io: &[],
 };
 const SVC_KBD: SvcMeta = SvcMeta {
     bin: b"userkbd",
     path: Some("/fat/bin/kbd.bin"),
+    obj: None,
     prio: 16,
     io: KBD_PS2_RANGES,
 };
 const SVC_TTY: SvcMeta = SvcMeta {
     bin: b"usertty",
     path: Some("/fat/bin/tty.bin"),
+    obj: None,
     prio: 16,
     io: &[],
 };
-/// Server di personalita' POSIX (Fase 40.3, P1): skeleton supervisionato
-/// (tabelle stub per la Fase 42). Dopo tty: non dipende da nessuno, ma la
-/// supervisione vive con gli altri servizi (stessa tabella, stesso loop).
 const SVC_POSIX: SvcMeta = SvcMeta {
     bin: b"userposix",
     path: Some("/fat/bin/posix.bin"),
+    obj: None,
     prio: 16,
     io: &[],
 };
 const SVC_SHELL: SvcMeta = SvcMeta {
     bin: b"usershell",
     path: Some("/fat/bin/shell.bin"),
+    obj: Some((b"sys", b"bin/usershell.bin")),
     prio: 16,
     io: &[],
 };
-/// Fornitore di data/ora (Fase 50, P1 orologio): subito dopo userfs (serve
-/// /fat per caricarsi; userfs non lo attende — baseline lazy al primo mtime).
-/// Supervisionato come gli altri driver (il baseline sopravvive al restart:
-/// epoch riletta, tick_base nuovo).
 const SVC_TIME: SvcMeta = SvcMeta {
     bin: b"usertime",
     path: Some("/fat/bin/time.bin"),
+    obj: None,
     prio: 16,
     io: TIME_CMOS_RANGES,
 };
-/// Binari di test (Fase 21): `/test` su /fat, caricati solo in suite.
-const TEST_FS: SvcMeta = SvcMeta { bin: b"usertestfs", path: Some("/fat/test/testfs.bin"), prio: 16, io: &[] };
-const TEST_FAT: SvcMeta = SvcMeta { bin: b"usertestfat", path: Some("/fat/test/testfat.bin"), prio: 16, io: &[] };
-/// ArcaFS P5 (Fase 54): BLAKE2s + content_hash + volume. Dopo testfat (serve
-/// solo FS+dischi; il terzo drive e' opt-in via ARCA_IMG=1, il core passa
-/// anche senza). Prima di usertests: la ramfs tocca /sarca.txt solo suo.
-const TEST_ARCA: SvcMeta = SvcMeta { bin: b"usertestsarca", path: Some("/fat/test/testarca.bin"), prio: 16, io: &[] };
-const TESTS: SvcMeta = SvcMeta { bin: b"usertests", path: Some("/fat/test/tests.bin"), prio: 16, io: &[] };
-/// Bench throughput (Fase 23): `/test` su /fat, solo con feature `bench`
-/// (scripts/bench.sh). Ortogonale alla suite: gira anche in produzione
-/// (skip_tests attivo), mai nel gate di regressione.
+const TEST_FS: SvcMeta = SvcMeta { bin: b"usertestfs", path: Some("/fat/test/testfs.bin"), obj: None, prio: 16, io: &[] };
+const TEST_FAT: SvcMeta = SvcMeta { bin: b"usertestfat", path: Some("/fat/test/testfat.bin"), obj: None, prio: 16, io: &[] };
+const TEST_ARCA: SvcMeta = SvcMeta { bin: b"usertestsarca", path: Some("/fat/test/testarca.bin"), obj: None, prio: 16, io: &[] };
+const TESTS: SvcMeta = SvcMeta { bin: b"usertests", path: Some("/fat/test/tests.bin"), obj: None, prio: 16, io: &[] };
 #[cfg(feature = "bench")]
-const TEST_BENCH: SvcMeta = SvcMeta { bin: b"userbench", path: Some("/fat/test/bench.bin"), prio: 16, io: &[] };
+const TEST_BENCH: SvcMeta = SvcMeta { bin: b"userbench", path: Some("/fat/test/bench.bin"), obj: None, prio: 16, io: &[] };
 
 /// Spawna dal manifest e attende SVC_READY se richiesto. A boot il fallimento
 /// e' FAIL LOUD (panic via exit: senza servizi il sistema e' inutilizzabile e
@@ -522,8 +575,8 @@ fn real_main(_sp: u64) -> ! {
     //
     // Disk/fs embedded: manifest inline (path=None) con gli stessi nomi: il
     // restart riusa `spawn_child` come a boot.
-    const META_DISK: SvcMeta = SvcMeta { bin: b"userdisk", path: None, prio: 16, io: &[] };
-    const META_FS: SvcMeta = SvcMeta { bin: b"userfs", path: None, prio: 16, io: &[] };
+    const META_DISK: SvcMeta = SvcMeta { bin: b"userdisk", path: None, obj: None, prio: 16, io: &[] };
+    const META_FS: SvcMeta = SvcMeta { bin: b"userfs", path: None, obj: None, prio: 16, io: &[] };
     let mut supervised = [
         Supervised { meta: &SVC_CONSOLE, svc: libr::Service::Console, chan: -1, pid: -1, restarts: 0, window_start: 0, held: false },
         Supervised { meta: &META_DISK, svc: libr::Service::Disk, chan: -1, pid: -1, restarts: 0, window_start: 0, held: false },

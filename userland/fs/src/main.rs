@@ -53,8 +53,8 @@ mod dup;
 
 // Geometria ring + errori IPC (A1): single source in `libr`.
 use libr::{
-    ERR, ERR_NOHANDSHAKE, RING_DATA_CAP, RING_HEAD, RING_TAIL, ring_available,
-    ring_positions,
+    ERR, ERR_NOHANDSHAKE, RING_DATA_CAP, RING_HEAD, RING_TAIL, RING_MAX_PAYLOAD,
+    ring_available, ring_positions,
 };
 
 // ── Tag delle operazioni (nei frame del ring) ─────────────────────
@@ -64,6 +64,7 @@ use libr::{
     R_CLOSE, R_DELETE, R_MKDIR, R_MOUNT, R_OPEN, R_READ, R_READDIR, R_REGISTER, R_UMOUNT,
     R_WRITE, R_RIGHTS_DROP, R_RIGHTS_GET, R_STAT, R_LSEEK, R_DUP_GRANT, R_DUP_CLAIM,
     R_DUP_CANCEL, R_PIPE_CREATE, R_DISK_LIST, R_DISK_INFO, R_SYNC, R_STATVFS, R_GET_HASH,
+    R_OBJ_PUT, R_OBJ_GET,
 };
 // Sentinelle di errore FS (Fase 40): i rifiuti tipizzati viaggiano qui invece
 // del generico ERR; il client li mappa in `posix::Error`. Fase 42: ERR_EMPTY

@@ -408,6 +408,172 @@ Caricare i servizi da ArcaFS e' quindi quasi tutto userspace.
   boot; un servizio con hash manomesso viene rifiutato.
 - **Dipendenze**: A1 (format/mount/GET); il rollback vero arriva con A2.
 
+## 16. Decisioni Fase 55 (A1+N0)
+
+### 16.1 Parte 1 — Tag `R_OBJ_PUT`/`R_OBJ_GET` e chunking
+
+- **Tag separati** (non unificato): `R_OBJ_PUT = 0x26`, `R_OBJ_GET = 0x27`.
+  Numeri consecutivi a `R_GET_HASH = 0x25`. Single source in `syscall-numbers`.
+- **Formato request GET**: `[tag:4][bucket_len:8][key_len:8][offset:8][count:8][payload]` dove il
+  payload e' `[bucket]\0[key]\0` (null-terminated). Stateless: `offset` = byte
+  di partenza nel blob, `count` = quanti byte si vogliono (max 4000).
+- **Formato request PUT**: `[tag:4][bucket_len:8][key_len:8][size:8][payload]` dove
+  il payload e' `[bucket]\0[key]\0[blob_data...]`. Blob opzionale (PUT vuoto =
+  crea versione con 0 byte, solo per `touch`, non per `spawn_file`).
+- **Formato response GET**: `[result:8][w1:8][blob_data...]` — `result` = size
+  del blob o sentinella ERR_*, `w1` = 0, payload = dati.
+- **Chunking esistente**: stesso schema di `read_fs`/`write_fs` (Fase 10.2).
+  GET stateless: chunk da `RING_MAX_PAYLOAD = 4000B`, client fa loop con
+  `offset += n` fino a raggiungere size totale (`result` del primo frame).
+  PUT > 4000B → chunking multipli, ogni chunk = frame + `FS_NOTIFY` separata
+  (come `write_fs`). PUT vuoto ha senso solo per `touch` (crea versione con
+  0 byte), non per `spawn_file()` (un binario vuoto non si spawna).
+- **Backend A1**: ramfs-like in-memory per bucket `sys` (hash map
+  `bucket:key → blob`). Sufficiente per N0: init carica servizi da `sys`.
+  Non implementa l'indice B+tree (T2) — quello arriva con A2.
+- **Libr wrapper**: `obj_put(bucket, key, data) -> Result<u64, Error>` (ritorna
+  size scritta), `obj_get(bucket, key, dst, max_count) -> Result<usize, Error>`.
+
+### 16.2 Parte 2 — Parser GPT completo
+
+- **PartLoc → enum**: `PartLoc::Mbr { start: u32, sectors: u32 }` (invariato) +
+  `PartLoc::Gpt { start: u64, sectors: u64 }` (LBA48 come richiesto).
+- **Guard protective-MBR**: LBA0 byte 446 = `0xEE` → segnale GPT. Se presente,
+  non chiamare mai `sniff_identity()` sul settore 0 (e' superblock ArcaFS o
+  spazzatura, non BPB FAT).
+- **GPT header a LBA1**: magic `EFI-part` (8B), versione, CRC32 (saltato per
+  A1), current LBA, backup LBA (ignorato per A1), first usable LBA, last usable
+  LBA, partition entries array offset, numero entry, size entry. Backup GPT
+  header a fine disco ignorato per A1 (solo diagnostica futura).
+- **128 entry**: full standard GPT, ogni entry 128B. Type GUID (16B), unique
+  GUID (16B, ignorato), first LBA (u64), last LBA (u64), flags (ignorati per
+  A1). Calcolo: `sectors = last - first + 1`.
+- **Type GUID ArcaFS**: costante commentata placeholder in `part.rs` — non
+  testiamo il match su disco in A1. Da registrare con UUID alias prima del
+  rilascio.
+- **Nomi partizioni GPT**: stesso namespace MBR (`sdXn`: `sda1`, `sda2`...).
+  La logica di resolve in `nodes.rs` e' identica (per nome).
+- **Integrazione server.rs**: dopo il whole-disk node, chiama
+  `part::parse_mbr_or_gpt()` che: (1) legge LBA0, (2) se byte 446 == `0xEE` →
+  `parse_gpt()`, (3) altrimenti → `parse_mbr()` (comportamento attuale).
+- **locate() in nodes.rs**: estendere a gestire `PartLoc::Gpt { start, sectors }`
+  dove i campi sono `u64` (LBA48). I calcoli di base/sectore restano gli stessi.
+
+### 16.3 Parte 3 — N0: init dual-mode per `object_id`
+
+**Modifica SvcMeta (`init/src/main.rs`):**
+- Aggiungere campo opzionale `obj: Option<(&'static [u8], &'static [u8])>` dove
+  il primo elemento e' il bucket (max 16B), il secondo la chiave (max 255B).
+- Campo `path: Option<&'static str>` rimane per i servizi FAT legacy.
+- Zero ambiguità: se `obj.is_some()` → nativo ArcaFS, `path` ignorato;
+  altrimenti → FAT (comportamento attuale).
+
+**Esempio di dichiarazione servizio:**
+```rust
+const SVC_USERCONSOLE: SvcMeta = SvcMeta {
+    bin: b"userconsole",
+    path: Some("/fat/bin/console.bin"), // legacy fallback
+    obj: Some((b"sys", b"bin/userconsole.bin")), // nativo ArcaFS
+    prio: 16,
+    io: VGA_CURSOR_RANGES,
+};
+```
+
+**Funzione `spawn_object()` (nuova):**
+- Chiamata da `spawn_entry()` quando `meta.obj.is_some()`.
+- Costruisce request frame `[R_OBJ_GET, bucket_len, key_len, offset=0, count=4000, payload]` dove
+  payload = `bucket\0key\0` (null-terminated).
+- Invia tramite `req_ring_write(FS_NOTIFY, ...)` + IPC al server ArcaFS.
+- Legge response frame: `[size:8][w1:8][blob...]`. Se size > RING_MAX_PAYLOAD,
+  loop chunked come `read_fs` (Fase 10.2): ogni chunk = round-trip con offset
+  incrementale (`offset += n`, `count = min(4000, size - offset)`).
+- Accumula i blob in un `Vec<u8>` (bound 256 KiB per A1: `SPAWN_IMAGE_MAX`).
+- Ritorna `Some(Vec)` o `None` a errore. PUT vuoto non usato da init (solo
+  `touch` futuro).
+
+**Funzione `spawn_entry()` modificata:**
+```rust
+fn spawn_entry(meta: &SvcMeta) -> Option<i64> {
+    match meta.obj {
+        Some((bucket, key)) => {
+            // 1. Prova ArcaFS nativo
+            let img = match libr::obj_get(bucket, key) {
+                Ok(v) if !v.is_empty() => v,
+                _ => None, // fallimento → fallback FAT
+            };
+            if let Some(img) = img {
+                return spawn_image_from_vec(&img, meta);
+            }
+            println!("[init] obj_get fallito, ripiega su FAT");
+        }
+        None => {}
+    }
+    match meta.path {
+        None => spawn_child(meta.bin), // embedded (disk/fs)
+        Some(_) => spawn_file(meta),   // FAT legacy
+    }
+}
+```
+
+**Verifica hash (`spawn_image_from_vec`):**
+- Stesso pattern di `spawn_file()` attuale: controlla se `expected_hash(meta.bin)`
+  ritorna Some, re-hash dei byte caricati con `libr::image_hash()`.
+- Se mismatch → None (a boot = panic come prima; in restart = retry con hold).
+- **Estensione BLAKE2s** (sessione dedicata): confronto con `sys.content_hash`
+  dal manifest generato a build-time. L'hash BLAKE2s-256 viene calcolato su
+  ogni oggetto al put (`arca put`) e memorizzato in xattr `sys.content_hash`.
+
+**Libr wrapper `obj_get()`:**
+```rust
+pub fn obj_get(bucket: &[u8], key: &[u8]) -> Result<Vec<u8>, Error> {
+    // Costruisce request frame, invia FS_NOTIFY, legge response ring
+    // Chunking automatico se size > RING_MAX_PAYLOAD (loop come read_fs)
+}
+```
+
+**Validazione N0:**
+- Boot completo con tutti i servizi da `sys` e gate 5/5+7/7+57/57 verde.
+- Fallback FAT provato: ogni servizio ha il ramo FAT di riserva.
+- Nessuna regressione sul tempo di boot (ArcaFS in-memory, zero latency extra).
+- Un servizio con hash manomesso viene rifiutato (test: init non lo spawna).
+
+### 16.4 Parte 4 — Mount ArcaFS in partizione
+
+**Superblock partition-relative:**
+- LBA0 = primo settore del nodo (whole-disk o partizione GPT).
+- LBA1 = shadow superblock (`LBA0 + 1`). Non collide con header GPT a LBA
+  fisica 1 perché il nodo e' **partition-relative**: `base=0` punta all'inizio
+  della partizione, non al disco fisico.
+- Superblock identico a whole-disk (§3), ma tutti gli offset sono relativi al
+  start della partizione.
+
+**Negotiate (`mount.rs::negotiate()`):**
+- Estensione del flow esistente (Fase 54): dopo `probe_arca(handle)` che legge
+  LBA0 del nodo, match su `magic="ACFS"` → mount come `ArcaFs`.
+- Per partizioni GPT: il nodo e' `sdXn` (es. `sda1`) con `PartLoc::Gpt { start,
+  sectors }`. userdisk lo esporta come handle IPC; userfs risolve per nome
+  (`DISK_RESOLVE` → handle) e legge LBA0 relativo.
+- Order: ArcaFS prima di vfat (come gia' fatto per whole-disk). Il superblock
+  ArcaFS ha magic + checksum che non collidono con BPB FAT.
+
+**arca create:**
+- Opzione `--in-partition <start_lba> <sectors>` (sostituisce `--whole-disk`):
+  scrive superblock a LBA0 relativo (start della partizione) + shadow a LBA1.
+- **Riconoscimento automatico**: se il nome dispositivo inizia con `sd[a-z][1-9]`
+  (partizione) invece di `sd[a-z]` (whole-disk), arca create imposta automaticamente
+  l'offset partition-relative senza bisogno di parametri appositi.
+- Inizializza il transient set B+tree (Fase A1: solo hash map in-memory per
+  `sys`, ma il disco e' pronto per l'estensione futura).
+- **NON** inizializza GPT: se il disco non ha una tabella partizioni, arca create
+  fallisce loud. La creazione del partition table e' un'operazione separata
+  (strumento dedicato o script di provisioning).
+
+**Integrazione con userdisk:**
+- userdisk esporta nodi partizione GPT come `sdXn` (stesso namespace MBR).
+- `DISK_INFO` per ogni nodo: tipo (`whole_disk`/`partition`), start LBA, sectors.
+- Negotiate prova ArcaFS su ogni nodo; se superblock valido → mount, altrimenti
+  tenta vfat.
+
 ## 14. Punti aperti (stima, non vincoli)
 
 S1/S2 e extent minimo esatti (su dati P2, non a stima); dimensione esatta

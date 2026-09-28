@@ -7,6 +7,10 @@
 # si compila da una directory neutra con `--manifest-path`: il tool prende la
 # std del toolchain, i crate bare-metal restano col loro config.
 #
+# Nota: --manifest-path fa usare a Cargo target dir relativa al manifest, non
+# alla CWD. Il binario finisce in $ROOT/tools/arca/target/release/ (non in
+# ${TMPDIR}/target).
+#
 # Uso: scripts/arca-tool.sh [out_img]   (default userland/disk/arca.img)
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"

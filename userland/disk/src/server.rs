@@ -163,7 +163,7 @@ fn real_main(_sp: u64) -> ! {
     // puro (data-plane intatto: il routing sotto tenta DMA solo se `Some`).
     let mut dma_eng = dma::DmaEngine::init(bmiba, &dma_modes);
 
-    // 2. Nodi: whole-disk + partizioni MBR primarie (graceful se assenti).
+    // 2. Nodi: whole-disk + partizioni (MBR/GPT, Fase 16 + Fase 55).
     // Handle = disco<<16|sub, allocato QUI (Fase 16c): la tabella `nodes' e'
     // la single source of truth nome→handle; userfs lo chiede con DISK_RESOLVE.
     let mut nodes: Vec<nodes::Node> = Vec::new();
@@ -183,27 +183,49 @@ fn real_main(_sp: u64) -> ! {
         let mut disk_parts: Vec<nodes::PartLoc> = Vec::new();
         let mut sec0 = [0u8; 512];
         if disk.read_sector(0, &mut sec0) {
-            let mut parsed = Vec::new();
-            part::parse_mbr(&sec0, &mut parsed);
-            for (p, part) in parsed.iter().enumerate() {
-                println!(
-                    "[userdisk] sd{}{}: tipo {:#04x}, start {}, settori {}",
-                    letter,
-                    p + 1,
-                    part.ptype,
-                    part.start,
-                    part.sectors
-                );
-                // Identità della partizione dal suo boot sector (Fase 16d:
-                // un settore in più per partizione, solo a boot).
-                let (pu, pl) = nodes::sniff_identity(disk, part.start as u64);
-                nodes.push(nodes::Node {
-                    name: alloc::format!("sd{}{}", letter, p + 1),
-                    handle: ((i as u32) << 16) | (p as u32 + 1),
-                    vol_uuid: pu,
-                    vol_label: pl,
-                });
-                disk_parts.push(nodes::PartLoc { start: part.start, sectors: part.sectors });
+            match part::parse_partitions(disk, &sec0) {
+                part::PartitionResult::Mbr(parsed) => {
+                    for (p, part) in parsed.iter().enumerate() {
+                        println!(
+                            "[userdisk] sd{}{}: tipo MBR {:#04x}, start {}, settori {}",
+                            letter,
+                            p + 1,
+                            part.ptype,
+                            part.start,
+                            part.sectors
+                        );
+                        // Identità della partizione dal suo boot sector (Fase 16d:
+                        // un settore in più per partizione, solo a boot).
+                        let (pu, pl) = nodes::sniff_identity(disk, part.start as u64);
+                        nodes.push(nodes::Node {
+                            name: alloc::format!("sd{}{}", letter, p + 1),
+                            handle: ((i as u32) << 16) | (p as u32 + 1),
+                            vol_uuid: pu,
+                            vol_label: pl,
+                        });
+                        disk_parts.push(nodes::PartLoc { start: part.start as u64, sectors: part.sectors as u64 });
+                    }
+                }
+                part::PartitionResult::Gpt(parsed) => {
+                    for (p, part) in parsed.iter().enumerate() {
+                        println!(
+                            "[userdisk] sd{}{}: GPT start {}, settori {}",
+                            letter,
+                            p + 1,
+                            part.start,
+                            part.sectors
+                        );
+                        // Identità della partizione dal suo boot sector (Fase 16d).
+                        let (pu, pl) = nodes::sniff_identity(disk, part.start);
+                        nodes.push(nodes::Node {
+                            name: alloc::format!("sd{}{}", letter, p + 1),
+                            handle: ((i as u32) << 16) | (p as u32 + 1),
+                            vol_uuid: pu,
+                            vol_label: pl,
+                        });
+                        disk_parts.push(nodes::PartLoc { start: part.start, sectors: part.sectors });
+                    }
+                }
             }
         }
         parts.push(disk_parts);

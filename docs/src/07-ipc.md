@@ -313,7 +313,7 @@ nei test).
 | `FS_REGISTER` | 0x30 | handshake registrazione driver presso userfs |
 | `FS_BUF_REG` | 0x31 | handshake ring client presso userfs |
 | `FS_NOTIFY` | 0x32 | notifica operazione FS nel request ring |
-| `R_*` | 0x10-0x25 | op FS nei frame (`OPEN/READ/WRITE/CLOSE/READDIR/MKDIR/MOUNT/UMOUNT/DELETE/STAT/RIGHTS_*`, `LSEEK/DUP_*/PIPE_CREATE`, `DISK_LIST/INFO` Fase 51, `SYNC/STATVFS` Fase 52, `GET_HASH` Fase 54) |
+| `R_*` | 0x10-0x27 | op FS nei frame (`OPEN/READ/WRITE/CLOSE/READDIR/MKDIR/MOUNT/UMOUNT/DELETE/STAT/RIGHTS_*`, `LSEEK/DUP_*/PIPE_CREATE`, `DISK_LIST/INFO` Fase 51, `SYNC/STATVFS` Fase 52, `GET_HASH` Fase 54, `OBJ_PUT/OBJ_GET` Fase 55: object store nativo ArcaFS) |
 | `DISK_*` | 0x50-0x58 | data-plane userfs↔userdisk (`HELLO/OPEN/READ/CLOSE/RESOLVE/WRITE`, `LIST/INFO` Fase 51: topologia dischi, `FLUSH` Fase 52: barriera write-cache) |
 | `TIME_NOW` | 0x60 | data/ora (client→usertime: reply `w0` = sec epoch, `w1` = centesimi, Fase 50) |
 | `DEV_*` | 0x20-0x24 | op userfs↔driver (`OPEN/READ/WRITE/CLOSE/READDIR`; DocsD: prima duplicati in 6 file) |

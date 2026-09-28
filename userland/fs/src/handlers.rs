@@ -1011,3 +1011,114 @@ pub fn handle_lseek(
     ftable.set_offset(chan, fd, new as usize);
     Ok(new as u64)
 }
+
+// ── Object store nativo ArcaFS (Fase 55, A1) ────────────────────────
+
+/// Handler R_OBJ_PUT: inserisce/aggiorna un oggetto in ArcaFs.
+/// Handler R_OBJ_PUT: scrive/estende un oggetto in ArcaFs (chunk a `offset`).
+/// Ritorna i byte accettati.
+pub fn handle_obj_put(
+    arca: &mut crate::arca::ArcaFs,
+    payload: &[u8],
+    offset: usize,
+) -> Result<u64, u64> {
+    // Parse payload: [bucket_len:1][bucket]\0[key_len:1][key]\0[data...]
+    let mut cursor = 0usize;
+
+    // Leggi bucket_len (1 byte)
+    let bucket_len = *payload.get(cursor).ok_or(ERR_INVALID)? as usize;
+    cursor += 1;
+
+    // Leggi bucket
+    let bucket = payload.get(cursor..cursor + bucket_len).ok_or(ERR_INVALID)?;
+    cursor += bucket_len;
+
+    // Verifica separator \0
+    if *payload.get(cursor).ok_or(ERR_INVALID)? != 0 {
+        return Err(ERR_INVALID);
+    }
+    cursor += 1;
+
+    // Leggi key_len (1 byte)
+    let key_len = *payload.get(cursor).ok_or(ERR_INVALID)? as usize;
+    cursor += 1;
+
+    // Leggi key
+    let key = payload.get(cursor..cursor + key_len).ok_or(ERR_INVALID)?;
+    cursor += key_len;
+
+    // Verifica separator \0
+    if *payload.get(cursor).ok_or(ERR_INVALID)? != 0 {
+        return Err(ERR_INVALID);
+    }
+    cursor += 1;
+
+    // Leggi data (da cursor fino alla fine)
+    let data = payload.get(cursor..).ok_or(ERR_INVALID)?;
+
+    // Scrive il chunk (offset 0 = nuova versione, >0 = append/patch).
+    let n = arca.put_chunk(bucket, key, offset, data) as u64;
+    Ok(n)
+}
+
+/// Handler R_OBJ_GET: legge un oggetto da ArcaFs (stateless, chunking).
+/// Scrive SEMPRE il response frame (dati a successo, `ERR_*` a errore): cosi'
+/// il client non lascia mai un frame stale nel response ring (desync).
+pub fn handle_obj_get(
+    arca: &crate::arca::ArcaFs,
+    payload: &[u8],
+    offset: usize,
+    count: usize,
+) -> Result<u64, u64> {
+    let result = obj_get_inner(arca, payload, offset, count);
+    match result {
+        Ok((blob_len, data)) => {
+            rings::resp_ring_write(blob_len as u64, 0, data);
+            Ok(blob_len as u64)
+        }
+        Err(e) => {
+            rings::resp_ring_write(e, 0, &[]);
+            Err(e)
+        }
+    }
+}
+
+/// Parsing + lookup: `Ok((blob_len, chunk))` o `Err(sentinella)`.
+fn obj_get_inner<'a>(
+    arca: &'a crate::arca::ArcaFs,
+    payload: &[u8],
+    offset: usize,
+    count: usize,
+) -> Result<(usize, &'a [u8]), u64> {
+    // Parse payload: [bucket_len:1][bucket]\0[key_len:1][key]\0
+    let mut cursor = 0usize;
+
+    let bucket_len = *payload.get(cursor).ok_or(ERR_INVALID)? as usize;
+    cursor += 1;
+
+    let bucket = payload.get(cursor..cursor + bucket_len).ok_or(ERR_INVALID)?;
+    cursor += bucket_len;
+
+    if *payload.get(cursor).ok_or(ERR_INVALID)? != 0 {
+        return Err(ERR_INVALID);
+    }
+    cursor += 1;
+
+    let key_len = *payload.get(cursor).ok_or(ERR_INVALID)? as usize;
+    cursor += 1;
+
+    let key = payload.get(cursor..cursor + key_len).ok_or(ERR_INVALID)?;
+    cursor += key_len;
+
+    if *payload.get(cursor).ok_or(ERR_INVALID)? != 0 {
+        return Err(ERR_INVALID);
+    }
+
+    let blob = arca.get(bucket, key).ok_or(ERR_NOTFOUND)?;
+    let blob_len = blob.len();
+    if offset >= blob_len {
+        return Ok((blob_len, &[])); // EOF
+    }
+    let to_read = (blob_len - offset).min(count);
+    Ok((blob_len, &blob[offset..offset + to_read]))
+}

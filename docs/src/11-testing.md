@@ -17,7 +17,7 @@ libs/libr   libreria di sistema condivisa (runtime + allocatore)
 testland/   test suite + repro + demo storiche
   testfs        usertestfs   — ramfs (read/write/mkdir/errori)   → PASS 5/5
   testfat       usertestfat  — FAT32 scrivibile (Fase 20) + /dev/null, /dev/zero → PASS 7/7
-  testsarca     usertestsarca — ArcaFS P5 (BLAKE2s + content_hash + volume) → PASS 8/8
+  testsarca     usertestsarca — ArcaFS P5+A1 (BLAKE2s + content_hash + volume + object store) → PASS 11/11
   usertests     usertests    — suite completa (57 test)          → PASS 57/57
   usertest-client usertestcli  — helper a modalita' (ECHO/ZEROREAD/NULLW/SRV/CHURN/KILLME/SRVDIE/SYNCWAIT/MNTDIE/OPENDIE/MAPHAMMER/FLOOD/NEST/FAULT_*/SHMDEMO/COWDEMO/FORKDEMO/ORPHAN/HARDEN/REG51/EXECDEMO/DUPCLAIM/DUPGRANT/DUPSIBCLAIM/SEEKDENY/SUSPENDENY/SIGCATCH/GRANTDENY)
   usertest-spin  usertestspin  — busy-loop a budget di tick (batch 512 spin puri, priorita' via SpawnMeta) + ramo SQUAT (sonda di squat FS_REGISTER, t51)
@@ -45,15 +45,15 @@ da ciascuno prima dello spawn successivo: i binari condividono la ramfs di
 userfs (path e file di lavoro) e la sequenza rende output e PID deterministici
 (con i ring SPSC per-processo, Fase 10.2, nessuna race da buffer condivisi).
 La shell e' spawnata per ultima. `run-tests.sh` esporta `ARCA_IMG=1`: il gate
-ha il terzo drive ArcaFS, quindi `testsarca` gira 8/8 (senza drive il core
-3/3 resta PASS, n/n adattivo).
+ha il terzo drive ArcaFS, quindi `testsarca` gira 11/11 (senza drive il core
+resta PASS, n/n adattivo).
 
 Righe di gate:
 
 ```
 [testfs] PASS 5/5
 [testfat] PASS 7/7
-[testsarca] PASS 8/8
+[testsarca] PASS 11/11
 [usertests] PASS 57/57
 ```
 

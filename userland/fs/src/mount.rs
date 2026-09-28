@@ -37,6 +37,14 @@ fn probe_arca(handle: u32) -> Option<(u64, u64)> {
     Some((u64le(libr::ARCA_OFF_GEN), u64le(libr::ARCA_OFF_UUID)))
 }
 
+/// Rileva se un nome nodo e' una partizione (Fase 55, Parte 4): termina con
+/// una cifra (`sda1`, `nvme0n1p2`). Per le partizioni l'offset LBA reale e'
+/// nel GPT/MBR; per A1 lo si calcolera' leggendo la tabella. Qui serve solo il
+/// rilevamento: 0 = whole-disk, >0 = partizione (placeholder).
+fn is_partition(key: &str) -> bool {
+    key.as_bytes().last().map_or(false, |b| b.is_ascii_digit())
+}
+
 // ── Mount locali dinamici (Fase 16b) ─────────────────────────────────
 // Tabella VFS userspace (nessun kernel coinvolto, ADR-0005): binding
 // target → filesystem montato. La radice resta sempre ramfs. Il contenitore
@@ -71,12 +79,15 @@ pub fn negotiate(source: &Source) -> Option<(&'static str, MountedFs)> {
                 return None;
             }
             let handle = IpcDisk::new(0).resolve(key)?;
+            // Fase 55, Parte 4: rileva se e' una partizione (nome termina con cifra)
+            // e passa l'offset a ArcaFs. Per ora offset=0 (A1 calcolera' il valore reale).
+            let partition_offset = if is_partition(key) { 0 } else { 0 };
             // ArcaFS prima (Fase 54, P5): match piu' stretto (magic +
             // versione + block-size + checksum: un BPB FAT non puo'
             // collidere). Istanza stub (volume riconosciuto, non leggibile
             // fino ad A1) — il mount riesce, le op rifiutano tipizzate.
             if let Some((generation, uuid)) = probe_arca(handle) {
-                return Some(("arcafs", MountedFs::Arca(crate::arca::ArcaFs::stub(generation, uuid))));
+                return Some(("arcafs", MountedFs::Arca(crate::arca::ArcaFs::stub(generation, uuid, partition_offset))));
             }
             Some(("vfat", MountedFs::Fat(Fat32::mount(IpcDisk::new(handle)))))
         }
@@ -110,7 +121,12 @@ pub struct FsMount {
 /// lettere `sdX`. Dinamici (R_MOUNT, 16b.2) si aggiungono alla tabella ma si
 /// perdono al restart (stato runtime, come fd e handshake: i client
 /// ristabiliscono).
-pub const STATIC_MOUNTS: &[(&str, &str)] = &[("UUID=4F4C4556", "fat")];
+/// Fase 55, Parte 4: aggiunge mount automatico di partizioni ArcaFS su
+/// `/dev/sda1` (negotiate() prova magic ACFS, ripiega su vfat se assente).
+pub const STATIC_MOUNTS: &[(&str, &str)] = &[
+    ("UUID=4F4C4556", "fat"),
+    ("/dev/sda1", "arca"),
+];
 
 /// Normalizza un target ("//mnt//" → "mnt"). Rifiuta root, vuoti, `.`/`..`.
 pub fn normalize_target(target: &str) -> Option<String> {
@@ -445,4 +461,29 @@ pub fn resolve_fsmount<'a>(mounts: &mut Vec<FsMount>, path: &'a str, fgen: &mut 
 #[inline]
 pub fn to_reply_res(val: Result<u64, u64>) -> u64 {
     val.unwrap_or_else(|e| e)
+}
+
+// ── Test unitari (Parte 4) ───────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::is_partition;
+
+    #[test]
+    fn test_is_partition() {
+        // Whole-disk: termina con lettera
+        assert!(!is_partition("sda"));
+        assert!(!is_partition("sdb"));
+        assert!(!is_partition("nvme0n1"));
+
+        // Partizione MBR/GPT: termina con cifra
+        assert!(is_partition("sda1"));
+        assert!(is_partition("sda2"));
+        assert!(is_partition("nvme0n1p1"));
+        assert!(is_partition("nvme0n1p2"));
+
+        // Casi edge
+        assert!(!is_partition(""));
+        assert!(!is_partition("sd")); // troppo corto, nessuna cifra finale
+    }
 }

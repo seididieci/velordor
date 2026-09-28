@@ -98,6 +98,9 @@ Voci con scope e vittoria dichiarati (non date).
       `PartLoc` a u64, type GUID dedicato da registrare), `negotiate()`
       prova `ACFS` prima di `vfat`, `arca create --whole-disk`/
       `--in-partition` (+ `--init-gpt`); dischi dati restano whole-disk.
+      **In corso**: Passo 1 (tag + backend in-memory + libr wrapper) e
+      Passo 2 (init dual-mode + parser GPT) fatti; testsarca 11/11. Restano:
+      popolamento `sys`, mount in partizione, hash BLAKE2s in `init`.
       Vittoria: boot con servizi da `sys` (whole-disk e GPT in-partizione),
       fallback FAT provato, gate verde.
 - [ ] **56 (A2)** (dopo 55): COW + snapshot/clone + GC (+ packing, + `R_OBJ_MGET`

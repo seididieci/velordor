@@ -1,4 +1,5 @@
 use super::*;
+pub(crate) use crate::part::PartLoc;
 
 /// Lunghezza massima del nome nodo in un frame di resolve ("sda1" = 4;
 /// bound difensivo: oltre e' spazzatura di un'epoca morta).
@@ -6,9 +7,7 @@ pub(crate) const DISK_MAX_NAME: usize = 16;
 
 // ── Nodi ────────────────────────────────────────────────────────────
 
-/// Nodo esposto: whole-disk o partizione MBR (Fase 16c: la tabella e' la
-/// single source of truth della mappa nome→handle; userfs risolve via
-/// DISK_RESOLVE invece di ricalcolare l'handle dal nome).
+/// Nodo esposto: whole-disk o partizione (MBR/GPT, Fase 16 + Fase 55).
 pub(crate) struct Node {
     /// Nome breve ("sda", "sda1"): prefix registrato = "/dev/" + nome.
     pub(crate) name: String,
@@ -69,12 +68,6 @@ pub(crate) fn resolve_node<'a>(nodes: &'a [Node], key: &str) -> Option<&'a Node>
     nodes.iter().find(|n| n.vol_label.as_deref() == Some(key))
 }
 
-/// Partizione MBR (coordinate fisiche, dal parse del settore 0).
-pub(crate) struct PartLoc {
-    pub(crate) start: u32,
-    pub(crate) sectors: u32,
-}
-
 /// Risolve un handle codificato (disco<<16|sub, 0 = whole-disk) in
 /// (indice disco, base settori, settori nodo). La validita' (quante
 /// partizioni ha davvero il disco) e' qui. Ritorna None se inesistente.
@@ -88,7 +81,7 @@ pub(crate) fn locate(handle: u32, disk_sectors: &[u64], parts: &[Vec<PartLoc>]) 
         return Some((disk, 0, disk_sectors[disk]));
     }
     let p = parts[disk].get(sub - 1)?;
-    Some((disk, p.start as u64, p.sectors as u64))
+    Some((disk, p.start, p.sectors))
 }
 
 /// Legge il settore `lba` del nodo `handle` (bound check sul nodo).

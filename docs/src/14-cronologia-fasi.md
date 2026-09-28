@@ -1690,3 +1690,35 @@
          `off`; (2) un edit a `syscall-numbers` aveva rimosso le const
          `R_SYNC`/`R_STATVFS` (reintrodotte). Gate: 5/5 + 7/7 + 8/8 + 57/57,
          zero FAIL/PANIC/FAULT; boot produzione (due drive, ARCA_IMG=0) pulito.
+   - [ ] Fase 55 (A1+N0, in corso: Passo 1+2 fatti, Parte 4 rimandata).
+         Passo 1 — object store nativo: tag `R_OBJ_PUT` 0x26 / `R_OBJ_GET`
+         0x27; backend in-memory `ArcaFs` in userfs (BTreeMap flat
+         `[len]bucket\0[len]key` → blob) + handler PUT (con offset per il
+         chunking) / GET (stateless, result = size totale, payload = chunk);
+         wrapper `libr::obj_get/obj_put` con chunking automatico
+         (`RING_MAX_PAYLOAD`). Passo 2 — `init` dual-mode: `SvcMeta.obj:
+         Option<(bucket,key)>`; `spawn_entry` prova ArcaFS e ripiega su FAT
+         (fallback loggato, senza la parola FAIL: il gate anti-rot cerca
+         FAIL/PANIC). Parser GPT in userdisk (`parse_gpt`/`parse_partitions`,
+         guard protective-MBR `0xEE`, `PartLoc` a u64 LBA48; MBR invariato).
+         `testsarca` esteso (round-trip piccolo, chunking 10000B, chiave
+         assente → errore): nuovo gate `[testsarca] PASS 11/11`.
+         Bug trovati e fissati (lezione sui ring): (1) `R_OBJ_GET` dichiarava
+         expect = 0 nel frame ma scriveva il payload bucket/key → il server
+         consumava 20 byte su 20+payload e disallineava il request ring (il
+         successivo `open` FAT falliva con "file illeggibile", preceduto da
+         `resync request ring`); l'expect ora e' la lunghezza payload in w0.
+         (2) `resp_ring_read` NON avanza la tail: l'errore GET ritornava
+         senza consumare il frame ERR da 16 B, che restava nel response ring
+         e veniva letto dalla `open` successiva (desync); ora il frame errore
+         viene consumato. (3) `handle_obj_get` scriveva la response ma il
+         server ne scriveva una seconda (R_OBJ_GET non era nella lista
+         "handler che scrivono gia' il frame"): doppio frame; ora
+         `handle_obj_get` scrive SEMPRE (dati o ERR) e il server salta.
+         (4) PUT usava w0 = data-len come expect ma il payload includeva il
+         prefisso bucket/key: sotto-consumo; ora w0 = payload-len e w1 =
+         offset, `ArcaFs::put_chunk` scrive a offset (offset 0 = nuova
+         versione). Rimandato a una fase successiva: mount ArcaFS in
+         partizione (Parte 4), popolamento del bucket `sys` per il vero boot
+         nativo, hash BLAKE2s in `init`. Gate: 5/5 + 7/7 + 11/11 + 57/57,
+         zero FAIL/PANIC/FAULT.

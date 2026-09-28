@@ -8,7 +8,7 @@
 #   [testfs] PASS 5/5
 #   [testfat] PASS 7/7
 #   [usertests] PASS 57/57
-#   [testsarca] PASS 8/8
+#   [testsarca] PASS 11/11
 set -euo pipefail
 cd "$(dirname "$0")"
 # Diagnostica scheduler/IRQ attiva nei run di test (feature `sched_debug`).

@@ -106,7 +106,7 @@ senza copie ne' race, ogni processo ha una coppia di **ring SPSC** dedicati.
 
 > I "Checkpoint" sotto sono i risultati **all'epoca** di ciascuna sotto-fase
 > (non il gate corrente). Gate corrente: `[testfs] PASS 5/5` + `[testfat] PASS
-> 7/7` + `[testsarca] PASS 8/8` + `[usertests] PASS 57/57` + shell, zero
+> 7/7` + `[testsarca] PASS 11/11` + `[usertests] PASS 57/57` + shell, zero
 > FAIL/PANIC.
 
 ### 9.1 -- Shared buffer + ramfs server (originale, sostituita da 9.6)

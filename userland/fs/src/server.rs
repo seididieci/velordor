@@ -63,6 +63,10 @@ fn real_main(_sp: u64) -> ! {
     // Parte da 1 (0 = mai usato, come le entry appena create per ramfs).
     let mut fat_gen: u64 = 1;
 
+    // ArcaFs in-memory (Fase 55, A1): hash map bucket:key → blob.
+    // Montata come `LocalFs` se negotiate() trova magic="ACFS" su un disco/partizione.
+    let mut arca = crate::arca::ArcaFs::stub(0, 0, 0);
+
     // Client registrati: pid → (req_ring_phys, resp_ring_phys).
     let mut rings: BTreeMap<u64, (u64, u64)> = BTreeMap::new();
 
@@ -346,6 +350,10 @@ fn real_main(_sp: u64) -> ! {
             R_STATVFS => w0 as usize,
             // R_GET_HASH: path in w0 (come STAT).
             R_GET_HASH => w0 as usize,
+            // R_OBJ_PUT: payload=bucket\0key\0[data], size in w0.
+            R_OBJ_PUT => w0 as usize,
+            // R_OBJ_GET: payload=bucket\0key\0, payload_len in w0, offset in w1.
+            R_OBJ_GET => w0 as usize,
             R_READ | R_CLOSE | R_RIGHTS_GET | R_DUP_GRANT => 0,
             _ => {
                 // Tag impossibile: scarta tutto e riallinea (vedi req_resync).
@@ -540,6 +548,18 @@ fn real_main(_sp: u64) -> ! {
                 }
             }
 
+            R_OBJ_PUT => {
+                // Payload: [bucket_len][bucket]\0[key_len][key]\0[data...]
+                // w0 = payload_len (expect), w1 = offset nel blob.
+                handlers::handle_obj_put(&mut arca, payload, w1 as usize)
+            }
+
+            R_OBJ_GET => {
+                // Payload: [bucket_len][bucket]\0[key_len][key]\0
+                // w0 = payload_len, w1 = offset
+                handlers::handle_obj_get(&arca, payload, w1 as usize, RING_MAX_PAYLOAD)
+            }
+
             R_LSEEK => {
                 // w0 = fd, w1 = offset (bit reinterpretati come i64),
                 // payload[0] = whence (expect = 1 garantisce il byte).
@@ -605,7 +625,7 @@ fn real_main(_sp: u64) -> ! {
         // Per gli altri handler, scriviamo solo il result.
         match op_tag {
             R_READ | R_READDIR | R_RIGHTS_GET | R_STAT | R_DISK_LIST | R_DISK_INFO | R_STATVFS
-            | R_GET_HASH => {
+            | R_GET_HASH | R_OBJ_GET => {
                 // Gli handler locali hanno gia' scritto nella response ring.
                 // Per i remote, il driver ha gia' scritto nella response ring.
                 // Non fare nulla — il result e' gia' nel frame.

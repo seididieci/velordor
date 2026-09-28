@@ -8,4 +8,4 @@ edition = "2021"
 [workspace]
 
 [dependencies]
-syscall-numbers = { path = "../../syscall-numbers" }
+syscall-numbers = { path = "crates/syscall-numbers" }
