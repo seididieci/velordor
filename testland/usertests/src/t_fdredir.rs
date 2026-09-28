@@ -63,7 +63,7 @@ fn t_trunc_append() -> bool {
             return false;
         }
     };
-    let mut st = libr::Stat { size: 99, kind: 0, readonly: false };
+    let mut st = libr::Stat { size: 99, kind: 0, readonly: false, mtime: 0 };
     if libr::stat("/t54t.txt", &mut st).is_err() || st.size != 0 {
         println!("[usertests] t54 trunc: size dopo TRUNC = {}", st.size);
         return false;

@@ -271,6 +271,13 @@ ritornano `Result<T, libr::posix::Error>`: enum nativo del dominio OS
 servizi passa a 16 slot (`Service::Posix = 8`, discriminant 0-7 stabili).
 Vedi [ADR-0030](./adr/0030-posix-fondamenta.md).
 
+### Fase 50 — servizio `Time` (nessuna syscall nuova)
+
+Come la Fase 39, nessun numero nuovo: `service_register`/`lookup`/`send`/
+`recv` esistenti + `Service::Time = 9` (bracci in `service_from_disc`/
+`service_name`; slot 10-15 restano liberi). Il protocollo `TIME_NOW` vive
+nei registri IPC (non nei frame): vedi [IPC](./07-ipc.md).
+
 ### I/O
 
 | Syscall | Numero | Descrizione |

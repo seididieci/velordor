@@ -330,7 +330,7 @@ pub fn t_ps() -> bool {
 
 /// t38 — `stat` lato userfs (Fase 19.2): metadati senza aprire.
 pub fn t_stat() -> bool {
-    let mut st = libr::Stat { size: 0, kind: 0, readonly: false };
+    let mut st = libr::Stat { size: 0, kind: 0, readonly: false, mtime: 0 };
     // File ramfs: size esatta, non readonly.
     if libr::stat("hello.txt", &mut st).is_err()
         || !st.is_file()
@@ -389,6 +389,85 @@ pub fn t_stat() -> bool {
         println!("[usertests] t38: stat sotto-device accettata?!");
         return false;
     }
+    // Fase 50 (P1 orologio): servizio Time raggiungibile, monotono e con
+    // epoch plausibile; mtime veri su ramfs (creazione+write) e FAT.
+    const EPOCH_2020: u64 = 1_577_836_800; // 2020-01-01 00:00:00 UTC
+    let (s1, c1) = match libr::time::time_now() {
+        Ok(t) => t,
+        Err(_) => {
+            println!("[usertests] t38: TIME_NOW irraggiungibile");
+            return false;
+        }
+    };
+    if s1 < EPOCH_2020 || c1 > 99 {
+        println!("[usertests] t38: data/ora implausibile ({}.{:02})", s1, c1);
+        return false;
+    }
+    let (s2, c2) = match libr::time::time_now() {
+        Ok(t) => t,
+        Err(_) => {
+            println!("[usertests] t38: TIME_NOW (2) irraggiungibile");
+            return false;
+        }
+    };
+    if (s2, c2) < (s1, c1) {
+        println!("[usertests] t38: wall-clock non monotono");
+        return false;
+    }
+    // mtime ramfs: file creato+scritto dal test (Time gia' su a boot).
+    let fd = match libr::open("/t38mtime", libr::O_CREAT) {
+        Ok(f) => f,
+        Err(_) => {
+            println!("[usertests] t38: create /t38mtime FAILED");
+            return false;
+        }
+    };
+    let w = libr::write_fs(fd, b"t38", 3);
+    let _ = libr::close(fd);
+    if w != Ok(3) {
+        println!("[usertests] t38: write /t38mtime FAILED");
+        return false;
+    }
+    if libr::stat("/t38mtime", &mut st).is_err() || st.mtime < EPOCH_2020 {
+        println!("[usertests] t38: mtime /t38mtime implausibile ({})", st.mtime);
+        return false;
+    }
+    let m1 = st.mtime;
+    // Dir ramfs creata dal test: timbrata anche lei.
+    if libr::stat("/t38dir2", &mut st).is_ok() || libr::mkdir("/t38dir2").is_err() {
+        println!("[usertests] t38: setup /t38dir2 FAILED");
+        return false;
+    }
+    if libr::stat("/t38dir2", &mut st).is_err() || st.mtime < EPOCH_2020 {
+        println!("[usertests] t38: mtime /t38dir2 implausibile ({})", st.mtime);
+        return false;
+    }
+    // Crescita garantita: 120 tick (1.2 s) attraversano sempre un secondo.
+    libr::spin_ticks(120);
+    let fd = match libr::open("/t38mtime", 0) {
+        Ok(f) => f,
+        Err(_) => {
+            println!("[usertests] t38: reopen /t38mtime FAILED");
+            return false;
+        }
+    };
+    let w = libr::write_fs(fd, b"x", 1);
+    let _ = libr::close(fd);
+    if w != Ok(1) {
+        println!("[usertests] t38: rewrite /t38mtime FAILED");
+        return false;
+    }
+    if libr::stat("/t38mtime", &mut st).is_err() || st.mtime <= m1 {
+        println!("[usertests] t38: mtime non cresciuto ({} -> {})", m1, st.mtime);
+        return false;
+    }
+    // FAT: HELLO.TXT ha timestamp DOS validi (mkfat) → mtime noto (> 0).
+    if libr::stat("/fat/HELLO.TXT", &mut st).is_err() || st.mtime == 0 {
+        println!("[usertests] t38: mtime FAT assente ({})", st.mtime);
+        return false;
+    }
+    let _ = libr::remove("/t38mtime");
+    let _ = libr::remove("/t38dir2");
     true
 }
 
@@ -397,7 +476,7 @@ pub fn t_stat() -> bool {
 /// per nome (= il boot da disco ha funzionato: console/kbd/tty/shell non
 /// sono piu' embedded ma girano).
 pub fn t_diskboot() -> bool {
-    let mut st = libr::Stat { size: 0, kind: 0, readonly: false };
+    let mut st = libr::Stat { size: 0, kind: 0, readonly: false, mtime: 0 };
     for path in [
         "/fat/bin/console.bin",
         "/fat/bin/uptime.bin",

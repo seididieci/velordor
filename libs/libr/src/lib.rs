@@ -101,6 +101,9 @@ pub use syscall_numbers::{
     DEV_CLOSE, DEV_KBD, DEV_KEYBOARD, DEV_CONSOLE, DEV_NULL, DEV_OPEN, DEV_READ,
     DEV_READDIR, DEV_WRITE, DEV_ZERO,
 };
+/// Tag TIME_* (Fase 50, P1 orologio): client→usertime, data/ora di sistema.
+/// Reply `TIME_NOW`: `w0` = secondi epoch (UTC), `w1` = centesimi di secondo.
+pub use syscall_numbers::TIME_NOW;
 
 // ── Stratificazione meccanismo / personalita' (ADR-0025, ADR-0015) ───
 // `libr` ospita strati che non si mescolano verso il basso:
@@ -174,6 +177,10 @@ pub use stdio::RedirEntry;
 /// `__velordor_entry` prima di `real_main`; mai direttamente dai programmi.
 pub use stdio::stdio_restore;
 pub mod sys;
+/// Data/ora di sistema (Fase 50, P1 orologio): client sincrono del servizio
+/// `Time` (`TIME_NOW` → secondi epoch UTC + centesimi). Meccanismo neutro
+/// (mai `posix::`): serve il FS (mtime), i log e qualunque servizio.
+pub mod time;
 pub mod tsc;
 
 /// Convenzione argv sullo stack iniziale (Fase 37.1): macro `entry!` (CRT

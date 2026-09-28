@@ -253,6 +253,13 @@ pub const DEV_ZERO: u64 = 1;
 pub const DEV_KEYBOARD: u64 = 2;
 pub const DEV_CONSOLE: u64 = 3;
 pub const DEV_KBD: u64 = 4;
+// ── Protocollo TIME_* (client→usertime, Fase 50/P1) ─────────────────────
+// Single source of truth dei tag. Il server `Time` e' il fornitore di
+// data/ora del sistema (CMOS all'avvio + monotono PIT): serve il FS (mtime)
+// e qualunque servizio client. Una sola op sincrona, server veloce:
+// - NOW (0x60): richiesta data/ora; reply `w0` = secondi epoch (UTC),
+//   `w1` = centesimi di secondo nel secondo corrente (0..99).
+pub const TIME_NOW: u64 = 0x60;
 /// Tag kernel→parent: un figlio e' terminato (exit o kill). Il kernel lo invia
 /// sul canale di nascita con `w0` = exit code e `w1` = pid del figlio morto
 /// (Fase 14, ADR-0010). Non e' una richiesta: il parent non deve rispondere.
@@ -479,11 +486,16 @@ pub enum Service {
     /// controllo e stato globale POSIX; il kernel resta neutro (ADR-0025) e
     /// il data plane resta diretto client→userfs.
     Posix = 8,
+    /// Fornitore di data/ora in userspace (Fase 50, P1 orologio, `usertime`):
+    /// legge il CMOS all'avvio (epoch) e serve `TIME_NOW` (epoch + monotono
+    /// PIT). Supervisionato da init come gli altri driver.
+    Time = 9,
 }
 
 /// Massimo numero di servizi conosciuti = dimensione del registro kernel.
-/// Fase 39: 8→16 (slot 9-15 liberi per futuri servizi senza ritoccare il
-/// kernel; discriminant 0-7 storici intoccati, ABI stabile).
+/// Fase 39: 8→16 (slot liberi per futuri servizi senza ritoccare il
+/// kernel; discriminant storici intoccati, ABI stabile). Fase 50: slot 9
+/// assegnato a `Time`; liberi 10-15.
 
 /// Massimo numero di servizi conosciuti = dimensione del registro kernel.
 pub const SERVICE_COUNT: usize = 16;

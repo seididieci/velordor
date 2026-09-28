@@ -66,12 +66,19 @@ impl<B: BlockSource> Fat32<B> {
                     let cl_hi = u16::from_le_bytes([e[20], e[21]]);
                     let first_cluster = ((cl_hi as u32) << 16) | cl_lo as u32;
                     let size = u32::from_le_bytes([e[28], e[29], e[30], e[31]]);
+                    // Timestamp DOS di ultima scrittura (Fase 50): WrtTime a
+                    // 22-23 + WrtDate a 24-25 (gli altri campi tempo — Crt* a
+                    // 13-17, LstAcc a 18-19 — restano ignorati).
+                    let wtime = u16::from_le_bytes([e[22], e[23]]);
+                    let wdate = u16::from_le_bytes([e[24], e[25]]);
+                    let mtime = libr::time::dos_to_epoch(wdate, wtime);
 
                     entries.push(DirEntry {
                         name,
                         attr,
                         first_cluster,
                         size,
+                        mtime,
                         entry_off: base + si * 512 + k,
                     });
                     k += 32;
@@ -119,6 +126,7 @@ impl<B: BlockSource> Fat32<B> {
                     first_cluster: hit.first_cluster,
                     size: hit.size,
                     is_dir: hit.attr & ATTR_DIR != 0,
+                    mtime: hit.mtime,
                     dir_cluster: cluster,
                     entry_off: hit.entry_off,
                 });

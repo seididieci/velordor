@@ -89,7 +89,7 @@ impl<B: BlockSource> crate::provider::LocalFs for Fat32<B> {
                 size: info.size as u64,
                 kind: if info.is_dir { 1 } else { 0 },
                 readonly: false, // FAT scrivibile dalla Fase 20 (write/grow).
-                mtime: 0,
+                mtime: info.mtime,
             }),
             None => Err(crate::ERR_NOTFOUND),
         }

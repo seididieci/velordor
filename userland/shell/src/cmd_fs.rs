@@ -34,7 +34,7 @@ pub(crate) fn cmd_ls(args: &[&str]) -> i64 {
                 }
                 full.push_str(name);
                 let mut line = String::new();
-                let mut st = libr::Stat { size: 0, kind: 0, readonly: false };
+                let mut st = libr::Stat { size: 0, kind: 0, readonly: false, mtime: 0 };
                 if libr::stat(&full, &mut st).is_ok() {
                     line.push(if st.is_dir() {
                         'd'

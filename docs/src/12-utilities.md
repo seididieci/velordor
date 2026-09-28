@@ -217,8 +217,8 @@ editabili (wrap VGA).
   builtin; i programmi separati partono con `run` (split futuro: ogni `.bin`
   in piu' resta piccolo, ~17 KiB runhello).
 - **`ls -l` minimale**: 1 round trip `R_STAT` per entry (ok per dir piccole);
-  niente owner/mtime (`Stat` non li ha); entry sparita tra `readdir` e `stat`
-  → riga `? nome`, mai abortito.
+  niente owner; `mtime` in `Stat` dalla Fase 50 ma non mostrato (display
+  futuro); entry sparita tra `readdir` e `stat` → riga `? nome`, mai abortito.
 - **Read oltre EOF torna `0`** (contratto 18.2-bis); `open` senza `O_CREAT`
   non crea (POSIX, 18.2).
 
@@ -235,13 +235,14 @@ embedded; gli altri partono da `/fat/bin` via `spawn_image`:
 
 1. `userdisk` — disk driver ATA embedded (servizio `Disk`, Fase 16)
 2. `userfs` — file system server embedded (ramfs + FAT32 via userdisk, servizio `Fs`)
-3. `userconsole` — rendering VGA da disco (servizio `Console`; da disco non
+3. `usertime` — data/ora da disco (servizio `Time`, Fase 50: CMOS `0x70/0x71` + `TIME_NOW`; serve `/fat`, quindi dopo userfs)
+4. `userconsole` — rendering VGA da disco (servizio `Console`; da disco non
    puo' essere prima: il load richiede userfs pronto)
-4. `useruptime` — contatore PIT
-5. `userdevfs` — `/dev/null`, `/dev/zero` (servizio `Devfs`)
-6. `userkbd`/`usertty` — tastiera + terminale (servizi `Kbd`/`Tty`, Fase 15)
-7. Test: `usertestfs` → `usertestfat` → `usertests` (attende `TEST_DONE`)
-8. `usershell` — shell interattiva (ultima, dopo la suite)
+5. `useruptime` — contatore PIT
+6. `userdevfs` — `/dev/null`, `/dev/zero` (servizio `Devfs`)
+7. `userkbd`/`usertty` — tastiera + terminale (servizi `Kbd`/`Tty`, Fase 15)
+8. Test: `usertestfs` → `usertestfat` → `usertests` (attende `TEST_DONE`)
+9. `usershell` — shell interattiva (ultima, dopo la suite)
 
 ### Console server (userconsole)
 

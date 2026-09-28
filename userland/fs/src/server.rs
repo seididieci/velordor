@@ -243,6 +243,9 @@ fn real_main(_sp: u64) -> ! {
                 pipes.end_closed(pipe_id, write);
             }
             rings.remove(&chan);
+            // Baseline wall-clock (Fase 50): se il morto era il server Time,
+            // cade (al prossimo bisogno si rilegge, mai wall stale).
+            wall::note_peer_death(chan);
             // Diritti effimeri (Fase 17): col peer muore anche la sua riga —
             // al re-handshake riparte da default {ALL, root} (limite dichiarato).
             rights.remove(&chan);

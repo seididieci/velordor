@@ -11,7 +11,7 @@ ricompilare se stesso. Ordina le priorita' (storage veloce prima, servizi
 fuori dal kernel poi, personalita' per software reale dopo) senza pianificare
 nulla da solo.
 
-## Stato (completate 1-49)
+## Stato (completate 1-50)
 
 Gate: `[testfs] PASS 5/5` + `[testfat] PASS 7/7` + `[usertests] PASS 57/57` +
 shell, zero FAIL/PANIC/FAULT.
@@ -65,6 +65,7 @@ shell, zero FAIL/PANIC/FAULT.
 | 47 | Wiring trait per ramfs (U1: open/read/write/readdir/stat/mkdir/delete) | ✅ Completata |
 | 48 | Wiring trait per FAT32 (U2: `LocalFsDyn`, fix stat readonly) | ✅ Completata |
 | 49 | Terreno pre-ArcaFS (T0: `AnyHandle`, mount-id stabili, `Source`+`fstype`, `Local` vivo, create/truncate nel trait) | ✅ Completata |
+| 50 | Orologio P1 (`Service::Time`, `usertime` CMOS+`TIME_NOW`, `mtime` veri ramfs+FAT via trait, t38 esteso) | ✅ Completata |
 
 ## Pianificate
 
@@ -76,13 +77,9 @@ Voci con scope e vittoria dichiarati (non date).
       disco; hook futuro per distribuzione nativa (ceph/glusterfs-like).
       Sessione A0 completata: bozza in `arcafs.md` (modello, indice,
       formato, API, mapping, diritti, quota, tool, multi-device, swap,
-      vector, logging §15) + piano OS-first P1–P5 (§13). Prossimo: 50–54,
-      poi stesura di dettaglio + ADR, poi 55.
+      vector, logging §15) + piano OS-first P1–P5 (§13). P1/50 chiusa
+      (orologio). Prossimo: 51–54, poi stesura di dettaglio + ADR, poi 55.
       Vittoria: spec scritta + primo mount.
-- [ ] **50 (P1) orologio** (nessuna dipendenza): lettore CMOS 0x70/0x71 in
-      userspace + endpoint `time` (epoch all'avvio + monotono PIT) + `mtime`
-      veri via trait (`Meta`, mai handler).
-      Vittoria: `stat` con timestamp plausibili su ramfs+FAT, suite verde.
 - [ ] **51 (P2) vocabolario disco** (dopo 50): `DISK_LIST`/`DISK_INFO` minimale
       (settori, LBA48, modello/seriale, modo UDMA) + sonda TRIM
       capability-only, mai uso.

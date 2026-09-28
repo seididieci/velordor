@@ -360,7 +360,7 @@ pub(crate) fn resolve_prog(name: &str) -> Option<String> {
 
 /// Sonda esistenza file regolare via `stat` (niente dati, niente effetti).
 fn is_reg_file(path: &str) -> bool {
-    let mut st = libr::Stat { size: 0, kind: 0, readonly: false };
+    let mut st = libr::Stat { size: 0, kind: 0, readonly: false, mtime: 0 };
     match libr::stat(path, &mut st) {
         Ok(()) => st.is_file(),
         Err(_) => false,

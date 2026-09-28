@@ -20,6 +20,8 @@ mcopy -i "$IMG" userland/build/usertty.bin     ::/bin/tty.bin     || exit 1
 mcopy -i "$IMG" userland/build/usershell.bin   ::/bin/shell.bin   || exit 1
 # Server di personalita' POSIX (Fase 40.3, P1): skeleton supervisionato.
 mcopy -i "$IMG" userland/build/userposix.bin   ::/bin/posix.bin   || exit 1
+# Fornitore di data/ora (Fase 50, P1 orologio).
+mcopy -i "$IMG" userland/build/usertime.bin    ::/bin/time.bin    || exit 1
 mcopy -i "$IMG" userland/build/userrunhello.bin ::/bin/runhello.bin || exit 1
 mcopy -i "$IMG" testland/build/usertestfs.bin   ::/test/testfs.bin   || exit 1
 mcopy -i "$IMG" testland/build/usertestfat.bin  ::/test/testfat.bin  || exit 1

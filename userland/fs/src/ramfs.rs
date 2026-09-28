@@ -34,8 +34,8 @@ impl RamHandle {
 #[derive(Clone)]
 #[allow(dead_code)] // `mode`: placeholder Strato 0 (16b), enforcement futuro
 pub enum FsNode {
-    File { data: Vec<u8>, mode: u32 },
-    Dir { entries: BTreeMap<String, FsNode>, mode: u32 },
+    File { data: Vec<u8>, mode: u32, mtime: u64 },
+    Dir { entries: BTreeMap<String, FsNode>, mode: u32, mtime: u64 },
 }
 
 /// Mode Unix di default (placeholder Strato 0, Fase 16b): conservati, MAI
@@ -105,14 +105,15 @@ impl RamFs {
         }
 
         let mut current = &mut self.root;
+        let now = crate::wall::wall_secs();
         for (i, &part) in parts.iter().enumerate() {
             if i == parts.len() - 1 {
                 current.entry(String::from(part))
-                    .or_insert_with(|| FsNode::File { data: Vec::new(), mode: MODE_FILE_DEF });
+                    .or_insert_with(|| FsNode::File { data: Vec::new(), mode: MODE_FILE_DEF, mtime: now });
                 return current.get_mut(part);
             }
             let entry = current.entry(String::from(part))
-                .or_insert_with(|| FsNode::Dir { entries: BTreeMap::new(), mode: MODE_DIR_DEF });
+                .or_insert_with(|| FsNode::Dir { entries: BTreeMap::new(), mode: MODE_DIR_DEF, mtime: now });
             match entry {
                 FsNode::Dir { entries: dir, .. } => current = dir,
                 _ => return None,
@@ -149,14 +150,15 @@ impl RamFs {
             return None;
         }
         let mut current = &mut self.root;
+        let now = crate::wall::wall_secs();
         for (i, &part) in parts.iter().enumerate() {
             if i == parts.len() - 1 {
                 current.entry(String::from(part))
-                    .or_insert_with(|| FsNode::Dir { entries: BTreeMap::new(), mode: MODE_DIR_DEF });
+                    .or_insert_with(|| FsNode::Dir { entries: BTreeMap::new(), mode: MODE_DIR_DEF, mtime: now });
                 return Some(());
             }
             let entry = current.entry(String::from(part))
-                .or_insert_with(|| FsNode::Dir { entries: BTreeMap::new(), mode: MODE_DIR_DEF });
+                .or_insert_with(|| FsNode::Dir { entries: BTreeMap::new(), mode: MODE_DIR_DEF, mtime: now });
             match entry {
                 FsNode::Dir { entries: dir, .. } => current = dir,
                 _ => return None,
@@ -233,8 +235,9 @@ impl LocalFs for RamFs {
                     FsNode::File { data, .. } => {
                         // Devo usare find_or_create per avere &mut Vec<u8>.
                         let mut_node = self.find_or_create(path);
-                        if let Some(FsNode::File { data, .. }) = mut_node {
+                        if let Some(FsNode::File { data, mtime, .. }) = mut_node {
                             data.clear();
+                            *mtime = crate::wall::wall_secs();
                         }
                     }
                     _ => return Err(crate::ERR_ISDIR),
@@ -246,8 +249,9 @@ impl LocalFs for RamFs {
             match node {
                 FsNode::File { data, .. } => {
                     let mut_node = self.find_or_create(path);
-                    if let Some(FsNode::File { data, .. }) = mut_node {
+                    if let Some(FsNode::File { data, mtime, .. }) = mut_node {
                         data.clear();
+                        *mtime = crate::wall::wall_secs();
                     }
                 }
                 _ => return Err(crate::ERR_ISDIR),
@@ -284,12 +288,14 @@ impl LocalFs for RamFs {
         let path = h.as_str();
         // Clone il path prima di mutare self (borrow checker).
         let path_owned: alloc::string::String = path.into();
+        // Timbro mtime campionato una volta per op (Fase 50).
+        let now = crate::wall::wall_secs();
         match self.find_or_create(&path_owned) {
-            Some(FsNode::File { data, .. }) => {
-                if append {
+            Some(FsNode::File { data, mtime, .. }) => {
+                let n = if append {
                     let n = buf.len();
                     data.extend_from_slice(buf);
-                    Ok(n)
+                    n
                 } else {
                     // Write con offset: estende il vettore se necessario.
                     let end = off + buf.len();
@@ -297,8 +303,10 @@ impl LocalFs for RamFs {
                         data.resize(end, 0);
                     }
                     data[off..off + buf.len()].copy_from_slice(buf);
-                    Ok(buf.len())
-                }
+                    buf.len()
+                };
+                *mtime = now;
+                Ok(n)
             }
             Some(FsNode::Dir { .. }) => Err(crate::ERR_ISDIR),
             None => Err(crate::ERR_NOTFOUND),
@@ -324,17 +332,17 @@ impl LocalFs for RamFs {
 
     fn stat(&mut self, rel: &str) -> Result<Meta, u64> {
         match self.find(rel) {
-            Some(FsNode::File { data, .. }) => Ok(Meta {
+            Some(FsNode::File { data, mtime, .. }) => Ok(Meta {
                 size: data.len() as u64,
                 kind: 0, // file
                 readonly: false,
-                mtime: 0,
+                mtime: *mtime,
             }),
-            Some(FsNode::Dir { .. }) => Ok(Meta {
+            Some(FsNode::Dir { mtime, .. }) => Ok(Meta {
                 size: 0,
                 kind: 1, // dir
                 readonly: false,
-                mtime: 0,
+                mtime: *mtime,
             }),
             None => Err(crate::ERR_NOTFOUND),
         }
@@ -356,6 +364,7 @@ impl LocalFs for RamFs {
                     return Err(crate::ERR_INVALID);
                 }
                 let mut current = &mut self.root;
+                let now = crate::wall::wall_secs();
                 for (i, &part) in parts.iter().enumerate() {
                     if i == parts.len() - 1 {
                         // Ultima parte: crea la directory.
@@ -363,6 +372,7 @@ impl LocalFs for RamFs {
                             .or_insert_with(|| FsNode::Dir {
                                 entries: BTreeMap::new(),
                                 mode: MODE_DIR_DEF,
+                                mtime: now,
                             });
                         return Ok(());
                     }
@@ -370,6 +380,7 @@ impl LocalFs for RamFs {
                         .or_insert_with(|| FsNode::Dir {
                             entries: BTreeMap::new(),
                             mode: MODE_DIR_DEF,
+                            mtime: now,
                         });
                     match entry {
                         FsNode::Dir { entries: dir, .. } => current = dir,

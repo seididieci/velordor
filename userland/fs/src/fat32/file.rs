@@ -271,6 +271,46 @@ impl<B: BlockSource> Fat32<B> {
         }
         self.disk.write_sector(lba, &sec)
     }
+    /// Aggiorna WrtTime/WrtDate (byte 22-25) all'ora corrente (Fase 50, P1
+    /// orologio). Best-effort come `patch_entry` (false a errore IO): i dati
+    /// sono gia' a posto, il timbro non trasforma mai una write riuscita in
+    /// fallita. Straddle gestito come `patch_entry`. A servizio Time assente
+    /// `wall_secs()` e' 0 → clamp a 1980-01-01 (convenzione DOS per ignoto).
+    fn stamp_mtime(&self, dir_cluster: u32, entry_off: usize) -> bool {
+        let (wdate, wtime) = libr::time::epoch_to_dos(crate::wall::wall_secs());
+        let (lba, off) = match self.dir_entry_pos(dir_cluster, entry_off) {
+            Some(p) => p,
+            None => return false,
+        };
+        let mut sec = [0u8; 512];
+        if !self.disk.read_sector(lba, &mut sec) {
+            return false;
+        }
+        // WrtTime a 22-23 + WrtDate a 24-25 (LE16).
+        let bytes: [(usize, u8); 4] = [
+            (22, (wtime & 0xFF) as u8),
+            (23, ((wtime >> 8) & 0xFF) as u8),
+            (24, (wdate & 0xFF) as u8),
+            (25, ((wdate >> 8) & 0xFF) as u8),
+        ];
+        for (i, v) in bytes {
+            let pos = off + i;
+            if pos < 512 {
+                sec[pos] = v;
+            } else {
+                // Straddle: secondo settore (pos - 512).
+                let mut sec2 = [0u8; 512];
+                if !self.disk.read_sector(lba + 1, &mut sec2) {
+                    return false;
+                }
+                sec2[pos - 512] = v;
+                if !self.disk.write_sector(lba + 1, &sec2) {
+                    return false;
+                }
+            }
+        }
+        self.disk.write_sector(lba, &sec)
+    }
     /// Tronca il file a size 0 (Fase 40, O_TRUNC): libera la catena cluster
     /// (ogni entry torna a 0 in tutte le copie FAT, come `free` — niente leak
     /// a ogni `>` redirect) e azzera first_cluster+size nella dir-entry PER
@@ -306,6 +346,8 @@ impl<B: BlockSource> Fat32<B> {
         if !self.patch_entry(info.dir_cluster, info.entry_off, 0, 0) {
             return false;
         }
+        // Troncamento = modifica: timbra (best-effort, mai fallire per questo).
+        let _ = self.stamp_mtime(info.dir_cluster, info.entry_off);
         let _ = self.fsinfo_bump(freed, 2);
         true
     }
@@ -320,7 +362,11 @@ impl<B: BlockSource> Fat32<B> {
             return 0;
         }
         if offset + data.len() <= size {
-            return self.write_file(info, offset, data);
+            let n = self.write_file(info, offset, data);
+            if n > 0 {
+                let _ = self.stamp_mtime(info.dir_cluster, info.entry_off);
+            }
+            return n;
         }
         let csize = self.cluster_bytes();
         let (mut have, mut last) = match self.chain_tail(info.first_cluster) {
@@ -359,6 +405,9 @@ impl<B: BlockSource> Fat32<B> {
         if !self.zero_range(first, size.min(new_end), new_end) {
             // Zero fallito: degrado a overwrite entro la vecchia size.
             let grown = self.write_file(info, offset, data);
+            if grown > 0 {
+                let _ = self.stamp_mtime(info.dir_cluster, info.entry_off);
+            }
             let _ = self.fsinfo_bump(-(allocated as i64), last.saturating_add(1));
             return grown;
         }
@@ -367,6 +416,7 @@ impl<B: BlockSource> Fat32<B> {
             first_cluster: first,
             size: new_end as u32,
             is_dir: false,
+            mtime: info.mtime,
             dir_cluster: info.dir_cluster,
             entry_off: info.entry_off,
         };
@@ -374,6 +424,9 @@ impl<B: BlockSource> Fat32<B> {
         let final_size = (offset + done).max(size.min(new_end));
         // Dir-entry PER ULTIMA + FSInfo (best-effort: i dati sono gia' a posto).
         let _ = self.patch_entry(info.dir_cluster, info.entry_off, first, final_size as u32);
+        if done > 0 {
+            let _ = self.stamp_mtime(info.dir_cluster, info.entry_off);
+        }
         let _ = self.fsinfo_bump(-(allocated as i64), last.saturating_add(1));
         done
     }
@@ -503,8 +556,17 @@ impl<B: BlockSource> Fat32<B> {
             put(i, raw[i]);
         }
         put(11, 0x20); // archivio
-        for i in 12..32 {
-            put(i, 0);
+        for i in 12..22 {
+            put(i, 0); // Crt*/LstAcc: sconosciuti (come prima)
+        }
+        // WrtTime/WrtDate all'ora corrente (Fase 50): mai entry senza tempo.
+        let (wdate, wtime) = libr::time::epoch_to_dos(crate::wall::wall_secs());
+        put(22, (wtime & 0xFF) as u8);
+        put(23, ((wtime >> 8) & 0xFF) as u8);
+        put(24, (wdate & 0xFF) as u8);
+        put(25, ((wdate >> 8) & 0xFF) as u8);
+        for i in 26..32 {
+            put(i, 0); // cluster 0 + size 0
         }
         if !self.disk.write_sector(lba, &sec) {
             return false;

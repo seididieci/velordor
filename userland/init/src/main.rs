@@ -36,6 +36,7 @@ fn expected_hash(bin: &[u8]) -> Option<u64> {
         b"usertty" => Some(HASH_USERTTY),
         b"userposix" => Some(HASH_USERPOSIX),
         b"usershell" => Some(HASH_USERSHELL),
+        b"usertime" => Some(HASH_USERTIME),
         _ => None,
     }
 }
@@ -87,6 +88,9 @@ struct SvcMeta {
 /// `user_binary.rs`: init e' TCB e li dichiara al kernel via SpawnMeta).
 const VGA_CURSOR_RANGES: &[(u16, u16)] = &[(0x3D4, 0x3D5)];
 const KBD_PS2_RANGES: &[(u16, u16)] = &[(0x60, 0x64)];
+/// CMOS/RTC per il fornitore di data/ora (Fase 50, P1 orologio): indice
+/// `0x70` + dati `0x71` (accessi a byte, una sola entry).
+const TIME_CMOS_RANGES: &[(u16, u16)] = &[(0x70, 0x71)];
 
 /// Spawna un servizio da disco (Fase 21): legge il file, costruisce SpawnMeta
 /// e chiama `spawn_image`. Ritorna il channel id o None (file mancante,
@@ -399,6 +403,16 @@ const SVC_SHELL: SvcMeta = SvcMeta {
     prio: 16,
     io: &[],
 };
+/// Fornitore di data/ora (Fase 50, P1 orologio): subito dopo userfs (serve
+/// /fat per caricarsi; userfs non lo attende — baseline lazy al primo mtime).
+/// Supervisionato come gli altri driver (il baseline sopravvive al restart:
+/// epoch riletta, tick_base nuovo).
+const SVC_TIME: SvcMeta = SvcMeta {
+    bin: b"usertime",
+    path: Some("/fat/bin/time.bin"),
+    prio: 16,
+    io: TIME_CMOS_RANGES,
+};
 /// Binari di test (Fase 21): `/test` su /fat, caricati solo in suite.
 const TEST_FS: SvcMeta = SvcMeta { bin: b"usertestfs", path: Some("/fat/test/testfs.bin"), prio: 16, io: &[] };
 const TEST_FAT: SvcMeta = SvcMeta { bin: b"usertestfat", path: Some("/fat/test/testfat.bin"), prio: 16, io: &[] };
@@ -433,6 +447,7 @@ fn real_main(_sp: u64) -> ! {
     // gia' pronto — prima era prima solo perche' embedded). Resta comunque
     // prima di kbd, che risolve `Console` per nome:
     // 1. userdisk + attesa READY e userfs SUBITO DOPO + attesa READY.
+    // 1b. usertime + attesa READY (Fase 50: serve /fat, quindi dopo userfs).
     // 2. userconsole da disco + attesa READY + uptime.
     // 3. devfs + attesa READY, kbd + attesa READY, tty + attesa READY,
     //    posix + attesa READY (skeleton 40.3: nessuna dipendenza).
@@ -453,6 +468,12 @@ fn real_main(_sp: u64) -> ! {
         libr::exit(1);
     };
     wait_msg(fs_chan, SVC_READY);
+    // Time da disco (Fase 50, P1 orologio): registra Time + ack; chi serve
+    // data/ora (userfs per mtime, log futuri) lo risolve per nome.
+    if boot_svc(&SVC_TIME, true).is_none() {
+        println!("[init] boot FAILED (time), panic");
+        libr::exit(1);
+    }
     // Console da disco (Fase 21): registra Console + ack subito dopo la
     // registrazione (prima del mount /dev/input che richiede userfs, gia'
     // pronto qui). kbd la risolve per nome al passo 4.
@@ -488,7 +509,7 @@ fn real_main(_sp: u64) -> ! {
     }
 
     // Tabella supervisione (Fase 14, init-restart): console/fs/devfs/kbd/tty/
-    // disk/posix vengono riavviati alla morte (dalla loro sorgente: embedded per
+    // disk/posix/time vengono riavviati alla morte (dalla loro sorgente: embedded per
     // disk/fs, disco per gli altri — Fase 21); gli altri figli solo loggati.
     // Costruita prima dei test cosi' anche run_test supervisiona (t27 uccide
     // devfs a suite in corso). NOTA: un restart di userfs wipa la ramfs
@@ -507,6 +528,7 @@ fn real_main(_sp: u64) -> ! {
         Supervised { meta: &SVC_KBD, svc: libr::Service::Kbd, chan: -1, pid: -1, restarts: 0, window_start: 0, held: false },
         Supervised { meta: &SVC_TTY, svc: libr::Service::Tty, chan: -1, pid: -1, restarts: 0, window_start: 0, held: false },
         Supervised { meta: &SVC_POSIX, svc: libr::Service::Posix, chan: -1, pid: -1, restarts: 0, window_start: 0, held: false },
+        Supervised { meta: &SVC_TIME, svc: libr::Service::Time, chan: -1, pid: -1, restarts: 0, window_start: 0, held: false },
     ];
     for e in supervised.iter_mut() {
         e.pid = libr::service_pid(e.svc).unwrap_or(-1);

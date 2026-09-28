@@ -44,6 +44,9 @@ mod ramfs;
 mod rights;
 mod rings;
 mod server;
+// Wall-clock lazy dal servizio Time (Fase 50, P1 orologio): i provider
+// producono `Meta.mtime` da qui, mai gli handler.
+mod wall;
 // Grant single-use per handoff fd al figlio (Fase 40, modello B).
 mod dup;
 

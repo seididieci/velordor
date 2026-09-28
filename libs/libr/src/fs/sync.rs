@@ -238,12 +238,14 @@ pub fn remove(path: &str) -> Result<(), Error> {
 /// Fase 19.2 — metadati di un path (zero kernel: frame R_STAT a userfs, nessun
 /// fd coinvolto). `size` = byte del file (0 per dir/device); `kind` = tipo
 /// (STAT_FILE/DIR/DEVICE); `readonly` = bit 7 (FAT sempre, ramfs mai, device
-/// mai affermato senza interrogare il driver).
+/// mai affermato senza interrogare il driver). Fase 50: `mtime` = secondi
+/// epoch (UTC) dal provider, 0 = sconosciuto (sintetici, mai inventato).
 #[derive(Clone, Copy, Debug)]
 pub struct Stat {
     pub size: u64,
     pub kind: u64,
     pub readonly: bool,
+    pub mtime: u64,
 }
 
 impl Stat {
@@ -269,13 +271,17 @@ pub fn stat(path: &str, out: &mut Stat) -> Result<(), Error> {
     match session::fs_notify_result(FS_NOTIFY, || {
         ring::req_ring_write(R_STAT, path.len() as u64, 0, path.as_bytes())
     }) {
-        // Risposta self-written `[size:8][kind:8]`: result=size, w1=kind.
+        // Risposta self-written `[size:8][kind:8][mtime:8]` (Fase 50):
+        // result=size, w1=kind, payload=mtime (LE64). `None` = nessun frame
+        // (path di errore server-side, come prima: mai consumare).
         Some((result, w1, _)) => {
-            ring::resp_ring_consume(16);
+            let mut mt = [0u8; 8];
+            ring::resp_ring_read_payload(&mut mt, 8);
             let size = session::fs_reply_check(result)?;
             out.size = size;
             out.kind = w1 & 0x3;
             out.readonly = w1 & STAT_READONLY != 0;
+            out.mtime = u64::from_le_bytes(mt);
             Ok(())
         }
         None => Err(Error::NotReady),

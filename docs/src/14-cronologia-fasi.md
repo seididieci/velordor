@@ -1575,6 +1575,24 @@
          tmpfs-like + path fd completo (`open_dyn`→`AnyHandle` in ftable,
          `FsKind::Local`, mkdir/delete via trait; `resolve_local` distingue
          Fat/Local). F5 create/truncate assorbiti in
-         `Fat32::open` (come `RamFs::open`); restano fuori trait solo cache
-         per-fd/generazione (stato userfs, per disegno). Gate 5/5 + 7/7 +
-         57/57, zero FAIL/PANIC/FAULT. ADR-0038 §49.
+          `Fat32::open` (come `RamFs::open`); restano fuori trait solo cache
+          per-fd/generazione (stato userfs, per disegno). Gate 5/5 + 7/7 +
+          57/57, zero FAIL/PANIC/FAULT. ADR-0038 §49.
+   - [x] Fase 50 (P1, orologio: primo passo OS-first verso ArcaFS). Servizio
+         `Time` (`usertime`, `Service::Time = 9`, slot 10-15 liberi): CMOS
+         `0x70/0x71` letto UNA volta a boot (UIP + doppia lettura, BCD/binario
+         e 12/24h da status B, secolo best-effort con fallback 20) → baseline
+         `(epoch_base, tick_base)`, poi solo monotono PIT; `TIME_NOW` 0x60
+         risponde `(sec, csec)`. `libr::time` (client sync + `days_from_civil`/
+         `civil_from_days`/`dos_to_epoch`/`epoch_to_dos` condivisi). init:
+         spawn da `/fat/bin/time.bin` con `io=[(0x70,0x71)]` dopo userfs +
+         supervisione + pin `HASH_USERTIME`. userfs: baseline lazy (`wall.rs`,
+         niente IPC per-op, cade su `EXIT_NOTIFY` del Time); `mtime` su
+         `FsNode`, decode DOS WrtTime/Date in `find` + stamp a create/grow/
+         truncate, `Meta.mtime` via trait (mai handler), frame stat
+         `[size:8][kind:8][mtime:8]`, `libr::Stat.mtime`. t38 esteso (Time
+         monotono/plausibile, mtime ramfs plausibile+crescente su 120 tick,
+         FAT noto): nessun nuovo numero, gate invariato 5/5 + 7/7 + 57/57,
+         zero FAIL/PANIC/FAULT. Nota: `test-shell source smoke (pipe)` fallisce
+         identico sul baseline (pre-esistente, `2 4 28` vs `2 4 26` attesi:
+         hello.txt e' 27 B da sempre) — non regressione di fase.

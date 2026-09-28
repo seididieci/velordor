@@ -43,6 +43,7 @@ pub(crate) fn cmd_source(args: &[&str], status: i64) -> i64 {
         size: 0,
         kind: 0,
         readonly: false,
+        mtime: 0,
     };
     match libr::stat(&path, &mut st) {
         Ok(()) if st.is_file() && st.size == 0 => return 0,

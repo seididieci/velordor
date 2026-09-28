@@ -50,6 +50,9 @@ pub struct DirEntry {
     pub attr: u8,
     pub first_cluster: u32,
     pub size: u32,
+    /// Secondi epoch da WrtTime/WrtDate (Fase 50, P1 orologio): 0 =
+    /// sconosciuto (campi DOS assurdi o azzerati, mai inventato).
+    pub mtime: u64,
     /// Offset in byte dell'entry da 32 B nel data stream della directory
     /// (serve a 20.3 per aggiornare size/first_cluster sul posto).
     pub entry_off: usize,
@@ -60,6 +63,10 @@ pub struct FileInfo {
     pub size: u32,
     /// true se directory (da attr, serve a R_STAT; Fase 19.2).
     pub is_dir: bool,
+    /// Secondi epoch da WrtTime/WrtDate (Fase 50): copiato dal `find`, 0 =
+    /// sconosciuto. La cache per-fd in ftable lo congela all'open (come
+    /// size: i metadati freschi si rileggono via R_STAT, mai via fd).
+    pub mtime: u64,
     /// Cluster iniziale della directory CONTENITRICE + offset in byte
     /// dell'entry (Fase 20.3: update size/first_cluster sul posto).
     pub dir_cluster: u32,

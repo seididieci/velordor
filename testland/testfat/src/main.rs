@@ -239,7 +239,7 @@ fn real_main(_sp: u64) -> ! {
             all_ok &= expect("write 9x1000B", &[wok as u8], &[1]);
             let _ = libr::close(fd);
             // Size via stat + read-back integrale.
-            let mut st = libr::Stat { size: 0, kind: 0, readonly: false };
+            let mut st = libr::Stat { size: 0, kind: 0, readonly: false, mtime: 0 };
             let sok = libr::stat("/fat/TFATW.TXT", &mut st).is_ok()
                 && st.is_file()
                 && st.size == 9000;

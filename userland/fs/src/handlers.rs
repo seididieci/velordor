@@ -521,12 +521,14 @@ pub fn handle_readdir(
     Ok(entries.len() as u64)
 }
 
-/// Scrive il response frame di R_STAT (`[size:8][kind:8]`, payload vuoto) e
-/// ritorna 0 per il reply IPC (self-written: il dispatch non riscrive).
-pub fn stat_reply(rings: &BTreeMap<u64, (u64, u64)>, chan: u64, size: u64, kind: u64) -> u64 {
+/// Scrive il response frame di R_STAT (`[size:8][kind:8][mtime:8]`, Fase 50)
+/// e ritorna 0 per il reply IPC (self-written: il dispatch non riscrive).
+/// `mtime` = secondi epoch dal provider (`Meta`, mai fabbricato qui); 0 =
+/// sconosciuto (sintetici root/device/padri, senza dir-entry).
+pub fn stat_reply(rings: &BTreeMap<u64, (u64, u64)>, chan: u64, size: u64, kind: u64, mtime: u64) -> u64 {
     if rings.get(&chan).is_some() {
         rings::map_client_resp_ring(rings, chan);
-        rings::resp_ring_write(size, kind, &[]);
+        rings::resp_ring_write(size, kind, &mtime.to_le_bytes());
     }
     0
 }
@@ -545,7 +547,7 @@ fn stat_kind(meta: &crate::provider::Meta) -> u64 {
 }
 
 /// R_STAT: metadati del path (Fase 19.2, zero kernel). Self-written come
-/// read/readdir (frame `[size:8][kind:8]`, vedi `stat_reply`); None =
+/// read/readdir (frame `[size:8][kind:8][mtime:8]`, vedi `stat_reply`); None =
 /// inesistente. Precedenza come open (mai shadow): device esatti → FAT (con
 /// attivazione lazy) → ramfs → padri sintetizzati 16d → None. Mount FAT noto
 /// ma inattivo = errore (stesso contratto di open/readdir). kind in
@@ -567,13 +569,13 @@ pub fn handle_stat(
     }
     // Root ramfs: esiste sempre.
     if path == "/" {
-        return Ok(stat_reply(rings, chan, 0, libr::STAT_DIR));
+        return Ok(stat_reply(rings, chan, 0, libr::STAT_DIR, 0));
     }
     // Device registrati: foglie (rel non vuota = path sotto un device: None,
     // come open che rifiuta i dev_type sconosciuti).
     if let Some((_driver_chan, rel)) = mount_legacy::resolve_mount(path, mounts) {
         if rel.is_empty() {
-            return Ok(stat_reply(rings, chan, 0, libr::STAT_DEVICE));
+            return Ok(stat_reply(rings, chan, 0, libr::STAT_DEVICE, 0));
         }
         return Err(ERR_NOTFOUND);
     }
@@ -584,10 +586,10 @@ pub fn handle_stat(
         // 48.5 — stat via trait `LocalFsDyn`: la trait gestisce il path relativo al mount.
         let fat = mount::by_id_mut(mounts_fat, mid).ok_or(ERR)?.local_dyn().ok_or(ERR)?;
         if rel.is_empty() {
-            return Ok(stat_reply(rings, chan, 0, libr::STAT_DIR));
+            return Ok(stat_reply(rings, chan, 0, libr::STAT_DIR, 0));
         }
         let meta = fat.stat_dyn(rel)?;
-        return Ok(stat_reply(rings, chan, meta.size, stat_kind(&meta)));
+        return Ok(stat_reply(rings, chan, meta.size, stat_kind(&meta), meta.mtime));
     }
     match mount_legacy::resolve_local(mounts_fat, path) {
         // Mount noto ma inattivo, o Local non risolto sopra (difensivo):
@@ -596,11 +598,11 @@ pub fn handle_stat(
         Some(mount_legacy::FsKind::Ram) => {
             // 47.4 — stat via trait `LocalFs` (U1): metadati diretti dalla trait.
             let meta = crate::provider::LocalFs::stat(fs, path)?;
-            Ok(stat_reply(rings, chan, meta.size, stat_kind(&meta)))
+            Ok(stat_reply(rings, chan, meta.size, stat_kind(&meta), meta.mtime))
         }
         // /dev/* senza prefix noto: solo sintesi (sotto).
         None => mount_legacy::synth_children(mounts, path)
-            .map(|_| stat_reply(rings, chan, 0, libr::STAT_DIR))
+            .map(|_| stat_reply(rings, chan, 0, libr::STAT_DIR, 0))
             .ok_or(ERR_NOTFOUND),
     }
 }
