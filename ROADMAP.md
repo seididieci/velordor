@@ -105,8 +105,14 @@ Voci con scope e vittoria dichiarati (non date).
 - [ ] **55 (A1+N0)** (dopo 54, mai A1 da solo): `R_OBJ_PUT/GET` via
       `MountedFs::Local` + `init` dual-mode (nativo da bucket `sys` per
       `object_id`, fallback FAT) + `SvcMeta.bucket/key`; hash manomesso
-      rifiutato (BLAKE2s).
-      Vittoria: boot con servizi da `sys`, fallback FAT provato, gate verde.
+      rifiutato (BLAKE2s); ArcaFS anche **in partizione** (readiness
+      data-plane, mai loader EFI): superblock partition-relative (LBA0+LBA1
+      del nodo), parser GPT in userdisk (protective-MBR `0xEE` mai dati,
+      `PartLoc` a u64, type GUID dedicato da registrare), `negotiate()`
+      prova `ACFS` prima di `vfat`, `arca create --whole-disk`/
+      `--in-partition` (+ `--init-gpt`); dischi dati restano whole-disk.
+      Vittoria: boot con servizi da `sys` (whole-disk e GPT in-partizione),
+      fallback FAT provato, gate verde.
 - [ ] **56 (A2)** (dopo 55): COW + snapshot/clone + GC (+ packing, + `R_OBJ_MGET`
       se 53 lo chiede) + marker dir persistenti (§5).
       Vittoria: rollback vero; retention log implementabile.

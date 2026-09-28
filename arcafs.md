@@ -117,8 +117,14 @@ dettaglio punto per punto e A1+N0 (singolo-device locale + init nativo).
 - Rilevabile con 1 read LBA0 + magic + bound (come `Fat32::mount`).
 - Commit: shadow + flip; crash = generazione vecchia + orphan-GC
   (journal rivalutato solo se gli snapshot multipli lo impongono).
-- Il volume possiede l'**intero device**: nessuna tabella partizioni (no
-  MBR/GPT). Superblocco a LBA0 + shadow LBA1; `device_table` (§10) e' per il
+- Il volume possiede l'**intero device** di default (dischi dati: nessuna
+  tabella partizioni). **Eccezione solo-boot (A1)**: sul disco di boot GPT
+  (EFI) ArcaFS vive in partizione dedicata (type GUID proprio, da registrare;
+  ESP intoccata) — superblocco e shadow sono **partition-relative** (LBA0+LBA1
+  del nodo, mai assoluti: lo shadow a `base+1` non collide con l'header GPT a
+  LBA fisico 1). Il loader EFI resta fuori scope (solo readiness data-plane:
+  parser GPT in userdisk, `negotiate()` prova `ACFS` prima di `vfat`,
+  `arca create --whole-disk`/`--in-partition`); `device_table` (§10) e' per il
   multi-device, non per partizioni.
 - **Niente log append-only**: il commit e' shadow superblock + flip, il resto
   e' COW B+tree; recovery = generazione vecchia + orphan-GC.
@@ -354,9 +360,13 @@ all'avvio).
   skeleton, `testsarca`, `arca.img` come terzo drive opt-in `ARCA_IMG=1`,
   boot default intoccato). Senza N0, A1 resta teoria (vedi §0).
 - A1 (+N0 in coppia, mai da solo): singolo-device (format via `arca create`,
-  negotiate, mount, R/W); monta come provider `LocalFs` (`negotiate` su
-  `magic="ACFS"`) e parte nella transizione multi-disco (boot da FAT,
-  ArcaFS su `arca.img` terzo drive opt-in, secondario fino allo swap).
+  negotiate, mount, R/W) whole-disk **e in partizione** (MBR riusando il parse
+  esistente + parser GPT nuovo con `PartLoc` a u64, guardia protective-MBR
+  `0xEE` mai dati); monta come provider `LocalFs` (`negotiate` su
+  `magic="ACFS"` partition-relative, prima di `vfat`) e parte nella transizione
+  multi-disco (boot da FAT, ArcaFS su `arca.img` terzo drive opt-in —
+  whole-disk da P5, variante GPT in-partizione da A1 — secondario fino allo
+  swap).
 - A2: COW + snapshot/clone + GC (+ packing, + `R_OBJ_MGET`).
 - A3: quota + subvolumi.
 - A4: ACL/ABAC engine + tool policy.
