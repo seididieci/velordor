@@ -313,6 +313,32 @@ pub const DISK_INFO: u64 = 0x57;
 //   Reply 0 o ERR. Usato dalla barriera `R_SYNC(GROUP)`.
 pub const DISK_FLUSH: u64 = 0x58;
 
+// ── Formato on-disk superblock ArcaFS (Fase 54, P5) ───────────────────
+// Single source userfs + guest `arca` + host `create` (tools/arca): MAI
+// duplicare offset/magic altrove (il round-trip create→mount→stat e' il test
+// che li tiene d'accordo). Blocco 128 B a LBA0 (+ shadow LBA1): checksum
+// FNV-1a u64 su [0..120] in [120..128] (self-verifying, come il manifest).
+// Il seal BLAKE2s-256 (§3) NON sta qui: wiring in A2 (campo riservato futuro
+// oltre i 128 B o superblock v2 — mai Endian ambigue: tutto LE esplicito).
+pub const ARCA_MAGIC: &[u8; 4] = b"ACFS";
+pub const ARCA_VERSION: u32 = 1;
+pub const ARCA_BLOCK_SIZE: u32 = 3584;
+/// Byte serializzati del superblock (1 settore ne contiene 4: si leggono i
+/// primi 128 di LBA0/LBA1).
+pub const ARCA_SUPER_LEN: usize = 128;
+pub const ARCA_OFF_MAGIC: usize = 0; // [u8; 4]
+pub const ARCA_OFF_VERSION: usize = 4; // u32 LE
+pub const ARCA_OFF_BLOCK_SIZE: usize = 8; // u32 LE
+pub const ARCA_OFF_UUID: usize = 12; // u64 LE (volume_uuid, mai riusato)
+pub const ARCA_OFF_GEN: usize = 20; // u64 LE (generation, commit + flip)
+pub const ARCA_OFF_ROOT: usize = 28; // u64 LE (0 = volume vuoto P5)
+pub const ARCA_OFF_REFCOUNT: usize = 36; // u64 LE (0 in P5)
+pub const ARCA_OFF_ALLOC: usize = 44; // u64 LE (hint placement)
+pub const ARCA_OFF_MOUNT: usize = 52; // [u8; 64] mountpoint (NUL-padded)
+pub const ARCA_OFF_AUTO: usize = 116; // u8 (auto-mount)
+pub const ARCA_OFF_FLAGS: usize = 117; // u8 (bit 0 = dirty)
+pub const ARCA_OFF_CHECK: usize = 120; // u64 LE (FNV-1a di [0..120])
+
 // ── Tag delle operazioni FS (nel frame del ring, non nell'IPC) ────────────
 // Single source of truth (Fase 17): prima duplicati in `libr`, `userfs` e
 // (R_REGISTER) `userdisk`. Il formato frame e' `[tag:4][w0:8][w1:8][payload]`.
@@ -381,6 +407,13 @@ pub const R_DISK_INFO: u32 = 0x22;
 //   `[0:8][0:8][bsize:8][blocks:8][bfree:8][bavail:8]` (32 B). Nessun fd.
 pub const R_SYNC: u32 = 0x23;
 pub const R_STATVFS: u32 = 0x24;
+// ── Integrita' (Fase 54, P5: opzione A compute-on-query) ────────────
+// - R_GET_HASH (0x25): payload = path; risposta self-written `[0:8][0:8]` +
+//   32 B (BLAKE2s-256 del contenuto, riletto e hashado a chunk 4K — nessuno
+//   stato, nessuno store; il seal nativo arriva con ArcaFS in A1). Solo
+//   mount `Local` (ramfs/FAT via trait `read`); device/remoti/sintetici e
+//   mount inattivi → ERR. Gate RIGHTS_READDIR + subtree come R_STAT.
+pub const R_GET_HASH: u32 = 0x25;
 /// Modi `R_SYNC` (Fase 52, P3): nessuna garanzia richiesta / barriera
 /// esplicita (flush+barriera) / ogni write stabile prima della reply.
 /// `PERWRITE` e' gia' il comportamento FAT (write-through); ramfs resta

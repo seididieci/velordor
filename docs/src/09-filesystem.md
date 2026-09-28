@@ -106,7 +106,8 @@ senza copie ne' race, ogni processo ha una coppia di **ring SPSC** dedicati.
 
 > I "Checkpoint" sotto sono i risultati **all'epoca** di ciascuna sotto-fase
 > (non il gate corrente). Gate corrente: `[testfs] PASS 5/5` + `[testfat] PASS
-> 7/7` + `[usertests] PASS 44/44` + `test-shell.py` 30/30, zero FAIL/PANIC.
+> 7/7` + `[testsarca] PASS 8/8` + `[usertests] PASS 57/57` + shell, zero
+> FAIL/PANIC.
 
 ### 9.1 -- Shared buffer + ramfs server (originale, sostituita da 9.6)
 
@@ -211,6 +212,24 @@ usertests 17/17, shell 3/3.
 19.2 Metadati senza open (R_STAT 0x1B, risposta self-written `[size:8][kind:8]` + `[mtime:8]` dalla Fase 50: ramfs size reale, FAT mai readonly dalla Fase 20, device size 0, check RIGHTS_READDIR+subtree, `libr::stat`, t38) [x]
 51   P2 vocabolario disco (relay topologia): `DISK_LIST/INFO` (0x56/0x57: entry `[sectors:8][flags:8]`, INFO + frame 76 B modello/seriale) + `R_DISK_LIST/INFO` (0x21/0x22, gate READDIR, self-written) + `IpcDisk::list/info` + `libr::disk_list/info` (`DiskDesc` con accessori flags); t32 esteso [x]
 52   P3 durabilita' (contratto + barriera + sensori): `R_SYNC` (0x23, modi `SYNC_NONE/GROUP/PERWRITE`, ritorna prev umask-like, `GROUP` = FLUSH dei mount FAT via `DISK_FLUSH` 0x58, gate `RIGHTS_SYNC` 0x800) + `R_STATVFS` (0x24, `StatVfs` nel trait, FAT da FSInfo, ramfs illimitata) + `SYS_MEMINFO` 52 (frame free/total/used); t32/t37 estesi [x]
+54   P5 integrita' + attrezzi: crate `blake2s` (BLAKE2s-256 proprio, no_std/no_alloc), `R_GET_HASH` 0x25 (content_hash compute-on-query, opzione A), superblock ArcaFS (single source `ARCA_*`), `negotiate()`→`arcafs` (stub `MountedFs::Arca`), tool host `arca create` (`tools/arca`), guest `arca list/stat` (`/bin/arca.bin`), `testsarca` 8/8 [x]
+
+## ArcaFS P5 (Fase 54)
+
+- **Superblock** (128 B a LBA0 + shadow LBA1): magic `ACFS`, versione, block
+  size 3584, `volume_uuid`, `generation`, root/refcount/alloc, mountpoint,
+  flags, checksum FNV-1a self-verifying. Offset costanti in `syscall-numbers`
+  (`ARCA_OFF_*`): single source di userfs `negotiate()`, guest `arca` e tool
+  host `create` (mai duplicati; il round-trip create→mount→stat lo verifica).
+- **`negotiate()`**: legge LBA0 del nodo e prova ArcaFS PRIMA di vfat (match
+  stretto: magic + versione + block size + checksum). Monta un'istanza
+  `MountedFs::Arca(ArcaFs)` **stub**: in P5 il volume e' riconosciuto ma non
+  leggibile (ogni op `ERR_NOTFOUND`/`ERR_READONLY`); A1 lo riempie (`R_OBJ_*`).
+- **`R_GET_HASH`** (`libr::get_hash`, opzione A compute-on-query): userfs
+  rilegge il file a chunk 4K e calcola BLAKE2s-256 (nessuno stato, nessuno
+  store; il seal per-versione arriva con ArcaFS in A1). `BLAKE2s` proprio
+  (crate `blake2s`, RFC 7693: vettori generati da due implementazioni
+  indipendenti) usato anche dal seal futuro e dal tool host.
 
 ## Contratto di durabilita' (Fase 52, P3)
 

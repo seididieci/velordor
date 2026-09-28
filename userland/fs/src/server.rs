@@ -344,6 +344,8 @@ fn real_main(_sp: u64) -> ! {
             // (mai payload), STATVFS path in w0 come R_STAT.
             R_SYNC => 0,
             R_STATVFS => w0 as usize,
+            // R_GET_HASH: path in w0 (come STAT).
+            R_GET_HASH => w0 as usize,
             R_READ | R_CLOSE | R_RIGHTS_GET | R_DUP_GRANT => 0,
             _ => {
                 // Tag impossibile: scarta tutto e riallinea (vedi req_resync).
@@ -413,7 +415,7 @@ fn real_main(_sp: u64) -> ! {
         // il path aperto). UTF-8 invalido o spec malformata: passa oltre, lo
         // rifiuta l'handler (i diritti non decidono la validita').
         let subtree_ok = match op_tag {
-            R_OPEN | R_MKDIR | R_READDIR | R_DELETE | R_STAT | R_STATVFS => match core::str::from_utf8(payload) {
+            R_OPEN | R_MKDIR | R_READDIR | R_DELETE | R_STAT | R_STATVFS | R_GET_HASH => match core::str::from_utf8(payload) {
                 Ok(p) => rights::within_subtree(rights::rights_subtree(&rights, chan), rights::normalize_sub_view(p)),
                 Err(_) => true,
             },
@@ -522,6 +524,14 @@ fn real_main(_sp: u64) -> ! {
                 handlers::handle_sync(&mut fat_mounts, &mut sync_expect, chan, w0 as u32)
             }
 
+            R_GET_HASH => {
+                match core::str::from_utf8(&payload) {
+                    Ok("") | Ok("/") => Err(ERR_INVALID),
+                    Ok(path) => handlers::handle_get_hash(&mut fs, &mut fat_mounts, &mounts, &rings, chan, path, &mut fat_gen),
+                    Err(_) => Err(ERR_INVALID),
+                }
+            }
+
             R_STATVFS => {
                 match core::str::from_utf8(&payload) {
                     Ok("") | Ok("/") => handlers::handle_statvfs(&mut fs, &mut fat_mounts, &mounts, &rings, chan, "/", &mut fat_gen),
@@ -594,7 +604,8 @@ fn real_main(_sp: u64) -> ! {
         // quindi qui NON dobbiamo scrivere di nuovo.
         // Per gli altri handler, scriviamo solo il result.
         match op_tag {
-            R_READ | R_READDIR | R_RIGHTS_GET | R_STAT | R_DISK_LIST | R_DISK_INFO | R_STATVFS => {
+            R_READ | R_READDIR | R_RIGHTS_GET | R_STAT | R_DISK_LIST | R_DISK_INFO | R_STATVFS
+            | R_GET_HASH => {
                 // Gli handler locali hanno gia' scritto nella response ring.
                 // Per i remote, il driver ha gia' scritto nella response ring.
                 // Non fare nulla — il result e' gia' nel frame.

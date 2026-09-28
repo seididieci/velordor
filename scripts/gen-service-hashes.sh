@@ -100,6 +100,8 @@ for p in bins:
 # 40.4). Resta negato: MKDIR/DELETE/SEEK/MOUNT/UMOUNT/GRANT/PIPE/SYNC.
 POLICY = {
     "userrunhello": 0x00F,  # OPEN|READ|WRITE|READDIR (programma di terzi)
+    # arca (Fase 54): legge /dev/* e la topologia; niente scritture/mount.
+    "userarca": 0x00B,      # OPEN|READ|READDIR
 }
 DEFAULT_MASK = 0xFFF  # ALL (servizi TCB)
 

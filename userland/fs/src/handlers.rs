@@ -67,7 +67,7 @@ pub fn handle_open(
         // tenere borrow oltre l'op (le varianti sono esclusive).
         let is_local = matches!(
             mount::by_id(mounts_fat, mid).and_then(|i| mounts_fat.get(i)),
-            Some(m) if m.is_local()
+            Some(m) if m.is_provider()
         );
         if is_local {
             let h = mount::by_id_mut(mounts_fat, mid)
@@ -652,6 +652,86 @@ pub fn handle_disk_info(
     Ok(info.sectors)
 }
 
+/// Legge tutto il file via trait `read` a chunk 4K e ne calcola BLAKE2s-256
+/// (Fase 54, opzione A compute-on-query: nessuno stato, nessuno store).
+/// `open`+`read`+`close` (close no-op) sul provider risolto; EOF = fine.
+fn hash_of_provider(
+    d: &mut dyn crate::provider::LocalFsDyn,
+    rel: &str,
+) -> Result<[u8; 32], u64> {
+    let h = d.open_dyn(rel, 0)?;
+    let mut hasher = blake2s::Hasher::new();
+    let mut buf = [0u8; 4096];
+    let mut off = 0usize;
+    loop {
+        let n = d.read_dyn(h, off, &mut buf)?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buf[..n]);
+        off += n;
+    }
+    Ok(hasher.finalize())
+}
+
+/// R_GET_HASH (Fase 54, P5 integrita'): BLAKE2s-256 del contenuto del path,
+/// self-written `[0:8][0:8]` + 32 B (come R_STAT, niente fd). Solo mount
+/// `Local` (ramfs/FAT/Arca via trait `read`); device/remoti/sintetici e
+/// mount inattivi → ERR (nessun contenuto da hashare). Precedenza come stat.
+pub fn handle_get_hash(
+    fs: &mut ramfs::RamFs,
+    mounts_fat: &mut Vec<mount::FsMount>,
+    mounts: &[mount_legacy::Mount],
+    rings: &BTreeMap<u64, (u64, u64)>,
+    chan: u64,
+    path: &str,
+    fgen: &mut u64,
+) -> Result<u64, u64> {
+    use crate::provider::LocalFs;
+    if path.is_empty() || path.len() > MAX_PATH {
+        return Err(ERR_INVALID);
+    }
+    let reply_hash = |rings: &BTreeMap<u64, (u64, u64)>, digest: &[u8; 32]| -> u64 {
+        if rings.get(&chan).is_some() {
+            rings::map_client_resp_ring(rings, chan);
+            rings::resp_ring_write(0, 0, digest);
+        }
+        0
+    };
+    // Device registrati: nessun contenuto (foglie; sotto-device = None).
+    if mount_legacy::resolve_mount(path, mounts).is_some() {
+        return Err(ERR_INVALID);
+    }
+    // FAT/Local/Arca con attivazione lazy (stesso contratto di stat).
+    if let Some((mid, rel)) = mount::resolve_fsmount(mounts_fat, path, fgen) {
+        let d = mount::by_id_mut(mounts_fat, mid).ok_or(ERR)?.local_dyn().ok_or(ERR)?;
+        let digest = hash_of_provider(d, rel)?;
+        return Ok(reply_hash(rings, &digest));
+    }
+    match mount_legacy::resolve_local(mounts_fat, path) {
+        Some(mount_legacy::FsKind::Fat) | Some(mount_legacy::FsKind::Local) => Err(ERR),
+        Some(mount_legacy::FsKind::Ram) => {
+            // ramfs radice: hash via trait `LocalFs` diretta (open+read loop).
+            let h = LocalFs::open(fs, path, 0)?;
+            let mut hasher = blake2s::Hasher::new();
+            let mut buf = [0u8; 4096];
+            let mut off = 0usize;
+            loop {
+                let n = LocalFs::read(fs, h, off, &mut buf)?;
+                if n == 0 {
+                    break;
+                }
+                hasher.update(&buf[..n]);
+                off += n;
+            }
+            let digest = hasher.finalize();
+            Ok(reply_hash(rings, &digest))
+        }
+        // Sintetici (`/dev`): nessun contenuto.
+        None => Err(ERR_INVALID),
+    }
+}
+
 /// R_SYNC (Fase 52, P3 durabilita'): imposta l'aspettativa del canale e
 /// ritorna il modo precedente (pattern umask, testabile). `GROUP` esegue
 /// anche la barriera subito: FLUSH di tutti i mount FAT attivi (ramfs
@@ -753,7 +833,7 @@ pub fn handle_mkdir(
     // Mount `Local` (Fase 49, F4): mkdir via trait sul mount.
     if let Some((mid, rel)) = mount::resolve_fsmount(mounts_fat, path, fgen) {
         let m = mount::by_id_mut(mounts_fat, mid).ok_or(ERR_NOTFOUND)?;
-        if m.is_local() {
+        if m.is_provider() {
             let d = m.local_dyn().ok_or(ERR)?;
             d.mkdir_dyn(rel)?;
             return Ok(0);
@@ -793,7 +873,7 @@ pub fn handle_delete(
     // …mount `Local` via trait (Fase 49, F4)…
     if let Some((mid, rel)) = mount::resolve_fsmount(mounts_fat, path, fgen) {
         let m = mount::by_id_mut(mounts_fat, mid).ok_or(ERR_NOTFOUND)?;
-        if m.is_local() {
+        if m.is_provider() {
             let d = m.local_dyn().ok_or(ERR)?;
             d.remove_dyn(rel)?;
             return Ok(0);

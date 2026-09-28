@@ -220,7 +220,7 @@ pub fn resolve_local(mounts_fat: &[mount::FsMount], path: &str) -> Option<FsKind
         }
     }
     match best {
-        Some(m) if m.is_local() => Some(FsKind::Local),
+        Some(m) if m.is_provider() => Some(FsKind::Local),
         Some(_) => Some(FsKind::Fat),
         None => Some(FsKind::Ram),
     }

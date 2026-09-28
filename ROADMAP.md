@@ -11,7 +11,7 @@ ricompilare se stesso. Ordina le priorita' (storage veloce prima, servizi
 fuori dal kernel poi, personalita' per software reale dopo) senza pianificare
 nulla da solo.
 
-## Stato (completate 1-53)
+## Stato (completate 1-54)
 
 Gate: `[testfs] PASS 5/5` + `[testfat] PASS 7/7` + `[usertests] PASS 57/57` +
 shell, zero FAIL/PANIC/FAULT.
@@ -69,6 +69,7 @@ shell, zero FAIL/PANIC/FAULT.
 | 51 | Vocabolario disco P2 (`DISK/R_DISK_LIST+INFO`, IDENTIFY estesa, relay userfs, `libr::disk_*`, t32 esteso, dati S1/S2) | ✅ Completata |
 | 52 | Durabilita' P3 (`R_SYNC` modi+barriera, `RIGHTS_SYNC`, `R_STATVFS` nel trait, `SYS_MEMINFO`, contratto, t32/t37 estesi) | ✅ Completata |
 | 53 | Misura bulk P4 (audit CAP, sweep 4K/16K/64K ramfs+FAT hot/cold in userbench, tabella costo-vs-dimensione) | ✅ Completata |
+| 54 | Integrita' + attrezzi P5 (crate `blake2s`, `R_GET_HASH`, superblock ArcaFS, `negotiate()`→arcafs stub, `arca create` host, `arca list/stat` guest, testsarca 8/8) | ✅ Completata |
 
 ## Pianificate
 
@@ -83,18 +84,11 @@ Voci con scope e vittoria dichiarati (non date).
       vector, logging §15) + piano OS-first P1–P5 (§13). P1/50 chiusa
       (orologio), P2/51 chiusa (vocabolario disco + dati S1/S2), P3/52 chiusa
       (durabilita': contratto + barriera + sensori), P4/53 chiusa (misura
-      bulk: tabella costo-vs-dimensione in `13-performance.md`). Prossimo:
-      54, poi stesura di dettaglio + ADR, poi 55.
+      bulk: tabella costo-vs-dimensione in `13-performance.md`), P5/54 chiusa
+      (integrita' + attrezzi: BLAKE2s, content_hash, `arca create`/`list`,
+      `negotiate()`→arcafs stub, testsarca 8/8). Prossimo: stesura di
+      dettaglio + ADR (dopo le P), poi 55.
       Vittoria: spec scritta + primo mount.
-- [ ] **54 (P5) integrita' + attrezzi** (dopo 53): BLAKE2s con cancelli in-place
-      (standard da registry se: build freestanding no_std senza alloc, size
-      entro `SPAWN_IMAGE_MAX`, vettori RFC 7693, niente heap nel per-op;
-      altrimenti reimplementazione propria) + `sys.content_hash` riempito +
-      `arca create` skeleton + `arca list` (topologia via `R_DISK_*` della
-      Fase 51) + harness `testsarca` + `arca.img` come terzo
-      drive opt-in (`ARCA_IMG=1`, boot default intatto).
-      Vittoria: `arca create`, `arca list`, `negotiate()` → `arcafs`,
-      suite verde.
 - [ ] **55 (A1+N0)** (dopo 54, mai A1 da solo): `R_OBJ_PUT/GET` via
       `MountedFs::Local` + `init` dual-mode (nativo da bucket `sys` per
       `object_id`, fallback FAT) + `SvcMeta.bucket/key`; hash manomesso

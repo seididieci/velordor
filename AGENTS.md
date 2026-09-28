@@ -96,10 +96,13 @@ velordor/
 ├── run.sh              # build userland + testland + kernel + QEMU (PVH)
 ├── userland/           # SOLO binari ad uso utente: init, console server,
 │   │                   #   fs server, devfs, shell, uptime, kbd/tty (Fase 15),
-│   │                   #   disk server (Fase 16); futuri: utility (Fase 18)
+│   │                   #   disk server (Fase 16), time (Fase 50), arca (P5);
+│   │                   #   futuri: utility (Fase 18)
 │   └── build/          # output .bin dei servizi utente
+├── blake2s/            # BLAKE2s-256 proprio (RFC 7693, no_std) — P5
+├── tools/arca/         # tool host `arca create` (std, P5)
 ├── testland/           # TEST SUITE + repro + demo (nessun binario "utente")
-│   │                   #   demo, testfs, testfat, hogheap, devreader,
+│   │                   #   demo, testfs, testfat, testsarca, hogheap, devreader,
 │   │                   #   usertests (+ helper usertest-client/usertest-spin);
 │   │                   #   srv/cli: demo storiche Fase 7 NON piu' buildate
 │   │                   #   (basate su IPC per PID, rimosse in Fase 12)
@@ -117,9 +120,9 @@ velordor/
 
 ## Stato corrente
 
-Gate: `[testfs] PASS 5/5` + `[testfat] PASS 7/7` + `[usertests] PASS 57/57` + shell, zero FAIL/PANIC/FAULT (vedi `docs/src/11-testing.md`).
+Gate: `[testfs] PASS 5/5` + `[testfat] PASS 7/7` + `[testsarca] PASS 8/8` + `[usertests] PASS 57/57` + shell, zero FAIL/PANIC/FAULT (vedi `docs/src/11-testing.md`).
 
-- **Stato e futuro**: `ROADMAP.md` (sorgente unica: tabella completate 1-53, Pianificate, Parcheggiate).
+- **Stato e futuro**: `ROADMAP.md` (sorgente unica: tabella completate 1-54, Pianificate, Parcheggiate).
 - **Storia dettagliata**: `docs/src/14-cronologia-fasi.md` (log per fase: decisioni, bug trovati, lezioni, validazioni).
 
 ## Important Notes
@@ -313,9 +316,10 @@ rg '\[bench\]' /tmp/bench-run1.log /tmp/bench-run2.log /tmp/bench-run3.log
 # Suite di regressione (boot): 3 righe PASS attese e ZERO FAIL/PANIC
 #   [testfs] PASS 5/5
 #   [testfat] PASS 7/7
+#   [testsarca] PASS 8/8
 #   [usertests] PASS 57/57
 timeout 150 ./run-tests.sh > /tmp/boot.log
-rg '\[testfs\] PASS 5/5|\[testfat\] PASS 7/7|\[usertests\] PASS 57/57' /tmp/boot.log
+rg '\[testfs\] PASS 5/5|\[testfat\] PASS 7/7|\[testsarca\] PASS 8/8|\[usertests\] PASS 57/57' /tmp/boot.log
 test "$(rg -c 'FAIL|PANIC|#.* FAULT' /tmp/boot.log)" = "0"
 ```
 

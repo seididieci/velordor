@@ -62,7 +62,7 @@ pub use syscall_numbers::{DISK_LIST, DISK_INFO, R_DISK_LIST, R_DISK_INFO};
 pub use syscall_numbers::{
     R_CLOSE, R_DELETE, R_MKDIR, R_MOUNT, R_OPEN, R_READ, R_READDIR, R_REGISTER, R_UMOUNT,
     R_WRITE, R_RIGHTS_DROP, R_RIGHTS_GET, R_STAT, R_LSEEK, R_DUP_GRANT, R_DUP_CLAIM,
-    R_DUP_CANCEL, R_PIPE_CREATE, R_SYNC, R_STATVFS,
+    R_DUP_CANCEL, R_PIPE_CREATE, R_SYNC, R_STATVFS, R_GET_HASH,
 };
 /// Bit dei diritti per-canale (Fase 17, self-restriction; DELETE in 18.2;
 /// SEEK in 40; GRANT/PIPE in 45; SYNC in 52): mask per `rights_drop`, valore
@@ -111,6 +111,14 @@ pub use syscall_numbers::{
 /// Tag TIME_* (Fase 50, P1 orologio): client→usertime, data/ora di sistema.
 /// Reply `TIME_NOW`: `w0` = secondi epoch (UTC), `w1` = centesimi di secondo.
 pub use syscall_numbers::TIME_NOW;
+/// Formato superblock ArcaFS (Fase 54, P5): single source userfs + guest
+/// `arca` + host `create` (mai duplicare offset/magic).
+pub use syscall_numbers::{
+    ARCA_BLOCK_SIZE, ARCA_MAGIC, ARCA_OFF_ALLOC, ARCA_OFF_AUTO, ARCA_OFF_BLOCK_SIZE,
+    ARCA_OFF_CHECK, ARCA_OFF_FLAGS, ARCA_OFF_GEN, ARCA_OFF_MAGIC, ARCA_OFF_MOUNT,
+    ARCA_OFF_REFCOUNT, ARCA_OFF_ROOT, ARCA_OFF_UUID, ARCA_OFF_VERSION, ARCA_SUPER_LEN,
+    ARCA_VERSION,
+};
 
 // ── Stratificazione meccanismo / personalita' (ADR-0025, ADR-0015) ───
 // `libr` ospita strati che non si mescolano verso il basso:

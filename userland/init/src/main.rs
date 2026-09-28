@@ -416,6 +416,10 @@ const SVC_TIME: SvcMeta = SvcMeta {
 /// Binari di test (Fase 21): `/test` su /fat, caricati solo in suite.
 const TEST_FS: SvcMeta = SvcMeta { bin: b"usertestfs", path: Some("/fat/test/testfs.bin"), prio: 16, io: &[] };
 const TEST_FAT: SvcMeta = SvcMeta { bin: b"usertestfat", path: Some("/fat/test/testfat.bin"), prio: 16, io: &[] };
+/// ArcaFS P5 (Fase 54): BLAKE2s + content_hash + volume. Dopo testfat (serve
+/// solo FS+dischi; il terzo drive e' opt-in via ARCA_IMG=1, il core passa
+/// anche senza). Prima di usertests: la ramfs tocca /sarca.txt solo suo.
+const TEST_ARCA: SvcMeta = SvcMeta { bin: b"usertestsarca", path: Some("/fat/test/testarca.bin"), prio: 16, io: &[] };
 const TESTS: SvcMeta = SvcMeta { bin: b"usertests", path: Some("/fat/test/tests.bin"), prio: 16, io: &[] };
 /// Bench throughput (Fase 23): `/test` su /fat, solo con feature `bench`
 /// (scripts/bench.sh). Ortogonale alla suite: gira anche in produzione
@@ -545,6 +549,7 @@ fn real_main(_sp: u64) -> ! {
         println!("[init] avvio test suite");
         run_test(&TEST_FS, &mut supervised);
         run_test(&TEST_FAT, &mut supervised);
+        run_test(&TEST_ARCA, &mut supervised);
         run_test(&TESTS, &mut supervised);
     }
 

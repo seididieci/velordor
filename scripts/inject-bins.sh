@@ -23,8 +23,11 @@ mcopy -i "$IMG" userland/build/userposix.bin   ::/bin/posix.bin   || exit 1
 # Fornitore di data/ora (Fase 50, P1 orologio).
 mcopy -i "$IMG" userland/build/usertime.bin    ::/bin/time.bin    || exit 1
 mcopy -i "$IMG" userland/build/userrunhello.bin ::/bin/runhello.bin || exit 1
+# Tool guest ArcaFS (Fase 54, P5): `list`/`stat`.
+mcopy -i "$IMG" userland/build/userarca.bin   ::/bin/arca.bin    || exit 1
 mcopy -i "$IMG" testland/build/usertestfs.bin   ::/test/testfs.bin   || exit 1
 mcopy -i "$IMG" testland/build/usertestfat.bin  ::/test/testfat.bin  || exit 1
+mcopy -i "$IMG" testland/build/usertestsarca.bin ::/test/testarca.bin || exit 1
 mcopy -i "$IMG" testland/build/usertests.bin    ::/test/tests.bin    || exit 1
 mcopy -i "$IMG" testland/build/usertestcli.bin  ::/test/testcli.bin  || exit 1
 mcopy -i "$IMG" testland/build/usertestspin.bin ::/test/testspin.bin || exit 1

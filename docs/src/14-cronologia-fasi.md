@@ -1663,3 +1663,30 @@
          metadati). Tabella in `13-performance.md`: input per `R_OBJ_MGET` e
          framing multi-frame in A2 (decisione ancora aperta, ora con numeri).
          Gate invariato 5/5 + 7/7 + 57/57, zero FAIL/PANIC/FAULT.
+   - [x] Fase 54 (P5, integrita' + attrezzi: quinto e ultimo passo OS-first).
+         Crate `blake2s` (BLAKE2s-256 RFC 7693 proprio, ~250 righe u32,
+         `no_std`/no-alloc, `Hasher` streaming caller-owned): cancello
+         "standard da registry" superato con reimplementazione (vettori da
+         due implementazioni indipendenti — Python hashlib + OpenSSL,
+         coincidenti; la memoria del dev era sbagliata sui vettori noti,
+         verificati con openssl: lezione). `R_GET_HASH` 0x25 (content_hash
+         compute-on-query, opzione A scelta sui pro/contro: nessuno store,
+         nessun dirty, riusa il trait `read` — il seal per-versione arriva
+         con ArcaFS in A1). Superblock ArcaFS (128 B, `ARCA_OFF_*` single
+         source in `syscall-numbers`): `negotiate()` legge LBA0 e prova
+         ArcaFS PRIMA di vfat (magic+versione+block-size+checksum), monta
+         `MountedFs::Arca(ArcaFs)` stub (volume riconosciuto, op rifiutate
+         tipizzate; A1 lo riempie) + `AnyHandle::Arca`; `local_dyn`/
+         `is_provider` estesi (rinominato `is_local`). Tool host `arca`
+         (`tools/arca`, std): `create` scrive LBA0+shadow; build da CWD
+         neutra (il config radice forza bare-metal+build-std: discovery da
+         CWD, `scripts/arca-tool.sh`). Guest `userland/arca` (`list`/`stat`,
+         `/bin/arca.bin`, policy 0x00B) + `run.sh` terzo drive opt-in
+         `ARCA_IMG=1`. `testland/testsarca` (8 check: vettori, content_hash,
+         tamper, scan volume, mount stub, open/readdir rifiutati, umount):
+         nuovo gate `[testsarca] PASS 8/8`. Bug trovati e fissati: (1)
+         `read`/`read_dyn` prendono offset esplicito — l'hash rileggeva
+         sempre l'inizio (loop infinito) finche' non ho aggiunto l'accumulo
+         `off`; (2) un edit a `syscall-numbers` aveva rimosso le const
+         `R_SYNC`/`R_STATVFS` (reintrodotte). Gate: 5/5 + 7/7 + 8/8 + 57/57,
+         zero FAIL/PANIC/FAULT; boot produzione (due drive, ARCA_IMG=0) pulito.

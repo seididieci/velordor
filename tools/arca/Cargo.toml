@@ -1,0 +1,11 @@
+[package]
+name = "arca"
+version = "0.1.0"
+edition = "2021"
+
+# Tool host (std), fuori dal workspace del kernel: scrive arca.img a build
+# time (P5) e crescera' fino al tool completo in A7.
+[workspace]
+
+[dependencies]
+syscall-numbers = { path = "../../syscall-numbers" }

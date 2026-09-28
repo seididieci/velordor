@@ -1,6 +1,7 @@
 use super::*;
 use super::ramfs::RamHandle;
 use super::fat32::FileInfo;
+use super::arca::{ArcaFs, ArcaHandle};
 use alloc::boxed::Box;
 
 /// Sink per l'output di readdir: ogni entry scrive il nome nel buffer del client.
@@ -52,6 +53,10 @@ pub trait LocalFs {
 pub enum MountedFs {
     Fat(Option<Fat32<IpcDisk>>),
     Local(Box<dyn LocalFsDyn>),
+    /// ArcaFS nativo (Fase 54, P5: stub che rifiuta — A1 lo riempie).
+    /// Variante propria (non `Local`) perche' il dispatch nativo `R_OBJ_*`
+    /// futuro non passa dalla vista POSIX.
+    Arca(ArcaFs),
 }
 
 /// Handle opaco per il dispatch dinamico (Fase 49): enum discriminata
@@ -65,6 +70,8 @@ pub enum MountedFs {
 pub enum AnyHandle {
     Ram(RamHandle),
     Fat(FileInfo),
+    /// ArcaFS (Fase 54, P5: mai costruito — `open` dello stub rifiuta).
+    Arca(ArcaHandle),
 }
 
 /// Versione object-safe di LocalFs: gli handle viaggiano come `AnyHandle`

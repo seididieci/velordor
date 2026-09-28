@@ -32,6 +32,12 @@ python3 scripts/mkfat.py userland/fs/fat2.img --serial C0FFEE01 --label SECOND -
 # (stesso usato da test-shell.py) DOPO mkfat. Fail-loud.
 bash scripts/inject-bins.sh
 
+# ArcaFS (Fase 54, P5): build del tool host + `arca.img` (superblock LBA0 +
+# shadow). Sempre generata (economica); il terzo drive si aggiunge solo con
+# ARCA_IMG=1, cosi' il boot default resta a due dischi (sda/sdb stabili per
+# t32/t36).
+./scripts/arca-tool.sh
+
 KERNEL=target/x86_64-unknown-none/release/velordor-kernel
 DISPLAY="${RUN_DISPLAY:-none}"   # RUN_DISPLAY=gtk per vedere la VGA in locale
 
@@ -43,6 +49,11 @@ if [ "${SWAP_DRIVES:-0}" = "1" ]; then
     DRIVES="-drive file=userland/fs/fat2.img,format=raw,if=ide -drive file=userland/fs/fat.img,format=raw,if=ide"
 else
     DRIVES="-drive file=userland/fs/fat.img,format=raw,if=ide -drive file=userland/fs/fat2.img,format=raw,if=ide"
+fi
+# Terzo drive ArcaFS opt-in (Fase 54): la suite lo cerca via magic, mai per
+# lettera (sda/sdb restano i due FAT).
+if [ "${ARCA_IMG:-0}" = "1" ]; then
+    DRIVES="$DRIVES -drive file=userland/disk/arca.img,format=raw,if=ide"
 fi
 # shellcheck disable=SC2086
 exec qemu-system-x86_64 \

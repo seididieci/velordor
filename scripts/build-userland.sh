@@ -50,6 +50,9 @@ build_one userland/time     userland/time/src/time.ld       usertime.bin    user
 # Primo programma lanciabile dalla shell (Fase 37.2, `run`): NON e' un
 # servizio (init non lo spawna), vive in /bin come gli altri binari da disco.
 build_one userland/runhello userland/runhello/src/runhello.ld userrunhello.bin userrunhello
+# Tool guest ArcaFS (Fase 54, P5): `list`/`stat` dalla shell, in /bin come
+# runhello. Prima di gen-service-hashes (policy restrittiva per hash).
+build_one userland/arca    userland/arca/src/arca.ld         userarca.bin    userarca
 
 # Manifest degli hash dei servizi (Fase 36, Strato 2): FNV-1a sui `.bin`
 # appena prodotti. fs e init vengono DOPO perche' lo includono a compile time

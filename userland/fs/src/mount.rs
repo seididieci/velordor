@@ -1,6 +1,41 @@
 use super::*;
 use super::provider::MountedFs;
+use crate::fat32::BlockSource;
 use alloc::boxed::Box;
+
+/// Sonda superblock ArcaFS a LBA0 del nodo (Fase 54, P5): magic + versione +
+/// block-size + checksum FNV-1a self-verifying su [0..120] (stessa
+/// `image_hash` del manifest: single source). Ritorna (generation, uuid).
+/// Qualunque fallimento (IO, formato) = None (il chiamante prova vfat).
+fn probe_arca(handle: u32) -> Option<(u64, u64)> {
+    let disk = IpcDisk::new(handle);
+    let mut sec = [0u8; 512];
+    if !disk.read_sector(0, &mut sec) {
+        return None;
+    }
+    let sb = &sec[..libr::ARCA_SUPER_LEN];
+    if sb[libr::ARCA_OFF_MAGIC..libr::ARCA_OFF_MAGIC + 4] != *libr::ARCA_MAGIC {
+        return None;
+    }
+    let u32le = |o: usize| {
+        u32::from_le_bytes([sb[o], sb[o + 1], sb[o + 2], sb[o + 3]])
+    };
+    let u64le = |o: usize| {
+        u64::from_le_bytes([
+            sb[o], sb[o + 1], sb[o + 2], sb[o + 3], sb[o + 4], sb[o + 5], sb[o + 6], sb[o + 7],
+        ])
+    };
+    if u32le(libr::ARCA_OFF_VERSION) != libr::ARCA_VERSION {
+        return None;
+    }
+    if u32le(libr::ARCA_OFF_BLOCK_SIZE) != libr::ARCA_BLOCK_SIZE {
+        return None;
+    }
+    if libr::image_hash(&sb[..libr::ARCA_OFF_CHECK]) != u64le(libr::ARCA_OFF_CHECK) {
+        return None;
+    }
+    Some((u64le(libr::ARCA_OFF_GEN), u64le(libr::ARCA_OFF_UUID)))
+}
 
 // ── Mount locali dinamici (Fase 16b) ─────────────────────────────────
 // Tabella VFS userspace (nessun kernel coinvolto, ADR-0005): binding
@@ -36,6 +71,13 @@ pub fn negotiate(source: &Source) -> Option<(&'static str, MountedFs)> {
                 return None;
             }
             let handle = IpcDisk::new(0).resolve(key)?;
+            // ArcaFS prima (Fase 54, P5): match piu' stretto (magic +
+            // versione + block-size + checksum: un BPB FAT non puo'
+            // collidere). Istanza stub (volume riconosciuto, non leggibile
+            // fino ad A1) — il mount riesce, le op rifiutano tipizzate.
+            if let Some((generation, uuid)) = probe_arca(handle) {
+                return Some(("arcafs", MountedFs::Arca(crate::arca::ArcaFs::stub(generation, uuid))));
+            }
             Some(("vfat", MountedFs::Fat(Fat32::mount(IpcDisk::new(handle)))))
         }
     }
@@ -214,7 +256,7 @@ pub fn apply_mount_spec(
         Some(v) => v,
         None => return false,
     };
-    let active = matches!(&fs, MountedFs::Fat(Some(_)) | MountedFs::Local(_));
+    let active = matches!(&fs, MountedFs::Fat(Some(_)) | MountedFs::Local(_) | MountedFs::Arca(_));
     if let Some(m) = mounts.iter_mut().find(|m| m.target == norm_target) {
         m.source = norm_source;
         m.opts = String::from(opts);
@@ -252,8 +294,9 @@ pub fn by_id_mut(mounts: &mut Vec<FsMount>, id: u64) -> Option<&mut FsMount> {
 /// A remount riuscito bumpa `gen` (l'istanza parser e' nuova: le cache
 /// FileInfo per-fd vanno rifatte).
 pub fn reactivate_mount(mounts: &mut Vec<FsMount>, mi: usize, fgen: &mut u64) -> bool {
-    // I mount locali puri non hanno epoca da invalidare (Fase 49, F4).
-    if mounts.get(mi).map_or(false, |m| matches!(m.fs, MountedFs::Local(_))) {
+    // I mount provider (`Local` Fase 49 / `Arca` Fase 54) non hanno epoca da
+    // invalidare: sempre attivi (lo stub Arca non dipende dal disco a runtime).
+    if mounts.get(mi).map_or(false, |m| m.is_provider()) {
         return true;
     }
     if mounts.get(mi).map_or(false, |m| m.is_active()) {
@@ -302,7 +345,7 @@ impl FsMount {
     pub fn fat(&self) -> Option<&Fat32<IpcDisk>> {
         match &self.fs {
             MountedFs::Fat(opt) => opt.as_ref(),
-            MountedFs::Local(_) => None,
+            MountedFs::Local(_) | MountedFs::Arca(_) => None,
         }
     }
 
@@ -311,7 +354,7 @@ impl FsMount {
     pub fn fat_mut(&mut self) -> Option<&mut Fat32<IpcDisk>> {
         match &mut self.fs {
             MountedFs::Fat(opt) => opt.as_mut(),
-            MountedFs::Local(_) => None,
+            MountedFs::Local(_) | MountedFs::Arca(_) => None,
         }
     }
 
@@ -323,6 +366,10 @@ impl FsMount {
         match &mut self.fs {
             MountedFs::Fat(Some(f)) => Some(f), // Fat32<B> implements LocalFsDyn
             MountedFs::Local(dyn_handle) => Some(&mut **dyn_handle),
+            // ArcaFS (P5 stub: op tipizzate, mai panic) e' un provider
+            // dinamico come gli altri: Fase 54 estende `MountedFs::Arca`
+            // (variante propria per il dispatch nativo `R_OBJ_*` futuro).
+            MountedFs::Arca(a) => Some(a),
             _ => None,
         }
     }
@@ -349,14 +396,16 @@ impl FsMount {
     pub fn is_active(&self) -> bool {
         match &self.fs {
             MountedFs::Fat(opt) => opt.is_some(),
-            MountedFs::Local(_) => true,
+            // `Local` sempre vivo; `Arca` P5: istanza stub sempre presente
+            // (il volume esiste ma non e' leggibile fino ad A1).
+            MountedFs::Local(_) | MountedFs::Arca(_) => true,
         }
     }
 
-    /// true se il mount e' una variante `Local` (Fase 49, F4): dispatch via
-    /// `local_dyn`, niente epoche disco.
-    pub fn is_local(&self) -> bool {
-        matches!(&self.fs, MountedFs::Local(_))
+    /// true se il mount e' un provider dinamico (`Local` Fase 49 / `Arca`
+    /// Fase 54): dispatch via `local_dyn`, niente epoche disco.
+    pub fn is_provider(&self) -> bool {
+        matches!(&self.fs, MountedFs::Local(_) | MountedFs::Arca(_))
     }
 }
 

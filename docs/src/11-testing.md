@@ -2,7 +2,7 @@
 
 > I conteggi di suite citati negli ADR e nelle sotto-fasi del libro sono
 > **snapshot all'epoca** di ciascuna fase (es. 17/17, 21/21, 32/32). Il gate
-> corrente e' quello qui sotto (5/5 + 7/7 + 57/57 + shell) e in `AGENTS.md`.
+> corrente e' quello qui sotto (5/5 + 7/7 + 8/8 + 57/57 + shell) e in `AGENTS.md`.
 
 La regressione automatica del sistema gira **dentro QEMU** a ogni boot: i
 binari di test sono processi user reali, spawnati da `init` in sequenza prima
@@ -17,6 +17,7 @@ libs/libr   libreria di sistema condivisa (runtime + allocatore)
 testland/   test suite + repro + demo storiche
   testfs        usertestfs   — ramfs (read/write/mkdir/errori)   → PASS 5/5
   testfat       usertestfat  — FAT32 scrivibile (Fase 20) + /dev/null, /dev/zero → PASS 7/7
+  testsarca     usertestsarca — ArcaFS P5 (BLAKE2s + content_hash + volume) → PASS 8/8
   usertests     usertests    — suite completa (57 test)          → PASS 57/57
   usertest-client usertestcli  — helper a modalita' (ECHO/ZEROREAD/NULLW/SRV/CHURN/KILLME/SRVDIE/SYNCWAIT/MNTDIE/OPENDIE/MAPHAMMER/FLOOD/NEST/FAULT_*/SHMDEMO/COWDEMO/FORKDEMO/ORPHAN/HARDEN/REG51/EXECDEMO/DUPCLAIM/DUPGRANT/DUPSIBCLAIM/SEEKDENY/SUSPENDENY/SIGCATCH/GRANTDENY)
   usertest-spin  usertestspin  — busy-loop a budget di tick (batch 512 spin puri, priorita' via SpawnMeta) + ramo SQUAT (sonda di squat FS_REGISTER, t51)
@@ -40,16 +41,19 @@ iniettati a build (`scripts/inject-bins.sh`) e spawnati via `spawn_image`
 Di default (`./run.sh`) init SALTA i test (feature `skip_tests`, shell subito
 usabile in ~2 s); con `RUN_TESTS=1` (`./run-tests.sh`) init spawa i test in
 SEQUENZA, aspettando un IPC `TEST_DONE` (tag `0x7E`)
-da ciascuno prima dello spawn successivo: i tre binari condividono la ramfs di
+da ciascuno prima dello spawn successivo: i binari condividono la ramfs di
 userfs (path e file di lavoro) e la sequenza rende output e PID deterministici
 (con i ring SPSC per-processo, Fase 10.2, nessuna race da buffer condivisi).
-La shell e' spawnata per ultima.
+La shell e' spawnata per ultima. `run-tests.sh` esporta `ARCA_IMG=1`: il gate
+ha il terzo drive ArcaFS, quindi `testsarca` gira 8/8 (senza drive il core
+3/3 resta PASS, n/n adattivo).
 
 Righe di gate:
 
 ```
 [testfs] PASS 5/5
 [testfat] PASS 7/7
+[testsarca] PASS 8/8
 [usertests] PASS 57/57
 ```
 
@@ -159,6 +163,7 @@ irrevocabili sul canale della suite)
 | t56 | cancel cooperativo + escalation (Fase 44b, ADR-0036): catcher esce 42 al `JOB_CANCEL` senza kill; KILLME vivo oltre il grace poi esce 130 via `kill(EXIT_SIGINT)` |
 | t57 | policy su identita' (Fase 45, ADR-0037): helper noto (riga test-policy ALL) — GET default ALL, drop GRANT→grant negato, drop PIPE→pipe_create negata, op valida dopo; attore ignoto `foreign.bin` fuori tabella policy — mount/grant/pipe_create negati dal default fail-closed (0x19F), open+read+write+seek lecite; read valida dopo i rifiuti (anti-wedge ring) |
 | t34 | diritti per-canale lato server (Fase 17, per ultimo: drop irrevocabili): GET default ALL+root, drop WRITE (write -1/read ok), drop MOUNT+subtree /fat (mount/open-fuori -1, open-dentro+read+readdir-dentro ok, readdir-fuori -1), widen rifiutato + GET conferma |
+| testsarca | ArcaFS P5 (Fase 54, binario separato `usertestsarca`, 8 check): vettori BLAKE2s (empty/abc/lungo), `R_GET_HASH` ramfs == ricalcolo, tamper→hash diverso, scan `/dev/sdX` per magic ACFS, mount `/arca` (stub) ok, `open`/`readdir` sul mount rifiutati, umount ok. Con `ARCA_IMG=0` (run manuale) salta 4-8 e resta PASS 3/3 |
 
 > Il CBS e' sempre attivo (lo scheduler RT e' l'unico): t18/t19 sono test
 > reali, non ci sono modalita' "vuote".

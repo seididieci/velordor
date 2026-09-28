@@ -463,6 +463,27 @@ pub fn statvfs(path: &str, out: &mut StatVfs) -> Result<(), Error> {
     }
 }
 
+/// Fase 54 (P5 integrita') — `get_hash(path, out)`: BLAKE2s-256 del contenuto
+/// via `R_GET_HASH` (compute-on-query: userfs rilegge e hasha, nessuno stato).
+/// `out` = 32 byte. `Err` per device/path senza contenuto o mount inattivi.
+#[inline]
+pub fn get_hash(path: &str, out: &mut [u8; 32]) -> Result<(), Error> {
+    session::fs_gate()?;
+    if !ring::req_ring_write(R_GET_HASH, path.len() as u64, 0, path.as_bytes()) {
+        return Err(Error::RingFull);
+    }
+    match session::fs_notify_result(FS_NOTIFY, || {
+        ring::req_ring_write(R_GET_HASH, path.len() as u64, 0, path.as_bytes())
+    }) {
+        Some((result, _, _)) => {
+            ring::resp_ring_read_payload(out, 32);
+            session::fs_reply_check(result)?;
+            Ok(())
+        }
+        None => Err(Error::NotReady),
+    }
+}
+
 /// Scrive un frame "source\0target\0" e lo notifica (helper di `mount`).
 fn mount_frame(source: &str, target: &str) -> bool {
     // Path lunghi al massimo MAX_PATH (256) l'uno + 2 NUL.

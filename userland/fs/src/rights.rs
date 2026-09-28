@@ -84,6 +84,8 @@ pub fn op_bit(op_tag: u32) -> Option<u32> {
         R_SYNC => Some(libr::RIGHTS_SYNC),
         // Spazio del mount (Fase 52): lettura globale come R_STAT.
         R_STATVFS => Some(libr::RIGHTS_READDIR),
+        // Hash contenuto (Fase 54): e' una lettura (come R_STAT), con subtree.
+        R_GET_HASH => Some(libr::RIGHTS_READDIR),
         // Handoff fd e pipe (Fase 45): GRANT crea capability per altri
         // (negabile), PIPE crea stato condiviso nel server (negabile).
         R_DUP_GRANT => Some(libr::RIGHTS_GRANT),

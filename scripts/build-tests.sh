@@ -28,6 +28,8 @@ export VELORDOR_SERVICE_HASHES="$(pwd)/build-meta/service_hashes.rs"
 build_one testland/demo    testland/demo/src/demo.ld         userdemo.bin      userdemo
 build_one testland/testfs  testland/testfs/src/testfs.ld     usertestfs.bin    usertestfs
 build_one testland/testfat testland/testfat/src/testfat.ld   usertestfat.bin   usertestfat
+# ArcaFS P5 (Fase 54): BLAKE2s + content_hash + volume (terzo drive opt-in).
+build_one testland/testsarca testland/testsarca/src/testsarca.ld usertestsarca.bin usertestsarca
 build_one testland/hogheap testland/hogheap/src/hogheap.ld   userhogheap.bin   userhogheap
 build_one testland/devreader testland/devreader/src/devreader.ld userdevreader.bin userdevreader
 build_one testland/usertests testland/usertests/src/usertests.ld usertests.bin usertests
