@@ -3,6 +3,7 @@ use crate::provider::LocalFs;
 
 // ── Handler (Option<u64> internamente) ─────────────────────────────
 
+#[inline(never)]
 pub fn handle_open(
     fs: &mut ramfs::RamFs,
     ftable: &mut ftable::FileTable,
@@ -108,6 +109,7 @@ pub fn handle_open(
     }
 }
 
+#[inline(never)]
 pub fn handle_read(
     fs: &mut ramfs::RamFs,
     ftable: &mut ftable::FileTable,
@@ -220,6 +222,7 @@ pub fn handle_read(
 /// dati → frame con payload; vuota con writer aperti → ERR_EMPTY (il client
 /// riprova throttled: 0 significherebbe EOF e troncherebbe la pipeline);
 /// vuota con writer chiusi → frame vuoto + 0 (EOF vero, contratto 18.2-bis).
+#[inline(never)]
 fn handle_pipe_read(
     pipes: &mut pipes::PipeTable,
     rings: &BTreeMap<u64, (u64, u64)>,
@@ -250,6 +253,7 @@ fn handle_pipe_read(
 /// Crea una pipe (Fase 42): buffer + due fd (lettura, scrittura) sul canale
 /// del chiamante. Ritorna (read_fd, write_fd): il dispatch li mette in
 /// result e w1 del response frame.
+#[inline(never)]
 pub fn handle_pipe_create(
     ftable: &mut ftable::FileTable,
     pipes: &mut pipes::PipeTable,
@@ -267,6 +271,7 @@ pub fn handle_pipe_create(
 /// (`map_in`), il driver legge i dati direttamente dal request ring e avanza la
 /// tail (SPSC). La chiamata NON deve consumare il frame nel request ring.
 /// Ritorna i byte accettati dal driver (reply.w0).
+#[inline(never)]
 pub fn handle_write_remote(
     ftable: &ftable::FileTable,
     rings: &BTreeMap<u64, (u64, u64)>,
@@ -292,6 +297,7 @@ pub fn handle_write_remote(
 /// Scrive `count` byte di `payload` sul fd (ramfs o FAT-overwrite). FAT32 e'
 /// scrivibile dalla Fase 20 (write-through, niente cache): solo overwrite
 /// entro la size esistente (20.2) — la crescita/creazione arrivano dopo.
+#[inline(never)]
 pub fn handle_write_local(
     fs: &mut ramfs::RamFs,
     ftable: &mut ftable::FileTable,
@@ -399,6 +405,7 @@ pub fn handle_write_local(
     Ok(n as u64)
 }
 
+#[inline(never)]
 pub fn handle_close(
     ftable: &mut ftable::FileTable,
     pipes: &mut pipes::PipeTable,
@@ -419,6 +426,7 @@ pub fn handle_close(
     if ftable.close(chan, fd) { Ok(0) } else { Err(ERR_INVALID) }
 }
 
+#[inline(never)]
 pub fn handle_readdir(
     fs: &mut ramfs::RamFs,
     mounts_fat: &mut Vec<mount::FsMount>,
@@ -445,6 +453,7 @@ pub fn handle_readdir(
             let fat = mount::by_id_mut(mounts_fat, mid).ok_or(ERR)?.local_dyn().ok_or(ERR)?;
             struct CollectSink<'a>(&'a mut Vec<String>);
             impl crate::provider::EntrySink for CollectSink<'_> {
+                #[inline(never)]
                 fn emit(&mut self, name: &str) {
                     self.0.push(alloc::string::String::from(name));
                 }
@@ -485,6 +494,7 @@ pub fn handle_readdir(
             let mut entries: Vec<String> = Vec::new();
             struct CollectSink<'a>(&'a mut Vec<String>);
             impl crate::provider::EntrySink for CollectSink<'_> {
+                #[inline(never)]
                 fn emit(&mut self, name: &str) { self.0.push(alloc::string::String::from(name)); }
             }
             let ok = crate::provider::LocalFs::readdir(fs, path, &mut CollectSink(&mut entries)).is_ok();
@@ -525,6 +535,7 @@ pub fn handle_readdir(
 /// e ritorna 0 per il reply IPC (self-written: il dispatch non riscrive).
 /// `mtime` = secondi epoch dal provider (`Meta`, mai fabbricato qui); 0 =
 /// sconosciuto (sintetici root/device/padri, senza dir-entry).
+#[inline(never)]
 pub fn stat_reply(rings: &BTreeMap<u64, (u64, u64)>, chan: u64, size: u64, kind: u64, mtime: u64) -> u64 {
     if rings.get(&chan).is_some() {
         rings::map_client_resp_ring(rings, chan);
@@ -537,6 +548,7 @@ pub fn stat_reply(rings: &BTreeMap<u64, (u64, u64)>, chan: u64, size: u64, kind:
 /// STAT_FILE/DIR + STAT_READONLY dal provider. `libr::stat` decodifica
 /// `w1 & STAT_READONLY`; senza questa propagazione `Meta.readonly` sarebbe
 /// ignorato (era il caso prima del wiring FAT).
+#[inline(never)]
 fn stat_kind(meta: &crate::provider::Meta) -> u64 {
     let base = if meta.kind == 1 { libr::STAT_DIR } else { libr::STAT_FILE };
     if meta.readonly {
@@ -555,6 +567,7 @@ fn stat_kind(meta: &crate::provider::Meta) -> u64 {
 /// reale (dir = 0, mai readonly), FAT size dalla dir entry (scrivibile dalla
 /// Fase 20: mai readonly), device size 0 readonly 0 (sconosciuto senza
 /// interrogare il driver: i prefix registrati sono foglie, qui mai contattati).
+#[inline(never)]
 pub fn handle_stat(
     fs: &mut ramfs::RamFs,
     mounts_fat: &mut Vec<mount::FsMount>,
@@ -611,6 +624,7 @@ pub fn handle_stat(
 /// Self-written come R_STAT (`[count:8][0:8][entry...]`, entry 16 B):
 /// il dispatch non riscrive. `topo` e' la connessione topologia di userfs
 /// (riconnessione automatica a morte driver, come i mount).
+#[inline(never)]
 pub fn handle_disk_list(
     topo: &ipc_disk::IpcDisk,
     rings: &BTreeMap<u64, (u64, u64)>,
@@ -633,6 +647,7 @@ pub fn handle_disk_list(
 /// R_DISK_INFO (Fase 51): dettaglio disco `idx` (sda=0, ...) via
 /// `IpcDisk::info`. Self-written (`[sectors:8][flags:8]` + frame fisso 76 B
 /// come DISK_INFO). Indice oltre i dischi → ERR (mai frame parziale).
+#[inline(never)]
 pub fn handle_disk_info(
     topo: &ipc_disk::IpcDisk,
     rings: &BTreeMap<u64, (u64, u64)>,
@@ -678,6 +693,7 @@ fn hash_of_provider(
 /// self-written `[0:8][0:8]` + 32 B (come R_STAT, niente fd). Solo mount
 /// `Local` (ramfs/FAT/Arca via trait `read`); device/remoti/sintetici e
 /// mount inattivi → ERR (nessun contenuto da hashare). Precedenza come stat.
+#[inline(never)]
 pub fn handle_get_hash(
     fs: &mut ramfs::RamFs,
     mounts_fat: &mut Vec<mount::FsMount>,
@@ -738,6 +754,7 @@ pub fn handle_get_hash(
 /// volatile per disegno, mai promessa). Two-phase: modo invalidato o
 /// barriera fallita → `Err`, stato invariato (mai stabilita' presunta).
 /// Default per-canale `SYNC_NONE` (nessuna pretesa registrata).
+#[inline(never)]
 pub fn handle_sync(
     mounts_fat: &mut Vec<mount::FsMount>,
     sync_expect: &mut BTreeMap<u64, u32>,
@@ -770,6 +787,7 @@ pub fn handle_sync(
 /// senza shadow). Self-written (`[0:8][0:8]` + 32 B): il dispatch non
 /// riscrive. Device e padri sintetizzati → ERR_INVALID (nessun device da
 /// contabilizzare); mount noto ma inattivo → ERR (stesso contratto di open).
+#[inline(never)]
 pub fn handle_statvfs(
     fs: &mut ramfs::RamFs,
     mounts_fat: &mut Vec<mount::FsMount>,
@@ -821,6 +839,7 @@ pub fn handle_statvfs(
     }
 }
 
+#[inline(never)]
 pub fn handle_mkdir(
     fs: &mut ramfs::RamFs,
     mounts_fat: &mut Vec<mount::FsMount>,
@@ -856,6 +875,7 @@ pub fn handle_mkdir(
 /// scrivibile dalla Fase 20, ma non cancellabile) e i device remoti non sono
 /// file cancellabili (e un mount point non si rimuove: si smonta).
 /// Ritorna Some(0) o None.
+#[inline(never)]
 pub fn handle_delete(
     fs: &mut ramfs::RamFs,
     mounts_fat: &mut Vec<mount::FsMount>,
@@ -896,6 +916,7 @@ pub fn handle_delete(
 /// fallito (sorgente/target invalidi, nome ignoto, driver irraggiungibile)
 /// nessun cambio di stato; a BPB illeggibile la spec resta registrata
 /// INATTIVA e ritenta lazy (mai shadow ramfs).
+#[inline(never)]
 pub fn handle_mount(
     mounts: &mut Vec<mount::FsMount>,
     payload: &str,
@@ -926,6 +947,7 @@ pub fn handle_mount(
 /// A rimozione riuscita bumpa `gen`. Gli fd tengono mount-id (Fase 49, F2):
 /// orfani di un umount riuscito danno errore al prossimo uso invece di
 /// aliasare il vicino shiftato.
+#[inline(never)]
 pub fn handle_umount(
     mounts: &mut Vec<mount::FsMount>,
     ftable: &ftable::FileTable,
@@ -948,6 +970,7 @@ pub fn handle_umount(
 /// vive in userfs, i driver non lo conoscono). Ritorna il nuovo offset.
 /// Two-phase: valida tutto PRIMA di `set_offset` (a rifiuto l'offset resta
 /// quello di prima, mai stato intermedio).
+#[inline(never)]
 pub fn handle_lseek(
     fs: &ramfs::RamFs,
     ftable: &mut ftable::FileTable,
@@ -1012,281 +1035,16 @@ pub fn handle_lseek(
     Ok(new as u64)
 }
 
-// ── Object store nativo ArcaFS (Fase 55, A1) ────────────────────────
-
-/// Handler R_OBJ_PUT: scrive/estende un oggetto in ArcaFs (chunk a `offset`).
-/// Ritorna i byte accettati (`ERR_INVALID` a nomi oltre bound via `put_chunk`).
-pub fn handle_obj_put(
-    arca: &mut crate::arca::ArcaFs,
-    payload: &[u8],
-    offset: usize,
-) -> Result<u64, u64> {
-    let (bucket, key, data) = arcafs::wire::parse_obj_prefix(payload).ok_or(ERR_INVALID)?;
-    // Scrive il chunk (offset 0 = nuova versione, >0 = append/patch).
-    let n = arca.put_chunk(bucket, key, offset, data).ok_or(ERR_INVALID)?;
-    Ok(n as u64)
-}
-
-/// Handler R_OBJ_GET: legge un oggetto da ArcaFs (stateless, chunking).
-/// Scrive SEMPRE il response frame (dati a successo, `ERR_*` a errore): cosi'
-/// il client non lascia mai un frame stale nel response ring (desync).
-pub fn handle_obj_get(
-    arca: &crate::arca::ArcaFs,
-    payload: &[u8],
-    offset: usize,
-    count: usize,
-) -> Result<u64, u64> {
-    let result = obj_get_inner(arca, payload, offset, count);
-    match result {
-        Ok((blob_len, data)) => {
-            rings::resp_ring_write(blob_len as u64, 0, data);
-            Ok(blob_len as u64)
-        }
-        Err(e) => {
-            rings::resp_ring_write(e, 0, &[]);
-            Err(e)
-        }
-    }
-}
-
-/// Parsing + lookup per ID: `Ok((blob_len, chunk))` o `Err(sentinella)`.
-/// Stesso contratto di `obj_get_inner`, chiave = object_id (8 B LE esatti).
-fn obj_get_id_inner<'a>(
-    arca: &'a crate::arca::ArcaFs,
-    payload: &[u8],
-    offset: usize,
-    count: usize,
-) -> Result<(usize, &'a [u8]), u64> {
-    let id = arcafs::wire::parse_u64(payload).ok_or(ERR_INVALID)?;
-    let blob = arca.get_id(id)?;
-    let blob_len = blob.len();
-    if offset >= blob_len {
-        return Ok((blob_len, &[])); // EOF
-    }
-    let to_read = (blob_len - offset).min(count);
-    Ok((blob_len, &blob[offset..offset + to_read]))
-}
-
-/// Handler R_OBJ_GET_ID: come GET ma per object_id. Scrive SEMPRE il frame
-/// (stessa disciplina anti-desync di `handle_obj_get`).
-pub fn handle_obj_get_id(
-    arca: &crate::arca::ArcaFs,
-    payload: &[u8],
-    offset: usize,
-    count: usize,
-) -> Result<u64, u64> {
-    let result = obj_get_id_inner(arca, payload, offset, count);
-    match result {
-        Ok((blob_len, data)) => {
-            rings::resp_ring_write(blob_len as u64, 0, data);
-            Ok(blob_len as u64)
-        }
-        Err(e) => {
-            rings::resp_ring_write(e, 0, &[]);
-            Err(e)
-        }
-    }
-}
-
-/// Stat per (bucket,key) o per id: (id_o_size, size_o_nv, frame [nv_o_mtime]).
-/// Il chiamante (dispatch) scrive reply a due registri + frame: vedi
-/// `R_PIPE_CREATE` per il pattern (qui senza `continue`: il reply generico
-/// non basta, serve w1).
-pub fn handle_obj_stat(
-    arca: &crate::arca::ArcaFs,
-    payload: &[u8],
-) -> Result<(u64, u64, [u8; 16]), u64> {
-    let (bucket, key, rest) = arcafs::wire::parse_obj_prefix(payload).ok_or(ERR_INVALID)?;
-    if !rest.is_empty() {
-        return Err(ERR_INVALID);
-    }
-    let (id, size, nv, mtime) = arca.stat(bucket, key)?;
-    let mut frame = [0u8; 16];
-    frame[..8].copy_from_slice(&nv.to_le_bytes());
-    frame[8..].copy_from_slice(&mtime.to_le_bytes());
-    Ok((id, size, frame))
-}
-
-/// Stat per object_id: (size, nv, frame [mtime]).
-pub fn handle_obj_stat_id(
-    arca: &crate::arca::ArcaFs,
-    payload: &[u8],
-) -> Result<(u64, u64, [u8; 8]), u64> {
-    let id = arcafs::wire::parse_u64(payload).ok_or(ERR_INVALID)?;
-    let (size, nv, mtime) = arca.stat_id(id)?;
-    Ok((size, nv, mtime.to_le_bytes()))
-}
-
-/// Handler R_OBJ_DELETE: rimuove nome + catena viva (gli snapshot tengono
-/// copie: mai invalidati). Reply generica (0/ERR), niente frame dedicato.
-pub fn handle_obj_delete(
-    arca: &mut crate::arca::ArcaFs,
-    payload: &[u8],
-) -> Result<u64, u64> {
-    let (bucket, key, rest) = arcafs::wire::parse_obj_prefix(payload).ok_or(ERR_INVALID)?;
-    if !rest.is_empty() {
-        return Err(ERR_INVALID);
-    }
-    arca.delete(bucket, key)?;
-    Ok(0)
-}
+// ── Object store nativo ArcaFS (56.2b: backend unico su disco) ───────
+// Gli handler `R_OBJ_*`/`R_SNAP_*` vivono in `btree_drv` (B+tree COW +
+// commit per-op). Il backend in-RAM 56.1 e' rimosso (transitorio per
+// dichiarazione; oracolo nei test host `arcafs`): niente doppio backend,
+// niente flag di routing nel dispatch.
 
 // ── Volume on-disk: admin debug formato/allocatore (Fase 56.2a) ────
 // UN solo tag (`R_ARCA_DEBUG`, sub-op in `arcafs::proto`): scaffold per il
-// gate su volume di scratch; gating di policy in A7. Il binding vive nel
-// server (`Option<ArcaVolume>`). Mai nel percorso dati R_OBJ_* (in-RAM
-// fino a 56.2b).
+// gate su volume di scratch; gating di policy in A7. L'unico handler RAW
+// vive in `btree_drv` (stesso `VolumeStore` pre/post bind: niente doppi
+// handle, niente divergenze); il dispatch sta in `server.rs`.
 
-/// Esito del debug: scalare (reply generica) o con frame dedicato (il
-/// chiamante scrive reply a due registri e fa `continue`, pattern PIPE).
-/// Il payload viaggia in `Box` (heap): il loop server gira su 16 KiB di
-/// stack con buffer 4K nei handler (Fase 24.2) — un ritorno by-value da
-/// 3.5 KiB qui, specie se inlinato, sfonda lo stack (osservato: #PF in
-/// guardia a ogni boot). Mai grandi array per-valore in questo path.
-pub enum ArcaDebugOut {
-    Scalar(u64),
-    Read(u64, alloc::boxed::Box<[u8; arcafs::format::ARCA_NODE_PAYLOAD_LEN]>),
-    Stats(u64, u64, u64),
-}
 
-/// Handler R_ARCA_DEBUG: primo byte payload = sub-op (`ARCA_SUB_*`).
-/// OPEN lega il volume alla source (`/dev/sdc`, resolve come i mount);
-/// senza volume legato gli altri sub rifiutano (frame gia' consumato).
-/// Il blocco viaggia solo nel payload (w0 e' la lunghezza, come gli altri
-/// tag: mai semantica nei registri oltre l'expect).
-/// `#[inline(never)]`: il suo frame (~4K con i buffer nodo) NON deve
-/// fondersi nel frame del loop server (vedi sopra).
-#[inline(never)]
-pub fn handle_arca_debug(
-    dbgvol: &mut Option<crate::volume::ArcaVolume>,
-    payload: &[u8],
-) -> Result<ArcaDebugOut, u64> {
-    use arcafs::proto::*;
-    let sub = *payload.first().ok_or(ERR_INVALID)?;
-    let rest = payload.get(1..).ok_or(ERR_INVALID)?;
-    if sub == ARCA_SUB_OPEN {
-        let path = core::str::from_utf8(rest).map_err(|_| ERR_INVALID)?;
-        let handle = mount::resolve_mount_source(path).ok_or(ERR)?;
-        match crate::volume::ArcaVolume::open(handle) {
-            Some(v) => {
-                *dbgvol = Some(v);
-                return Ok(ArcaDebugOut::Scalar(0));
-            }
-            None => return Err(ERR),
-        }
-    }
-    let vol = dbgvol.as_mut().ok_or(ERR)?;
-    match sub {
-        ARCA_SUB_ALLOC => {
-            if !rest.is_empty() {
-                return Err(ERR_INVALID);
-            }
-            Ok(ArcaDebugOut::Scalar(vol.alloc().ok_or(ERR)?))
-        }
-        ARCA_SUB_FREE => {
-            let n = arcafs::wire::parse_u64(rest).ok_or(ERR_INVALID)?;
-            if vol.free(n) {
-                Ok(ArcaDebugOut::Scalar(0))
-            } else {
-                Err(ERR)
-            }
-        }
-        ARCA_SUB_READ => {
-            let n = arcafs::wire::parse_u64(rest).ok_or(ERR_INVALID)?;
-            // Box (heap): mai 3.5K sullo stack di questa funzione, che il
-            // chiamante tiene in frame per il match (vedi `ArcaDebugOut`).
-            let mut data = alloc::boxed::Box::new([0u8; arcafs::format::ARCA_NODE_PAYLOAD_LEN]);
-            match vol.read_node(n, &mut data) {
-                Some(_) => Ok(ArcaDebugOut::Read(n, data)),
-                None => Err(ERR),
-            }
-        }
-        ARCA_SUB_WRITE => {
-            let (n, data) = arcafs::wire::split_id_rest(rest).ok_or(ERR_INVALID)?;
-            if data.len() != arcafs::format::ARCA_NODE_PAYLOAD_LEN {
-                return Err(ERR_INVALID);
-            }
-            // Box (heap): vedi sopra — niente array 3.5K in frame.
-            let mut payload_buf = alloc::boxed::Box::new([0u8; arcafs::format::ARCA_NODE_PAYLOAD_LEN]);
-            payload_buf.copy_from_slice(data);
-            if vol.write_node(n, arcafs::format::ARCA_NODE_TYPE_RAW, 0, &payload_buf) {
-                Ok(ArcaDebugOut::Scalar(0))
-            } else {
-                Err(ERR)
-            }
-        }
-        ARCA_SUB_STAT => {
-            if !rest.is_empty() {
-                return Err(ERR_INVALID);
-            }
-            let (high, live, free) = vol.stats();
-            Ok(ArcaDebugOut::Stats(high, live, free))
-        }
-        _ => Err(ERR_INVALID),
-    }
-}
-
-/// Handler R_SNAP_CREATE: snapshot del bucket → reply snap_id.
-pub fn handle_snap_create(
-    arca: &mut crate::arca::ArcaFs,
-    payload: &[u8],
-) -> Result<u64, u64> {
-    let bucket = arcafs::wire::parse_bucket_only(payload).ok_or(ERR_INVALID)?;
-    arca.snap_create(bucket).map(|id| id as u64).ok_or(ERR_INVALID)
-}
-
-/// Handler R_SNAP_DELETE: sgancia lo snapshot (GC delle copie pinnate).
-pub fn handle_snap_delete(
-    arca: &mut crate::arca::ArcaFs,
-    payload: &[u8],
-) -> Result<u64, u64> {
-    let id = arcafs::wire::parse_u64(payload).ok_or(ERR_INVALID)?;
-    if arca.snap_delete(id) {
-        Ok(0)
-    } else {
-        Err(ERR_NOTFOUND)
-    }
-}
-
-/// Handler R_SNAP_ROLLBACK `[snap_id:8][obj-prefix]`: la versione pinnata
-/// diventa nuova head (clonata). Ritorna la nuova size.
-pub fn handle_snap_rollback(
-    arca: &mut crate::arca::ArcaFs,
-    payload: &[u8],
-) -> Result<u64, u64> {
-    let (id, rest0) = arcafs::wire::split_id_rest(payload).ok_or(ERR_INVALID)?;
-    let (bucket, key, rest) = arcafs::wire::parse_obj_prefix(rest0).ok_or(ERR_INVALID)?;
-    if !rest.is_empty() {
-        return Err(ERR_INVALID);
-    }
-    arca.snap_rollback(bucket, key, id)
-}
-
-/// Handler R_SNAP_CLONE `[snap_id:8][dlen:1][dstbucket]`: clona il bucket
-/// pinnato in un bucket nuovo (nuovi id). Ritorna gli oggetti clonati.
-pub fn handle_snap_clone(
-    arca: &mut crate::arca::ArcaFs,
-    payload: &[u8],
-) -> Result<u64, u64> {
-    let (id, rest0) = arcafs::wire::split_id_rest(payload).ok_or(ERR_INVALID)?;
-    let dst = arcafs::wire::parse_bucket_only(rest0).ok_or(ERR_INVALID)?;
-    arca.snap_clone(id, dst)
-}
-
-/// Parsing + lookup: `Ok((blob_len, chunk))` o `Err(sentinella)`
-/// (`INVALID` a nomi oltre bound, `NOTFOUND` a chiave assente).
-fn obj_get_inner<'a>(
-    arca: &'a crate::arca::ArcaFs,
-    payload: &[u8],
-    offset: usize,
-    count: usize,
-) -> Result<(usize, &'a [u8]), u64> {
-    let (bucket, key, _) = arcafs::wire::parse_obj_prefix(payload).ok_or(ERR_INVALID)?;
-    let blob = arca.get(bucket, key)?;
-    let blob_len = blob.len();
-    if offset >= blob_len {
-        return Ok((blob_len, &[])); // EOF
-    }
-    let to_read = (blob_len - offset).min(count);
-    Ok((blob_len, &blob[offset..offset + to_read]))
-}

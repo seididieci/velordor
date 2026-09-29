@@ -6,10 +6,12 @@ Filosofia ADR-0025: nativo dentro (userfs), personalita' al bordo (libr);
 provider trait ADR-0038; policy/identita'/sandbox ADR-0037.
 
 Stato: sessione guidata A0 completata (decisioni T0–T10) + piano OS-first
-P1–P5 concordato (§13) e chiuso (Fasi 50–54) + A1+N0 chiuso (Fase 55:
-object store in-memory, mount MBR/GPT, `sys` seedato, init dual-mode).
-Prossimo: stesura di dettaglio punto per punto e A2 (persistenza, COW,
-snapshot, GC).
+P1–P5 chiuso (Fasi 50–54) + A1+N0 chiuso (Fase 55: object store, mount
+MBR/GPT, `sys` seedato, init dual-mode) + A2/56 CHIUSA (56.1 versioni in RAM;
+56.2a formato+allocatore; 56.2b B+tree COW + commit su disco; 56.2c
+recovery/orphan-GC + snapshot persistenti + sys-dal-volume). Prossimo: 57
+(L0/L1 logging) e 58+ (A3 quota/subvolumi, A4 ABAC, ...). Packing S1/S2,
+`R_OBJ_MGET` e marker dir persistenti (56.3) restano rinviati.
 
 > Nota sui gate: i numeri citati altrove sono snapshot storici; il gate
 > corrente vive in `docs/src/11-testing.md` e in `ROADMAP.md`
@@ -729,16 +731,44 @@ e accendere la persistenza. Due passi con gate separati.
   B+tree fatti in casa); refcount vs snapshot-delete concorrente al commit
   (ordine write sopra); heap userfs sotto churn (VERSION_RETAIN=8 resta).
 
-### 56.2c — Recovery + sys-dal-volume (chiusura 56)
+> **Stato 56.2b (chiuso, gate 5/5+7/7+32/32+58/58)**: vittoria conseguita con
+> tre deviazioni dichiarate dal piano sopra — (1) backend UNICO su disco, il
+> mem 56.1 e' rimosso (era transitorio per §17; ~19 KiB oltre
+> `SPAWN_IMAGE_MAX` non lasciano scelta) e l'oracolo e' nei test host
+> `arcafs` (`MemStore`, 9 test), non in un doppio backend guest; (2) cache
+> nodi LRU deferita al tuning coi numeri (correttezza prima, I/O diretto);
+> (3) secondary root persistita in superblock `alloc_hint` (la root SI SPOSTA
+> a ogni split: il blocco 2 fisso dava chiavi post-split invisibili al
+> remount — il commit persiste tutte e tre le radici). Commit per-op
+> (header-ext + shadow + flip), non TXG batchato (TXG resta prerequisito §12
+> per i bucket `block`, non per l'object store). Resta 56.2c.
 
-- **Mount/recovery**: superblock valido → se DIRTY, orphan-GC (scan
-  refcount vs raggiungibili dalla root, free degli orfani) poi clear DIRTY
-  con commit; remount = reload completo = **test di crash deterministico**
-  (niente reboot nel gate: kill userfs + remount + snapshot sopravvissuto).
-- **sys-dal-volume**: `seed_sys` legge dal bucket `sys` del volume invece
-  che da /fat; fallback FAT se volume assente o chiave assente (dual-mode
-  invariato, init intoccato). Con `ARCA_IMG=0` gli op nativi danno errore
-  loud e la suite resta adattiva.
+### 56.2c — Recovery + sys-dal-volume (CHIUSA, gate 5/5+7/7+33/33+58/58)
+
+> Deviazioni dal piano dichiarate: (1) GC a **ogni** load-bind, non solo con
+> DIRTY (superset: deterministico senza dipendere dal timing del kill); (2) la
+> tabella snapshot si persiste dopo il load iniziale, non e' ricostruita dalla
+> walk (un pin non lascia tracce nel primary oltre al refcount); (3) il
+> puntatore meta vive in `alloc_hint` [108..116) riusando coda-mountpoint
+> (clampato a 56 B), niente bump di versione formato per 8 byte; (4) marker
+> dir persistenti confermati a 56.3 (§5 vs §19 risolto).
+
+- **Mount/recovery**: superblock valido → orphan-GC (raggiungibili dai 3
+  alberi + meta + catene overflow, meno freelist/live/blocco 0 → freelist;
+  un solo commit chiude anche DIRTY); remount = reload completo = **test di
+  crash deterministico** (niente reboot nel gate: kill userfs + remount +
+  snapshot sopravvissuto USABILE via rollback). La guardia live e' esclusa
+  dalla GC (leftover RAW mai sganciati = leak sicuro, mai double-push).
+- **Tabella snapshot persistente**: blocco meta `TREE_META` (`snap/<sid:8>`
+  → bucket+tick+(uuid,seq,seckey)*), puntatore in `alloc_hint`; meta
+  corrotta/assente = mount senza snapshot loud (dati intatti), `next_snap`
+  resta da header-ext (F2). La GC non dipende dalla tabella (i pin non
+  sganciano mai i record dal primary).
+- **sys-dal-volume**: auto-bind ArcaFS all'avvio (scan magic-driven) PRIMA
+  del READY; `seed_sys` dal volume, seed solo delle chiavi assenti (i dati
+  persistono nei commit, niente versioni duplicate). Fallback FAT se volume
+  assente o chiave assente (dual-mode invariato, init intoccato). Con
+  `ARCA_IMG=0` gli op nativi danno errore loud e la suite resta adattiva.
 - **Reboot reale** (manuale, fuori gate): generazione N montata, snapshot
   sopravvissuto, servizi da `sys` — prova finale prima di dichiarare la
   vittoria 56 ("rollback vero; retention log implementabile", sblocco 57).

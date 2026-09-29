@@ -35,6 +35,7 @@ use ipc_disk::IpcDisk;
 use libr::println;
 
 mod arca;
+mod btree_drv;
 mod ftable;
 mod handlers;
 mod mount;

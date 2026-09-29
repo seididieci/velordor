@@ -121,7 +121,7 @@ velordor/
 
 ## Stato corrente
 
-Gate: `[testfs] PASS 5/5` + `[testfat] PASS 7/7` + `[testsarca] PASS 27/27` + `[usertests] PASS 58/58` + shell, zero FAIL/PANIC/FAULT (vedi `docs/src/11-testing.md`).
+Gate: `[testfs] PASS 5/5` + `[testfat] PASS 7/7` + `[testsarca] PASS 33/33` + `[usertests] PASS 58/58` + shell, zero FAIL/PANIC/FAULT (vedi `docs/src/11-testing.md`).
 
 - **Stato e futuro**: `ROADMAP.md` (sorgente unica: tabella completate 1-55, Pianificate, Parcheggiate).
 - **Storia dettagliata**: `docs/src/14-cronologia-fasi.md` (log per fase: decisioni, bug trovati, lezioni, validazioni).
@@ -317,10 +317,10 @@ rg '\[bench\]' /tmp/bench-run1.log /tmp/bench-run2.log /tmp/bench-run3.log
 # Suite di regressione (boot): 4 righe PASS attese e ZERO FAIL/PANIC
 #   [testfs] PASS 5/5
 #   [testfat] PASS 7/7
-#   [testsarca] PASS 27/27
+#   [testsarca] PASS 33/33
 #   [usertests] PASS 58/58
 timeout 150 ./run-tests.sh > /tmp/boot.log
-rg '\[testfs\] PASS 5/5|\[testfat\] PASS 7/7|\[testsarca\] PASS 27/27|\[usertests\] PASS 58/58' /tmp/boot.log
+rg '\[testfs\] PASS 5/5|\[testfat\] PASS 7/7|\[testsarca\] PASS 33/33|\[usertests\] PASS 58/58' /tmp/boot.log
 test "$(rg -c 'FAIL|PANIC|#.* FAULT' /tmp/boot.log)" = "0"
 ```
 
@@ -339,3 +339,13 @@ test "$(rg -c 'FAIL|PANIC|#.* FAULT' /tmp/boot.log)" = "0"
 3. **Dimenticare volatile**: gli accessi MMIO devono essere volatile
 4. **Stack alignment**: x86_64 richiede 16-byte alignment per SSE
 5. **Busy waiting**: usare `hlt` invece di `loop {}` negli idle loop
+6. **Stack userfs 16 KiB + LTO**: con `lto` (userfs) l'inlining fonde i frame
+   del loop con le catene chiamate (btree/volume/seed/FAT) e sfonda la
+   guardia (#PF user-mode). Regola: buffer grandi in `Box`, handler/seed e i
+   livelli btree/volume `#[inline(never)]` (firewall). Vale per chi tocca
+   `userland/fs` e `arcafs::btree`.
+7. **DMA e cache settoriale (userdisk)**: i path DMA di `DISK_READ`/`DISK_WRITE`
+   devono fare fill della cache dopo `finish_dma`, o le letture raw cached
+   (`DEV_READ`→`node_read`) servono dati stale mentre le scritture su disco
+   sono fresche (fix 56.2c). Il PIO (`node_read_multi`/`node_write_multi`) lo
+   fa già; i due path devono restare coerenti.

@@ -36,6 +36,10 @@ const SYS_SEED_MAX: usize = 262144;
 /// Legge un file via mount interni (stesso resolve dei client, niente IPC).
 /// Ritorna false a mount inattivo/file assente/troppo grande (il chiamante
 /// logga e init ripiega su FAT — mai wedge il boot).
+/// Chunk da 512 B (mai 4K stack: con LTO la catena seed→FAT si fonde e i 16
+/// KiB non bastano — osservato #PF all'auto-bind; il seed e' una tantum).
+/// `#[inline(never)]`: firewall di frame come gli handler disco.
+#[inline(never)]
 fn seed_read(
     mounts: &mut Vec<mount::FsMount>,
     fgen: &mut u64,
@@ -69,7 +73,7 @@ fn seed_read(
         if off >= SYS_SEED_MAX {
             return false;
         }
-        let mut chunk = [0u8; 4096];
+        let mut chunk = [0u8; 512];
         let n = {
             let m = match mounts.get_mut(mi) {
                 Some(m) => m,
@@ -93,34 +97,44 @@ fn seed_read(
     !out.is_empty()
 }
 
-/// Popola il bucket `sys` dell'object store in-memory (Fase 55, N0): a
-/// runtime A1 gli oggetti vivono in RAM (la persistenza su volume e' A2);
-/// il seed li carica da /fat a OGNI avvio (anche restart dopo t28: lo store
-/// muore col processo). A seed mancato init ripiega su FAT (dual-mode).
-fn seed_sys(
-    arca: &mut crate::arca::ArcaFs,
+/// Popola il bucket `sys` del motore disco (N0 su blocchi): seed SOLO delle
+/// chiavi assenti (idempotente: all'avvio su volume caldo non riscrive
+/// versioni, al bind su volume fresco bootstrappa da /fat). Chiamato
+/// all'auto-bind startup e al bind USEDISK. A seed mancato init ripiega su
+/// FAT (dual-mode). Commit singolo se almeno un file seedato.
+/// `#[inline(never)]`: firewall anti-inlining (con LTO la catena seed→btree
+/// si fonde nel chiamante e sfonda i 16 KiB — osservato #PF all'auto-bind).
+#[inline(never)]
+fn seed_sys_disk(
+    disk: &mut btree_drv::DiskEngine,
     mounts: &mut Vec<mount::FsMount>,
     fgen: &mut u64,
 ) {
+    let mut seeded = false;
     for (path, key) in SYS_SEED {
+        if disk.stat(b"sys", key).is_some() {
+            continue; // gia' sul volume: niente versioni duplicate
+        }
         let mut data = Vec::new();
         if !seed_read(mounts, fgen, path, &mut data) {
             println!("[userfs] sys: {} non seedato (init ripiega su FAT)", path);
             continue;
         }
-        match arca.put(b"sys", key, &data) {
-            Some(n) => println!(
-                "[userfs] sys: {}B {} <- {}",
-                n,
-                core::str::from_utf8(key).unwrap_or("?"),
-                path
-            ),
-            None => println!("[userfs] sys: {} chiave oltre bound (init ripiega su FAT)", path),
+        match btree_drv::seed_put(disk, b"sys", key, &data) {
+            Some(n) => {
+                println!("[userfs] sys: {}B seeded", n);
+                seeded = true;
+            }
+            None => println!("[userfs] sys: {} oltre bound (init ripiega su FAT)", path),
         }
+    }
+    if seeded && !btree_drv::commit(disk) {
+        println!("[userfs] sys: commit seed fallito (init ripiega su FAT)");
     }
 }
 
 libr::entry!(real_main);
+#[inline(never)]
 fn real_main(_sp: u64) -> ! {
     println!("[userfs] starting");
 
@@ -162,18 +176,32 @@ fn real_main(_sp: u64) -> ! {
     // Parte da 1 (0 = mai usato, come le entry appena create per ramfs).
     let mut fat_gen: u64 = 1;
 
-    // ArcaFs in-memory (Fase 55, A1): hash map bucket:key → blob.
-    // Montata come `LocalFs` se negotiate() trova magic="ACFS" su un disco/partizione.
-    let mut arca = crate::arca::ArcaFs::stub(0, 0, 0);
+    // Volume on-disk (scaffold RAW + motore): legato da R_ARCA_DEBUG/OPEN
+    // come `VolumeStore` (un solo handle: USEDISK lo muove nel motore, mai
+    // duplicato). Vive finche' userfs vive (al restart si rilega dal disco).
+    let mut dbgvol: Option<btree_drv::VolumeStore> = None;
 
-    // Volume on-disk debug (Fase 56.2a, scaffold): legato da R_ARCA_DEBUG/OPEN,
-    // vive finche' userfs vive (al restart si rilega: il formato e' su disco).
-    let mut dbgvol: Option<volume::ArcaVolume> = None;
+    // Motore B+tree su disco (backend UNICO): legato all'AVVIO se un volume
+    // ArcaFS esiste (56.2c sys-dal-volume), altrimenti lazy da USEDISK(1)
+    // (ne consuma l'handle: un solo proprietario, mai due volumi sullo
+    // stesso disco). Il seed `sys` corre al bind solo per le chiavi assenti.
+    // La tabella snapshot si ricarica dal blocco meta (56.2c). Senza volume
+    // gli op nativi danno errore loud e init ripiega su FAT (dual-mode).
+    let mut disk: Option<btree_drv::DiskEngine> = None;
 
-    // Primo consumatore nativo N0: bucket `sys` seedato da /fat PRIMA del
-    // READY (init spawna console/shell per object_id solo dopo l'ACK; a ogni
-    // restart lo store rinasce vuoto e il seed ricorre).
-    seed_sys(&mut arca, &mut fat_mounts, &mut fat_gen);
+    // Auto-bind 56.2c: scansiona i dischi e lega il primo volume ArcaFS.
+    // PRIMA del READY: init spawna console/shell per object_id solo dopo
+    // l'ACK e li deve trovare gia' serviti (N0 end-to-end nel gate).
+    // Senza volume: silenzio, nessun motore (produzione/ARCA_IMG=0 invariati).
+    if let Some(store) = btree_drv::scan_and_open() {
+        println!("[userfs] arca-disk: auto-bind all'avvio");
+        dbgvol = Some(store);
+        if btree_drv::set_backend(&mut dbgvol, &mut disk).is_some() {
+            if let Some(d) = disk.as_mut() {
+                seed_sys_disk(d, &mut fat_mounts, &mut fat_gen);
+            }
+        }
+    }
 
     // Client registrati: pid → (req_ring_phys, resp_ring_phys).
     let mut rings: BTreeMap<u64, (u64, u64)> = BTreeMap::new();
@@ -666,45 +694,113 @@ fn real_main(_sp: u64) -> ! {
             R_OBJ_PUT => {
                 // Payload: [bucket_len][bucket]\0[key_len][key]\0[data...]
                 // w0 = payload_len (expect), w1 = offset nel blob.
-                handlers::handle_obj_put(&mut arca, payload, w1 as usize)
+                // Backend unico 56.2b (blocchi, commit per-op); senza bind
+                // errore loud e il client ripiega (init → FAT).
+                match disk.as_mut() {
+                    Some(d) => btree_drv::disk_put(d, payload, w1 as usize),
+                    None => Err(ERR),
+                }
             }
 
             R_OBJ_GET => {
                 // Payload: [bucket_len][bucket]\0[key_len][key]\0
                 // w0 = payload_len, w1 = offset
-                handlers::handle_obj_get(&arca, payload, w1 as usize, RING_MAX_PAYLOAD)
+                match disk.as_mut() {
+                    Some(d) => btree_drv::disk_get(d, payload, w1 as usize, RING_MAX_PAYLOAD),
+                    None => Err(ERR),
+                }
             }
 
             R_ARCA_DEBUG => {
-                // Sub-op nel payload (`arcafs::proto::ARCA_SUB_*`): scalari
-                // per via generica; READ/STAT scrivono frame dedicato qui
-                // (pattern R_PIPE_CREATE: reply a due registri + `continue`).
-                match handlers::handle_arca_debug(&mut dbgvol, payload) {
-                    Ok(handlers::ArcaDebugOut::Scalar(v)) => Ok(v),
-                    Ok(handlers::ArcaDebugOut::Read(block, data)) => {
-                        rings::resp_ring_write(block, 0, &data[..]);
-                        let _ = libr::reply(0, block, 0);
-                        continue;
+                // USEDISK (56.2b) payload `[7][1]`: lega il motore B+tree
+                // (consuma `dbgvol`, lazy dopo lo scaffold RAW) e seedda
+                // `sys` da /fat al primo bind. Gestito qui: muove stati che
+                // `handle_arca_debug` non vede. `[7][0]` = no-op (il backend
+                // e' unico: niente routing da commutare).
+                if payload.first() == Some(&libr::ARCA_SUB_USEDISK) {
+                    if payload.len() != 2 || payload[1] > 1 {
+                        Err(ERR_INVALID)
+                    } else if payload[1] == 0 {
+                        Ok(0)
+                    } else {
+                        match btree_drv::set_backend(&mut dbgvol, &mut disk) {
+                            Some(newly) => {
+                                if newly {
+                                    if let Some(d) = disk.as_mut() {
+                                        seed_sys_disk(d, &mut fat_mounts, &mut fat_gen);
+                                    }
+                                }
+                                Ok(0)
+                            }
+                            None => Err(ERR),
+                        }
                     }
-                    Ok(handlers::ArcaDebugOut::Stats(high, live, free)) => {
-                        let f = free.to_le_bytes();
-                        rings::resp_ring_write(high, live, &f);
-                        let _ = libr::reply(0, high, live);
-                        continue;
+                } else if payload.first() == Some(&libr::ARCA_SUB_OPEN) {
+                    // OPEN lega lo scaffold RAW come `VolumeStore` (stesso
+                    // handle che USEDISK muove nel motore: mai duplicato).
+                    // Dopo il bind il re-open e' rifiutato (secondo handle =
+                    // freelist/xh divergenti, loud mai silenzioso).
+                    if disk.is_some() {
+                        Err(ERR)
+                    } else {
+                        match core::str::from_utf8(payload.get(1..).unwrap_or(&[])) {
+                            Ok(path) => match btree_drv::raw_open(path) {
+                                Some(store) => {
+                                    dbgvol = Some(store);
+                                    Ok(0)
+                                }
+                                None => Err(ERR),
+                            },
+                            Err(_) => Err(ERR_INVALID),
+                        }
                     }
-                    Err(e) => Err(e),
+                } else {
+                    // Sub-op nel payload (`arcafs::proto::ARCA_SUB_*`): scalari
+                    // per via generica; READ/STAT scrivono frame dedicato qui
+                    // (pattern R_PIPE_CREATE: reply a due registri + `continue`).
+                    // Unico handler RAW pre/post bind (stesso store del motore
+                    // dopo USEDISK: niente doppi handle, niente divergenze).
+                    let out = match disk.as_mut() {
+                        Some(d) => btree_drv::handle_raw_debug(&mut d.store, payload),
+                        None => match dbgvol.as_mut() {
+                            Some(s) => btree_drv::handle_raw_debug(s, payload),
+                            None => Err(ERR),
+                        },
+                    };
+                    match out {
+                        Ok(btree_drv::ArcaDebugOut::Scalar(v)) => Ok(v),
+                        Ok(btree_drv::ArcaDebugOut::Read(block, data)) => {
+                            rings::resp_ring_write(block, 0, &data[..]);
+                            let _ = libr::reply(0, block, 0);
+                            continue;
+                        }
+                        Ok(btree_drv::ArcaDebugOut::Stats(high, live, free)) => {
+                            let f = free.to_le_bytes();
+                            rings::resp_ring_write(high, live, &f);
+                            let _ = libr::reply(0, high, live);
+                            continue;
+                        }
+                        Err(e) => Err(e),
+                    }
                 }
             }
 
             R_OBJ_GET_ID => {
                 // Payload: [id:8], w1 = offset (come GET, per object_id)
-                handlers::handle_obj_get_id(&arca, payload, w1 as usize, RING_MAX_PAYLOAD)
+                match disk.as_mut() {
+                    Some(d) => btree_drv::disk_get_id(d, payload, w1 as usize, RING_MAX_PAYLOAD),
+                    None => Err(ERR),
+                }
             }
 
             // STAT a due registri + frame dedicato (pattern R_PIPE_CREATE):
             // il reply generico porta un solo valore, qui servono due.
             R_OBJ_STAT => {
-                match handlers::handle_obj_stat(&arca, payload) {
+                let out = match disk.as_mut() {
+                    Some(d) => btree_drv::disk_stat(d, payload),
+                    None => Err(ERR),
+                };
+                match out {
                     Ok((id, size, frame)) => {
                         rings::resp_ring_write(id, size, &frame);
                         let _ = libr::reply(0, id, size);
@@ -718,7 +814,11 @@ fn real_main(_sp: u64) -> ! {
             }
 
             R_OBJ_STAT_ID => {
-                match handlers::handle_obj_stat_id(&arca, payload) {
+                let out = match disk.as_mut() {
+                    Some(d) => btree_drv::disk_stat_id(d, payload),
+                    None => Err(ERR),
+                };
+                match out {
                     Ok((size, nv, mtime)) => {
                         rings::resp_ring_write(size, nv, &mtime);
                         let _ = libr::reply(0, size, nv);
@@ -731,25 +831,30 @@ fn real_main(_sp: u64) -> ! {
                 continue;
             }
 
-            R_OBJ_DELETE => {
-                handlers::handle_obj_delete(&mut arca, payload)
-            }
+            R_OBJ_DELETE => match disk.as_mut() {
+                Some(d) => btree_drv::disk_delete(d, payload),
+                None => Err(ERR),
+            },
 
-            R_SNAP_CREATE => {
-                handlers::handle_snap_create(&mut arca, payload)
-            }
+            R_SNAP_CREATE => match disk.as_mut() {
+                Some(d) => btree_drv::disk_snap_create(d, payload),
+                None => Err(ERR),
+            },
 
-            R_SNAP_DELETE => {
-                handlers::handle_snap_delete(&mut arca, payload)
-            }
+            R_SNAP_DELETE => match disk.as_mut() {
+                Some(d) => btree_drv::disk_snap_delete(d, payload),
+                None => Err(ERR),
+            },
 
-            R_SNAP_ROLLBACK => {
-                handlers::handle_snap_rollback(&mut arca, payload)
-            }
+            R_SNAP_ROLLBACK => match disk.as_mut() {
+                Some(d) => btree_drv::disk_snap_rollback(d, payload),
+                None => Err(ERR),
+            },
 
-            R_SNAP_CLONE => {
-                handlers::handle_snap_clone(&mut arca, payload)
-            }
+            R_SNAP_CLONE => match disk.as_mut() {
+                Some(d) => btree_drv::disk_snap_clone(d, payload),
+                None => Err(ERR),
+            },
 
             R_LSEEK => {
                 // w0 = fd, w1 = offset (bit reinterpretati come i64),

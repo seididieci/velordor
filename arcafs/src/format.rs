@@ -7,6 +7,7 @@
 //! (LBA1) + header-estensione (settori 2-6, i primi 1024 B restano intoccati
 //! per non sfiorare mai superblock/shadow). Il blocco 0 non si alloca mai.
 
+use alloc::boxed::Box;
 use syscall_numbers::image_hash;
 
 /// Magic superblock + versione formato.
@@ -45,6 +46,10 @@ pub const ARCA_XHOFF_NEXTID: usize = 24;
 pub const ARCA_XHOFF_NEXTSNAP: usize = 32;
 pub const ARCA_XHOFF_FLAGS: usize = 40;
 pub const ARCA_XHOFF_CHECK: usize = 48;
+/// Bit 0 dei flags header-ext: DIRTY (mutazione in corso, commit non
+/// flippato). Acceso a inizio mutazione, spento al flip superblock (56.2b);
+/// a mount con DIRTY acceso serve orphan-GC (56.2c).
+pub const ARCA_XH_DIRTY: u64 = 1;
 /// Nodo blocco (3584 B): magic "ANOD" 0:4, type 4:1 (RAW=0 opaco 56.2a;
 /// LEAF=1/INTERNAL=2 riservati 56.2b), gen 8:8 (0 in 56.2a), payload
 /// 16:3560, check 3576:8 (FNV-1a di [0..3576]).
@@ -52,6 +57,13 @@ pub const ARCA_NMAGIC: &[u8; 4] = b"ANOD";
 pub const ARCA_NODE_TYPE_RAW: u8 = 0;
 pub const ARCA_NODE_TYPE_LEAF: u8 = 1;
 pub const ARCA_NODE_TYPE_INTERNAL: u8 = 2;
+/// Offset del puntatore meta-root nel superblock (56.2c): coda di
+/// `mountpoint[64]`, 8 B a [108..116]. Il mountpoint effettivo e' clippato a
+/// 56 B (`superblock_build`): oltre, la meta si ignora loud al load (mai
+/// collisioni silenziose, mai bump di versione formato per 8 byte).
+pub const ARCA_OFF_META: usize = 108;
+/// Lunghezza effettiva massima del mountpoint (56 B: [52..108]).
+pub const ARCA_MOUNT_MAX: usize = 56;
 pub const ARCA_NODE_PAYLOAD: usize = 16;
 pub const ARCA_NODE_PAYLOAD_LEN: usize = 3560;
 pub const ARCA_NODE_CHECK: usize = 3576;
@@ -99,6 +111,8 @@ pub fn superblock_verify(sec: &[u8]) -> Option<(u64, u64)> {
 
 /// Costruisce 128 B di superblock (LE esplicito, checksum FNV-1a).
 /// Mossa dal tool host: stessa funzione per `create` e guest `format`.
+/// Mountpoint clippato a `ARCA_MOUNT_MAX` (56 B): la coda [108..116] ospita
+/// `meta_root` (56.2c) e non deve mai collidere col testo.
 pub fn superblock_build(uuid: u64, generation: u64, mountpoint: &str) -> [u8; ARCA_SUPER_LEN] {
     let mut sb = [0u8; ARCA_SUPER_LEN];
     sb[ARCA_OFF_MAGIC..ARCA_OFF_MAGIC + 4].copy_from_slice(ARCA_MAGIC);
@@ -108,7 +122,7 @@ pub fn superblock_build(uuid: u64, generation: u64, mountpoint: &str) -> [u8; AR
     sb[ARCA_OFF_UUID..ARCA_OFF_UUID + 8].copy_from_slice(&uuid.to_le_bytes());
     sb[ARCA_OFF_GEN..ARCA_OFF_GEN + 8].copy_from_slice(&generation.to_le_bytes());
     let mp = mountpoint.as_bytes();
-    let n = mp.len().min(63);
+    let n = mp.len().min(ARCA_MOUNT_MAX);
     sb[ARCA_OFF_MOUNT..ARCA_OFF_MOUNT + n].copy_from_slice(&mp[..n]);
     sb[ARCA_OFF_AUTO] = 0;
     sb[ARCA_OFF_FLAGS] = 0;
@@ -117,11 +131,63 @@ pub fn superblock_build(uuid: u64, generation: u64, mountpoint: &str) -> [u8; AR
     sb
 }
 
+/// Legge `meta_root` dal superblock (0 = nessuna tabella snapshot).
+/// Il mountpoint e' clampato a `ARCA_MOUNT_MAX` (56 B) da `superblock_build`:
+/// [108..116) e' riservato a meta, mai testo (era la guardia sbagliata a
+/// scambiare il campo meta per overflow e ritornare sempre 0).
+pub fn superblock_meta(sec: &[u8]) -> u64 {
+    match sec.get(ARCA_OFF_META..ARCA_OFF_META + 8) {
+        Some(w) => u64::from_le_bytes([w[0], w[1], w[2], w[3], w[4], w[5], w[6], w[7]]),
+        None => 0,
+    }
+}
+
 /// Imposta ROOT nel superblock e ricalcola il checksum (preserva il resto).
 /// `None` se il settore non e' un superblock valido.
 pub fn superblock_set_root(sec: &mut [u8; 512], root: u64) -> Option<()> {
     superblock_verify(sec)?;
     sec[ARCA_OFF_ROOT..ARCA_OFF_ROOT + 8].copy_from_slice(&root.to_le_bytes());
+    let checksum = image_hash(&sec[..ARCA_OFF_CHECK]);
+    sec[ARCA_OFF_CHECK..ARCA_OFF_CHECK + 8].copy_from_slice(&checksum.to_le_bytes());
+    Some(())
+}
+
+/// Legge le radici B+tree dal superblock: `(gen, uuid, primary, secondary,
+/// refcount)`. Tutte e tre le radici sono persistite: la secondary SI SPOSTA
+/// a ogni split (come le altre — COW riscrive la root a ogni mutazione) e
+/// rileggerla da un blocco fisso darebbe un albero stale (osservato: chiavi
+/// post-split invisibili dopo il remount). `alloc_hint` (offset 44, hint
+/// soft di placement mai usato in 56.2b) ospita la secondary root; A5
+/// rivalutera' il placement con numeri reali. `None` se non valido.
+pub fn superblock_roots(sec: &[u8]) -> Option<(u64, u64, u64, u64, u64)> {
+    let (gen, uuid) = superblock_verify(sec)?;
+    let sb = sec.get(..ARCA_SUPER_LEN)?;
+    let r = |o: usize| {
+        u64::from_le_bytes([
+            sb[o], sb[o + 1], sb[o + 2], sb[o + 3], sb[o + 4], sb[o + 5], sb[o + 6],
+            sb[o + 7],
+        ])
+    };
+    Some((gen, uuid, r(ARCA_OFF_ROOT), r(ARCA_OFF_ALLOC), r(ARCA_OFF_REFCOUNT)))
+}
+
+/// Imposta generazione + radici B+tree + meta e ricalcola il checksum (il
+/// commit: shadow + flip con tutto aggiornato in UN colpo — radici e meta
+/// mai di generazioni diverse). `None` se non valido.
+pub fn superblock_set_roots(
+    sec: &mut [u8; 512],
+    generation: u64,
+    primary: u64,
+    secondary: u64,
+    refcount: u64,
+    meta: u64,
+) -> Option<()> {
+    superblock_verify(sec)?;
+    sec[ARCA_OFF_GEN..ARCA_OFF_GEN + 8].copy_from_slice(&generation.to_le_bytes());
+    sec[ARCA_OFF_ROOT..ARCA_OFF_ROOT + 8].copy_from_slice(&primary.to_le_bytes());
+    sec[ARCA_OFF_ALLOC..ARCA_OFF_ALLOC + 8].copy_from_slice(&secondary.to_le_bytes());
+    sec[ARCA_OFF_REFCOUNT..ARCA_OFF_REFCOUNT + 8].copy_from_slice(&refcount.to_le_bytes());
+    sec[ARCA_OFF_META..ARCA_OFF_META + 8].copy_from_slice(&meta.to_le_bytes());
     let checksum = image_hash(&sec[..ARCA_OFF_CHECK]);
     sec[ARCA_OFF_CHECK..ARCA_OFF_CHECK + 8].copy_from_slice(&checksum.to_le_bytes());
     Some(())
@@ -182,4 +248,19 @@ pub fn node_verify(blk: &[u8; 3584]) -> Option<(u8, u64)> {
         return None;
     }
     Some((blk[4], u64le(blk, 8)))
+}
+
+/// Alloca un payload nodo azzerato sull'heap (regola stack §18).
+/// Mai `Box::new([0u8; N])`: l'array letterale si costruisce sullo stack
+/// prima del move nell'heap (3.5K transienti che, annidati sotto altri
+/// array, sfondano i 16 KiB del loop userfs — osservato: #PF al bind).
+/// `new_zeroed` azzera direttamente la memoria heap: niente temp, sound
+/// perche' la memoria e' davvero inizializzata a zero.
+pub fn boxed_node() -> Box<[u8; ARCA_NODE_PAYLOAD_LEN]> {
+    unsafe { Box::new_zeroed().assume_init() }
+}
+
+/// Come sopra per il blocco intero (header + payload + checksum).
+pub fn boxed_block() -> Box<[u8; ARCA_BLOCK_SIZE as usize]> {
+    unsafe { Box::new_zeroed().assume_init() }
 }

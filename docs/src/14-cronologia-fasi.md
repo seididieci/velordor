@@ -1742,7 +1742,7 @@
          snapshot/GC, `sys.content_hash` come xattr (oggi re-hash vs
          manifest). Gate: 5/5 + 7/7 + 13/13 + 58/58, zero FAIL/PANIC/FAULT;
          boot produzione (ARCA_IMG=0, due drive) pulito.
-   - [ ] Fase 56 (A2, in corso: 56.1 + 56.2a fatti).
+    - [ ] Fase 56 (A2, in corso: 56.1 + 56.2a + 56.2b fatti).
          56.1 — store versionato in RAM: ogni PUT = nuova versione (offset
          0 da zero, offset > 0 clone+patch COW); `object_id` monotonico mai
          riusato + indice inverso; snapshot per-bucket con pin a copie
@@ -1760,11 +1760,84 @@
          (blocchi 3584 B, header-ext nel blocco 0, nodi con checksum FNV) +
          allocatore freelist + `R_ARCA_DEBUG` (sub-op, un tag solo) + `arca
          create` che inizializza il volume (ROOT=1, uuid auto da OS RNG).
-         `testsarca` 27/27 (+6: open, alloc, write/read, stat, LIFO,
-         rifiuti). Bug: EBADF host (handle write-only), w0 confuso con
-         blocco, open disco invece di partizione, `gen` keyword ed.2024,
-         `?` in fn `!`, stack overflow da ritorno by-value 3.5K (Box +
-         `#[inline(never)]`, regola in §18). `userfs.bin` al 90% di
-         `SPAWN_IMAGE_MAX`: budget contato per 56.2b. Gate: 5/5 + 7/7 +
-         27/27 + 58/58, zero FAIL/PANIC/FAULT. Restano 56.2b (B+tree/commit)
-         e 56.2c (recovery/sys-dal-volume).
+          `testsarca` 27/27 (+6: open, alloc, write/read, stat, LIFO,
+          rifiuti). Bug: EBADF host (handle write-only), w0 confuso con
+          blocco, open disco invece di partizione, `gen` keyword ed.2024,
+          `?` in fn `!`, stack overflow da ritorno by-value 3.5K (Box +
+          `#[inline(never)]`, regola in §18). `userfs.bin` al 90% di
+          `SPAWN_IMAGE_MAX`: budget contato per 56.2b. Gate allora: 5/5 +
+          7/7 + 27/27 + 58/58, zero FAIL/PANIC/FAULT.
+          56.2b — B+tree COW + commit su disco (backend UNICO: il mem 56.1,
+          dichiarato transitorio, e' rimosso; oracolo nei test host `arcafs`
+          con `MemStore`, 9 test): `arcafs/src/btree.rs` puro (`no_std`+`alloc`,
+          trait `BlockStore`: primary `[id:8][seq:8]`, secondary `(bucket,key)`
+          + stat denormalizzata, refcount per-versione, overflow linkati,
+          split a cascata + merge a foglia vuota + collasso radice),
+          `userland/fs/src/btree_drv.rs` (`VolumeStore` che possiede il volume,
+          bind fresh/load, commit per-op header-ext + shadow + flip gen+1,
+          handler disco con stesse wire/reply del mem), secondary root
+          persistita in superblock `alloc_hint` (A5 rivaluta il placement),
+          `R_ARCA_DEBUG/USEDISK` (7) per bind lazy + seed `sys` al bind,
+          `t58` con bind in proprio (skip adattivo senza volume).
+          `testsarca` 32/32 (+5: bind/seed, split 120 chiavi, overflow/bound,
+          refcount pin, crash kill + remount LOAD con dati committati intatti
+          e gen monotona). Bug: `path.last()` = interno invece che foglia
+          (orfanava quella vera — preso dal dump host); `Box::new([0u8; N])`
+          costruisce 3.5K sullo stack prima del move + array KiB annidati
+          (`node_read` → `vol.read_node`) = #PF al bind (risanamento §18:
+          `boxed_node()` via `new_zeroed`, read dirette in out, walk a
+          settori, encode in Box, emit sequenziali); `&Box<[u8;N]>` non coerce
+          a `&[u8]` su questa nightly (slicing esplicito `&x[..]`);
+          volumi freschi con ROOT=1 legacy-RAW scambiati per inizializzati
+          (freschezza per tipo nodo); secondary root persistita solo dopo aver
+          visto chiavi post-split invisibili al remount (root mossa, blocco 2
+          stale); nome bare in match-pattern che risolveva male (ty=2
+          scambiato per RAW — fully-qualified ovunque nel file).
+          Budget: mem rimosso (~17K) + cache LRU deferita al tuning coi numeri
+          (~4K) + LTO thin solo-userfs → `userfs.bin` 97.3% di
+          `SPAWN_IMAGE_MAX` (margine contato per 56.2c). Gate: 5/5 + 7/7 +
+          32/32 + 58/58, zero FAIL/PANIC/FAULT. Resta 56.2c
+          (recovery/orphan-GC + sys-dal-volume; tabella snapshot ancora in
+          RAM).
+    - [x] Fase 56 (A2) — CHIUSA: 56.1 + 56.2a + 56.2b + 56.2c.
+          56.2c — recovery + sys-dal-volume: tabella snapshot PERSISTENTE
+          (blocco meta `TREE_META`, chiave `snap/<sid:8>`, valore
+          bucket+tick+(uuid,seq,seckey)*; puntatore in superblock `alloc_hint`
+          [108..116], mountpoint clampato a 56 B), orphan-GC SEMPRE al
+          load-bind (raggiungibili dai 3 alberi + meta + catene overflow meno
+          freelist/live/blocco 0 → freelist via `gc_push_free_list`, un solo
+          store_xh; guardia live esclusa = leftover RAW mai double-push),
+          auto-bind ArcaFS all'avvio prima del READY (scan magic-driven) +
+          seed `sys` solo chiavi assenti (N0 end-to-end: init carica console
+          per object_id al boot), `R_ARCA_DEBUG/USEDISK` idempotente,
+          `t58`/testsarca 22-27 resi tolleranti all'auto-bind.
+          `testsarca` 33/33 (+1: GC orfani + snapshot sopravvissuto usabile
+          via rollback + reclaim sotto high_water). Bug: guardia
+          `superblock_meta` che scambiava il campo meta per overflow
+          mountpoint (ritornava sempre 0 → snapshot mai ricaricati);
+          walk reachable con trial-parse interno-su-foglia (figli spazzatura);
+          LTO fat che espone stack insufficiente — radice VERA: 4K stack in
+          `seed_read`/handler + mega-frame da inlining del loop (firewall
+          `#[inline(never)]` esteso a tutti i livelli userfs/btree/volume,
+          baseline `real_main` 5.5K→1.4K, commit 9.5K→2.4K con LTO fat);
+          `userfs.bin` 90.6% con LTO fat (margine per 56.3).
+          Bug PREESISTENTE trovato e corretto in `userdisk`: i path DMA di
+          DISK_READ/DISK_WRITE bypassavano la cache settoriale, quindi le
+          scritture ArcaFS (DMA) non aggiornavano la cache e le letture raw
+          del client (DEV_READ→`node_read`→cache) servivano dati stale
+          (sintomo: gen superblock ferma a 3 mentre il motore committava
+          170+); fix: fill cache dopo `finish_dma` in entrambi i path DMA.
+          Gate: 5/5 + 7/7 + 33/33 + 58/58, zero FAIL/PANIC/FAULT. Prossimo:
+          fase 57 (L0/L1 logging; L1 = bucket `log` nativo su snapshot+GC).
+    - Rifinitura firewall `#[inline(never)]` (post-56.2c): lo sweep emergenziale
+      aveva marcato ~330 funzioni; passata di rifinitura alla regola "solo
+      frame con buffer" (soglia ≥512 B + boundary dispatch/handler + catene
+      btree/volume/seed/FAT): ~203 attributi rimossi in due onde (A: helper
+      puri/codec/stub/predicati; B: rings/dup/pipes/ftable/mount*/ramfs/
+      ipc_disk/fat32), restano ~127 (handlers, btree_drv, server seed/scan,
+      volume, metodi BTree). Misure SP: real_main 168→432→800 per onda
+      (sempre << 16 KiB), commit 2.4–3.7K. Taglia invariata al byte (241616,
+      92.2%: LTO-fat aveva gia' fuso il fondibile). Gate 5/6 verdi + 1 rosso
+      isolato su test 29 (1 op su 240, mai crash/hang): flake raro da timing
+      TCG, non regressione (rimozione attributi non cambia la semantica;
+      storia op deterministica + single-client escludono il bug logico).

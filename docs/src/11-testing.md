@@ -2,7 +2,7 @@
 
 > I conteggi di suite citati negli ADR e nelle sotto-fasi del libro sono
 > **snapshot all'epoca** di ciascuna fase (es. 17/17, 21/21, 32/32). Il gate
-> corrente e' quello qui sotto (5/5 + 7/7 + 27/27 + 58/58 + shell) e in `AGENTS.md`.
+> corrente e' quello qui sotto (5/5 + 7/7 + 33/33 + 58/58 + shell) e in `AGENTS.md`.
 
 La regressione automatica del sistema gira **dentro QEMU** a ogni boot: i
 binari di test sono processi user reali, spawnati da `init` in sequenza prima
@@ -17,7 +17,7 @@ libs/libr   libreria di sistema condivisa (runtime + allocatore)
 testland/   test suite + repro + demo storiche
   testfs        usertestfs   — ramfs (read/write/mkdir/errori)   → PASS 5/5
   testfat       usertestfat  — FAT32 scrivibile (Fase 20) + /dev/null, /dev/zero → PASS 7/7
-  testsarca     usertestsarca — ArcaFS P5+A1+56.1+56.2a (volume on-disk: formato + allocatore) → PASS 27/27
+  testsarca     usertestsarca — ArcaFS P5+A1+56.1+56.2a+56.2b+56.2c (B+tree COW + commit, recovery/GC + sys-dal-volume) → PASS 33/33
   usertests     usertests    — suite completa (58 test)          → PASS 58/58
   usertest-client usertestcli  — helper a modalita' (ECHO/ZEROREAD/NULLW/SRV/CHURN/KILLME/SRVDIE/SYNCWAIT/MNTDIE/OPENDIE/MAPHAMMER/FLOOD/NEST/FAULT_*/SHMDEMO/COWDEMO/FORKDEMO/ORPHAN/HARDEN/REG51/EXECDEMO/DUPCLAIM/DUPGRANT/DUPSIBCLAIM/SEEKDENY/SUSPENDENY/SIGCATCH/GRANTDENY)
   usertest-spin  usertestspin  — busy-loop a budget di tick (batch 512 spin puri, priorita' via SpawnMeta) + ramo SQUAT (sonda di squat FS_REGISTER, t51)
@@ -46,14 +46,14 @@ userfs (path e file di lavoro) e la sequenza rende output e PID deterministici
 (con i ring SPSC per-processo, Fase 10.2, nessuna race da buffer condivisi).
 La shell e' spawnata per ultima. `run-tests.sh` esporta `ARCA_IMG=1`: il gate
 ha terzo e quarto drive ArcaFS (MBR + GPT in partizione), quindi `testsarca`
-gira 27/27 (senza drive il core resta PASS, n/n adattivo).
+gira 33/33 (senza drive il core resta PASS, n/n adattivo).
 
 Righe di gate:
 
 ```
 [testfs] PASS 5/5
 [testfat] PASS 7/7
-[testsarca] PASS 27/27
+[testsarca] PASS 33/33
 [usertests] PASS 58/58
 ```
 
@@ -162,9 +162,9 @@ irrevocabili sul canale della suite)
 | t55 | suspend/resume (Fase 44a, ADR-0035): gate (self/morto rifiutati, idempotenza, resume no-op), figlio running con TIME congelato su ~40 tick + resume→T_DONE/exit 0, figlio bloccato con `send_async` accodata senza sveglia + reply su resume, hardening non-parent (helper SUSPENDENY) |
 | t56 | cancel cooperativo + escalation (Fase 44b, ADR-0036): catcher esce 42 al `JOB_CANCEL` senza kill; KILLME vivo oltre il grace poi esce 130 via `kill(EXIT_SIGINT)` |
 | t57 | policy su identita' (Fase 45, ADR-0037): helper noto (riga test-policy ALL) — GET default ALL, drop GRANT→grant negato, drop PIPE→pipe_create negata, op valida dopo; attore ignoto `foreign.bin` fuori tabella policy — mount/grant/pipe_create negati dal default fail-closed (0x19F), open+read+write+seek lecite; read valida dopo i rifiuti (anti-wedge ring) |
-| t58 | bucket `sys` nativo + BLAKE2s (Fase 55, N0): oggetto sys/bin/userconsole.bin byte-identico a /fat/bin/console.bin, blake2s == manifest `BLAKE_*` (stesso predicato di `verify_image` in init), byte flippato → digest diverso (rifiuto), chiave assente → errore, bound nomi oltre 16/255B rifiutati (hygiene, mai troncamento) |
+| t58 | bucket `sys` nativo + BLAKE2s (Fase 55, N0; 56.2c: bind tollerante all'auto-bind, skip adattivo senza volume): oggetto sys/bin/userconsole.bin byte-identico a /fat/bin/console.bin, blake2s == manifest `BLAKE_*` (stesso predicato di `verify_image` in init), byte flippato → digest diverso (rifiuto), chiave assente → errore, bound nomi oltre 16/255B rifiutati (hygiene, mai troncamento) |
 | t34 | diritti per-canale lato server (Fase 17, per ultimo: drop irrevocabili): GET default ALL+root, drop WRITE (write -1/read ok), drop MOUNT+subtree /fat (mount/open-fuori -1, open-dentro+read+readdir-dentro ok, readdir-fuori -1), widen rifiutato + GET conferma |
-| testsarca | ArcaFS P5+A1+56.1 (Fase 54/55/56, binario separato `usertestsarca`, 27 check): vettori BLAKE2s (empty/abc/lungo), `R_GET_HASH` ramfs == ricalcolo, tamper→hash diverso, round-trip `R_OBJ_PUT/GET` piccolo, chunking 10000B, chiave assente→errore, scan per magic ACFS (whole-disk + sda1..sda4), mount `/arca` + open/readdir rifiutati + umount, protective-MBR GPT (byte 450) + ACFS in partizione GPT + mount/umount, versioni (catena + latest), snap create, rollback come nuova head, snap delete, retention 8, delete oggetto, clone bucket, stat/get_id, open volume + alloc distinti + write/read nodi + stat volume + free/realloc LIFO + rifiuti allocatore. Con `ARCA_IMG=0` (run manuale) salta 7-27 e resta PASS 6/6 |
+| testsarca | ArcaFS P5+A1+56.1+56.2b+56.2c (Fase 54/55/56, binario separato `usertestsarca`, 33 check): vettori BLAKE2s (empty/abc/lungo), `R_GET_HASH` ramfs == ricalcolo, tamper→hash diverso, round-trip `R_OBJ_PUT/GET` piccolo, chunking 10000B, chiave assente→errore, scan per magic ACFS (whole-disk + sda1..sda4), mount `/arca` + open/readdir rifiutati + umount, protective-MBR GPT (byte 450) + ACFS in partizione GPT + mount/umount, versioni (catena + latest), snap create, rollback come nuova head, snap delete, retention 8, delete oggetto, clone bucket, stat/get_id, open volume + alloc distinti + write/read nodi + stat volume + free/realloc LIFO + rifiuti allocatore, bind motore + seed `sys` (USEDISK, commit per-op), semantica 56.1 identica su blocchi (round-trip, chunking 10000B, catena, snap, rollback, retention 8, delete, clone, stat/get_id), split multi-livello 120 chiavi, overflow 3000B + chiavi lunghe + bound, refcount pin oltre delete, crash kill-userfs + remount LOAD (dati committati intatti, gen monotona, R/W riparte). Con `ARCA_IMG=0` (run manuale) salta 22-33 e resta PASS sul core |
 
 > Il CBS e' sempre attivo (lo scheduler RT e' l'unico): t18/t19 sono test
 > reali, non ci sono modalita' "vuote".

@@ -20,6 +20,7 @@ use arcafs::format::{
 /// Byte di un blocco (ARCA_BLOCK_SIZE = 3584).
 pub const BLOCK_BYTES: usize = 3584;
 
+#[inline(never)]
 fn block_lba(n: u64) -> Option<u64> {
     n.checked_mul(ARCA_BLOCK_SECTORS as u64)
 }
@@ -33,6 +34,7 @@ pub struct ArcaVolume {
 
 impl ArcaVolume {
     /// Legge un blocco intero. None su errore IO/overflow.
+    #[inline(never)]
     fn read_block(&self, n: u64, out: &mut [u8; BLOCK_BYTES]) -> bool {
         match block_lba(n) {
             Some(lba) => self.disk.read_sectors(lba, ARCA_BLOCK_SECTORS, &mut out[..]),
@@ -41,6 +43,7 @@ impl ArcaVolume {
     }
 
     /// Scrive un blocco intero. False su errore IO/overflow.
+    #[inline(never)]
     fn write_block(&self, n: u64, data: &[u8; BLOCK_BYTES]) -> bool {
         match block_lba(n) {
             Some(lba) => self.disk.write_sectors(lba, ARCA_BLOCK_SECTORS, &data[..]),
@@ -49,6 +52,7 @@ impl ArcaVolume {
     }
 
     /// Legge i 5 settori dell'header-estensione (blocco 0 da ARCA_XHDROFF).
+    #[inline(never)]
     fn read_xh_raw(&self, out: &mut [u8; ARCA_XHDRLEN]) -> bool {
         let mut sec = [0u8; 512];
         let mut done = 0usize;
@@ -67,6 +71,7 @@ impl ArcaVolume {
 
     /// Scrive l'header-estensione (write-through: chiamata a ogni alloc/free).
     /// La coda dell'ultimo settore resta a zero (riservata).
+    #[inline(never)]
     fn write_xh_raw(&self, xh: &[u8; ARCA_XHDRLEN]) -> bool {
         let mut sec = [0u8; 512];
         let mut done = 0usize;
@@ -85,6 +90,7 @@ impl ArcaVolume {
     }
 
     /// Scrive l'header-estensione corrente (dopo alloc/free).
+    #[inline(never)]
     fn store_xh(&self) -> bool {
         self.write_xh_raw(&format::xhdr_encode(&self.xh))
     }
@@ -92,6 +98,7 @@ impl ArcaVolume {
     /// Apre un volume formattato: superblock valido + header-estensione
     /// valida. La guardia `live' parte vuota (i blocchi allocati prima di
     /// questa apertura sono noti solo alla freelist).
+    #[inline(never)]
     pub fn open(handle: u32) -> Option<Self> {
         let disk = IpcDisk::new(handle);
         let mut sec = [0u8; 512];
@@ -116,6 +123,7 @@ impl ArcaVolume {
     /// superblock (checksum ricalcolato). Il superblock deve gia' esistere
     /// (`arca create`); qui si riempiono solo i campi A2. high_water = 2.
     /// (56.2c: recovery; per ora solo bootstrap dei volumi di test.)
+    #[inline(never)]
     pub fn format(handle: u32) -> Option<Self> {
         let mut v = Self {
             disk: IpcDisk::new(handle),
@@ -133,9 +141,11 @@ impl ArcaVolume {
         if !v.store_xh() {
             return None;
         }
-        let mut root = [0u8; BLOCK_BYTES];
-        let payload = [0u8; ARCA_NODE_PAYLOAD_LEN];
-        format::node_fill(&mut root, format::ARCA_NODE_TYPE_RAW, 0, &payload);
+        // Buffer heap + payload statico (mai 7K stack — regola §18; la
+        // funzione e' oggi unreachable in guest ma resta sicura).
+        const ZERO_PAYLOAD: [u8; ARCA_NODE_PAYLOAD_LEN] = [0; ARCA_NODE_PAYLOAD_LEN];
+        let mut root = format::boxed_block();
+        format::node_fill(&mut root, format::ARCA_NODE_TYPE_RAW, 0, &ZERO_PAYLOAD);
         if !v.write_block(1, &root) {
             return None;
         }
@@ -143,16 +153,97 @@ impl ArcaVolume {
         Some(v)
     }
 
+    /// Legge il primo settore di un blocco (i puntatori freelist vivono nei
+    /// primi 8 B: mai 3.5K di stack per leggere un u64 — regola §18).
+    #[inline(never)]
+    fn read_first_sector(&self, n: u64, out: &mut [u8; 512]) -> bool {
+        match block_lba(n) {
+            Some(lba) => self.disk.read_sector(lba, out),
+            None => false,
+        }
+    }
+
+    /// Bound walk freelist: la catena non puo' superare i blocchi al di sotto
+    /// di `high_water` (+16 di margine); oltre = corruzione, stop loud invece
+    /// di hang su catene cicliche (lezione: guardie `1 << 20` con IO dentro
+    /// appenderebbero il boot su disco danneggiato).
+    #[inline(never)]
+    fn walk_cap(&self) -> usize {
+        (self.xh.high_water.min(u32::MAX as u64) as usize).saturating_add(16).max(32)
+    }
+
+    /// Blocchi nella freelist (walk con bound). Usata dalla GC per
+    /// distinguere liberi da orfani.
+    #[inline(never)]
+    pub fn freelist_blocks(&self) -> Vec<u64> {
+        let mut out = Vec::new();
+        let mut cur = self.xh.free_head;
+        let mut guard = self.walk_cap();
+        let mut sec = [0u8; 512];
+        while cur != 0 && guard > 0 {
+            guard -= 1;
+            if !self.read_first_sector(cur, &mut sec) {
+                break;
+            }
+            out.push(cur);
+            cur = u64::from_le_bytes(sec[..8].try_into().unwrap_or([0; 8]));
+        }
+        out
+    }
+
+    /// La guardia live conosce `n` (allocato da questo handle)? La GC non
+    /// tocca mai i blocchi live (leftover RAW mai sganciati: leak sicuro,
+    /// mai double-push in freelist che corromperebbe catena e allocator).
+    #[inline(never)]
+    pub fn is_live(&self, n: u64) -> bool {
+        self.live.contains(&n)
+    }
+
+    /// Spinge una lista di orfani in freelist (GC): per ognuno scrive il
+    /// next-pointer nel primo settore e avanza la testa; UN solo store_xh
+    /// alla fine. La lista deve essere dedupata e senza 0 (il chiamante
+    /// garantisce: vedi `gc_collect`). Niente guardia live qui — il chiamante
+    /// ha gia' escluso i live (fresh handle dopo restart: guardia vuota).
+    /// A IO fallito: stato disco intatto (freelist persistita intoccata),
+    /// i blocchi toccati erano orfani irraggiungibili.
+    #[inline(never)]
+    pub fn gc_push_free_list(&mut self, orphans: &[u64]) -> bool {
+        for &n in orphans {
+            if n == 0 {
+                return false;
+            }
+            let mut sec = [0u8; 512];
+            sec[..8].copy_from_slice(&self.xh.free_head.to_le_bytes());
+            if !self.write_first_sector(n, &sec) {
+                return false;
+            }
+            self.xh.free_head = n;
+        }
+        self.store_xh()
+    }
+
+    /// Riscrive il primo settore di un blocco (solo unlink freelist: i
+    /// settori 1-6 di un blocco libero sono spazzatura senza lettori — il
+    /// payload conta solo dopo realloc, che riscrive sempre tutto).
+    #[inline(never)]
+    fn write_first_sector(&self, n: u64, data: &[u8; 512]) -> bool {
+        match block_lba(n) {
+            Some(lba) => self.disk.write_sector(lba, data),
+            None => false,
+        }
+    }
+
     /// Alloca un blocco: pop dalla freelist o high_water++. Mai il blocco 0.
     /// Scrive header-ext (write-through) e marca live (guardia double-alloc).
+    #[inline(never)]
     pub fn alloc(&mut self) -> Option<u64> {
         let n = if self.xh.free_head != 0 {
             let head = self.xh.free_head;
-            let mut blk = [0u8; BLOCK_BYTES];
-            if !self.read_block(head, &mut blk) {
+            let mut sec = [0u8; 512];
+            if !self.read_first_sector(head, &mut sec) {
                 return None;
             }
-            self.xh.free_head = u64::from_le_bytes(blk[..8].try_into().ok()?);
+            self.xh.free_head = u64::from_le_bytes(sec[..8].try_into().ok()?);
             head
         } else {
             let n = self.xh.high_water;
@@ -172,13 +263,83 @@ impl ArcaVolume {
         Some(n)
     }
 
+    /// Alloca uno SPECIFICO blocco (56.2b: secondary root fissa al blocco 2).
+    /// Lo sgancia dalla freelist se presente, altrimenti lo prende solo se e'
+    /// la cima (`high_water`, caso volume fresco). Blocco 0, live o oltre la
+    /// cima → false. Scrive header-ext come `alloc`. Walk a settori (mai
+    /// 3.5K stack — regola §18; vedi `write_first_sector` per la patch).
+    #[inline(never)]
+    pub fn alloc_specific(&mut self, n: u64) -> bool {
+        if n == 0 || !self.live.insert(n) {
+            return false; // blocco 0 o double-alloc (guardia RAM)
+        }
+        // Fast path: n e' la testa.
+        if self.xh.free_head == n {
+            let mut sec = [0u8; 512];
+            if !self.read_first_sector(n, &mut sec) {
+                self.live.remove(&n);
+                return false;
+            }
+            self.xh.free_head = u64::from_le_bytes(sec[..8].try_into().unwrap_or([0; 8]));
+            if !self.store_xh() {
+                self.live.remove(&n);
+                return false;
+            }
+            return true;
+        }
+        // Walk: cerca il prev il cui next e' n (letture da 1 settore,
+        // bound anti-loop: vedi `walk_cap`).
+        let mut prev = self.xh.free_head;
+        let mut guard = self.walk_cap();
+        let mut sec = [0u8; 512];
+        while prev != 0 && guard > 0 {
+            guard -= 1;
+            if !self.read_first_sector(prev, &mut sec) {
+                self.live.remove(&n);
+                return false;
+            }
+            let next = u64::from_le_bytes(sec[..8].try_into().unwrap_or([0; 8]));
+            if next == n {
+                let mut ns = [0u8; 512];
+                if !self.read_first_sector(n, &mut ns) {
+                    self.live.remove(&n);
+                    return false;
+                }
+                sec[..8].copy_from_slice(&ns[..8]);
+                if !self.write_first_sector(prev, &sec) {
+                    self.live.remove(&n);
+                    return false;
+                }
+                if !self.store_xh() {
+                    self.live.remove(&n);
+                    return false;
+                }
+                return true;
+            }
+            prev = next;
+        }
+        // Non in freelist: solo cima fresca.
+        if n == self.xh.high_water && self.xh.high_water != 0 {
+            self.xh.high_water += 1;
+            if !self.store_xh() {
+                self.live.remove(&n);
+                return false;
+            }
+            return true;
+        }
+        self.live.remove(&n);
+        false
+    }
+
     /// Libera un blocco: push in freelist (next nei primi 8 B) + unmark live.
     /// Blocco 0, mai-allocato o double-free → false (guardia RAM, mai IO).
+    /// Buffer intero sull'heap (mai 3.5K stack — regola §18).
+    #[inline(never)]
     pub fn free(&mut self, n: u64) -> bool {
         if n == 0 || !self.live.remove(&n) {
             return false;
         }
-        let mut blk = [0u8; BLOCK_BYTES];
+        let mut blk = format::boxed_block();
         blk[..8].copy_from_slice(&self.xh.free_head.to_le_bytes());
         if !self.write_block(n, &blk) {
             self.live.insert(n);
@@ -193,22 +354,29 @@ impl ArcaVolume {
 
     /// Scrive un nodo opaco (header magic+type+gen + payload + checksum).
     /// Blocco 0 protetto; il blocco deve essere live (allocato qui).
+    /// Buffer intero sull'heap (regola §18: il chiamante btree tiene gia'
+    /// il payload in `Box`, qui si aggiunge solo header + checksum).
+    #[inline(never)]
     pub fn write_node(&mut self, n: u64, ty: u8, generation: u64, payload: &[u8; ARCA_NODE_PAYLOAD_LEN]) -> bool {
         if n == 0 || !self.live.contains(&n) {
             return false;
         }
-        let mut blk = [0u8; BLOCK_BYTES];
+        let mut blk = format::boxed_block();
         format::node_fill(&mut blk, ty, generation, payload);
         self.write_block(n, &blk)
     }
 
     /// Legge e verifica un nodo: magic + checksum. Il payload va in `out`.
     /// Blocco 0 protetto; type/gen riportati per il chiamante (56.2b).
+    /// Lettura heap + copia payload (niente array 3.5K stack — regola §18);
+    /// a verifica fallita `out` resta sporco e si ritorna None (contratto
+    /// invariato: il chiamante non usa `out` a errore).
+    #[inline(never)]
     pub fn read_node(&self, n: u64, out: &mut [u8; ARCA_NODE_PAYLOAD_LEN]) -> Option<(u8, u64)> {
         if n == 0 {
             return None;
         }
-        let mut blk = [0u8; BLOCK_BYTES];
+        let mut blk = format::boxed_block();
         if !self.read_block(n, &mut blk) {
             return None;
         }
@@ -218,7 +386,66 @@ impl ArcaVolume {
     }
 
     /// (high_water, live_count, free_head) per il debug STAT.
+    #[inline(never)]
     pub fn stats(&self) -> (u64, u64, u64) {
         (self.xh.high_water, self.live.len() as u64, self.xh.free_head)
+    }
+
+    /// Settore raw partition-relative (56.2b commit: superblock LBA0/shadow
+    /// LBA1 + flip di generazione). Niente checksum qui: il chiamante usa
+    /// `arcafs::format` (stesso formato del tool host, mai duplicato).
+    #[inline(never)]
+    pub fn read_raw_sector(&self, lba: u64, out: &mut [u8; 512]) -> bool {
+        self.disk.read_sector(lba, out)
+    }
+
+    /// Scrive un settore raw partition-relative (vedi sopra).
+    #[inline(never)]
+    pub fn write_raw_sector(&self, lba: u64, data: &[u8; 512]) -> bool {
+        self.disk.write_sector(lba, data)
+    }
+
+    /// Contatori id persistenti dall'header-ext (fonte dopo kill/restart).
+    #[inline(never)]
+    pub fn ids(&self) -> (u64, u64) {
+        (self.xh.next_id, self.xh.next_snap)
+    }
+
+    /// Sincronizza i contatori id e persiste l'header-ext (fine commit).
+    /// Rifiuta 0 (id mai validi, F2): niente stati degeneri su disco.
+    #[inline(never)]
+    pub fn sync_ids(&mut self, next_id: u64, next_snap: u64) -> bool {
+        if next_id == 0 || next_snap == 0 {
+            return false;
+        }
+        self.xh.next_id = next_id;
+        self.xh.next_snap = next_snap;
+        self.store_xh()
+    }
+
+    /// Scrive contatori + flags in UN colpo (commit 56.2b: un solo settore
+    /// per l'header-ext a commit, non tre). Rifiuta id 0 (F2).
+    #[inline(never)]
+    pub fn store_meta(&mut self, next_id: u64, next_snap: u64, flags: u64) -> bool {
+        if next_id == 0 || next_snap == 0 {
+            return false;
+        }
+        self.xh.next_id = next_id;
+        self.xh.next_snap = next_snap;
+        self.xh.flags = flags;
+        self.store_xh()
+    }
+
+    /// Flags header-ext (bit DIRTY per il commit).
+    #[inline(never)]
+    pub fn xh_flags(&self) -> u64 {
+        self.xh.flags
+    }
+
+    /// Imposta i flags header-ext e li persiste.
+    #[inline(never)]
+    pub fn set_xh_flags(&mut self, flags: u64) -> bool {
+        self.xh.flags = flags;
+        self.store_xh()
     }
 }

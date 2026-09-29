@@ -558,14 +558,14 @@ pub fn t_identity() -> bool {
     true
 }
 
-/// t58 — bucket `sys` nativo + content-hash BLAKE2s (Fase 55, N0).
-/// userfs seeda `sys` da /fat a ogni avvio (anche restart); init carica
-/// console per object_id, shell con chiave assente (= fallback FAT, vedi
-/// log di boot "ripiego su FAT"). Prova: (1) l'oggetto nativo e' byte-
-/// identico al file FAT; (2) il suo blake2s e' il manifest BLAKE (stesso
-/// predicato di `verify_image` in init); (3) un byte flippato cambia il
-/// digest (init lo rifiuterebbe); (4) la chiave assente da' errore
-/// (mai dati inventati).
+/// t58 — bucket `sys` nativo + content-hash BLAKE2s (Fase 55, N0; 56.2b su
+/// blocchi). Il test lega il motore in proprio (open + USEDISK: load o init
+/// + seed `sys` server-side), cosi' sopravvive a qualunque restart di userfs
+/// precedente (es. t28): senza volume (ARCA_IMG=0) skip adattivo, mai FAIL.
+/// Prova: (1) l'oggetto nativo e' byte-identico al file FAT; (2) il suo
+/// blake2s e' il manifest BLAKE (stesso predicato di `verify_image` in
+/// init); (3) un byte flippato cambia il digest (init lo rifiuterebbe);
+/// (4) la chiave assente da' errore (mai dati inventati).
 pub fn t_sys_native() -> bool {
     let fat = match libr::load_file("/fat/bin/console.bin") {
         Some(b) if !b.is_empty() => b,
@@ -574,6 +574,25 @@ pub fn t_sys_native() -> bool {
             return false;
         }
     };
+    // Bind in proprio: primo volume ArcaFS che apre (gate: /dev/sdc1).
+    // Con auto-bind all'avvio (56.2c) l'open prende il rifiuto re-open:
+    // tollerato se USEDISK riesce (motore gia' legato). Nessun volume =
+    // run senza drive: skip adattivo (mai FAIL per assenza).
+    let mut opened = false;
+    for dev in ["/dev/sdc1", "/dev/sdd1", "/dev/sdc", "/dev/sdd"] {
+        if libr::arca_open(dev).is_ok() {
+            opened = true;
+            break;
+        }
+    }
+    if libr::arca_use_disk(true).is_err() {
+        if opened {
+            println!("[usertests] t58: USEDISK fallito");
+            return false;
+        }
+        println!("[usertests] t58: nessun volume ArcaFS (ARCA_IMG=0?): salto");
+        return true;
+    }
     let obj = match libr::obj_get(b"sys", b"bin/userconsole.bin") {
         Ok(v) => v,
         Err(_) => {

@@ -70,7 +70,7 @@ pub use arcafs::proto::{
     R_OBJ_PUT, R_OBJ_GET, OBJ_BUCKET_MAX, OBJ_KEY_MAX, R_SNAP_CREATE, R_SNAP_DELETE,
     R_SNAP_ROLLBACK, R_SNAP_CLONE, R_OBJ_GET_ID, R_OBJ_STAT_ID, R_OBJ_DELETE, R_OBJ_STAT,
     R_ARCA_DEBUG, ARCA_SUB_OPEN, ARCA_SUB_ALLOC, ARCA_SUB_FREE, ARCA_SUB_READ,
-    ARCA_SUB_WRITE, ARCA_SUB_STAT,
+    ARCA_SUB_WRITE, ARCA_SUB_STAT, ARCA_SUB_USEDISK,
 };
 /// Blocchi on-disk ArcaFS (Fase 56.2a): casa `arcafs`, riesportati qui.
 pub use arcafs::format::{

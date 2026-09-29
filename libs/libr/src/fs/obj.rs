@@ -303,7 +303,7 @@ pub fn obj_delete(bucket: &[u8], key: &[u8]) -> Result<(), Error> {
 use arcafs::format::ARCA_NODE_PAYLOAD_LEN;
 use arcafs::proto::{
     ARCA_SUB_ALLOC, ARCA_SUB_FREE, ARCA_SUB_OPEN, ARCA_SUB_READ, ARCA_SUB_STAT,
-    ARCA_SUB_WRITE, R_ARCA_DEBUG,
+    ARCA_SUB_USEDISK, ARCA_SUB_WRITE, R_ARCA_DEBUG,
 };
 
 /// Invia un sub-op debug: ritorna (w0, w1, len) della reply SENZA consumare
@@ -372,6 +372,13 @@ pub fn arca_write_node(block: u64, data: &[u8; ARCA_NODE_PAYLOAD_LEN]) -> Result
     p.extend_from_slice(&block.to_le_bytes());
     p.extend_from_slice(data);
     arca_scalar(ARCA_SUB_WRITE, &p).map(|_| ())
+}
+
+/// Seleziona il backend degli op `R_OBJ_*`/`R_SNAP_*` lato server: disco
+/// B+tree (`true`, richiede volume legato via `arca_open`) o store in-RAM
+/// (`false`, default). Flag secco: niente merge tra backend.
+pub fn arca_use_disk(on: bool) -> Result<(), Error> {
+    arca_scalar(ARCA_SUB_USEDISK, &[on as u8]).map(|_| ())
 }
 
 /// (high_water, live, free_head) del volume.

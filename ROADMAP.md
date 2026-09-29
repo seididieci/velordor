@@ -13,7 +13,7 @@ nulla da solo.
 
 ## Stato (completate 1-55)
 
-Gate: `[testfs] PASS 5/5` + `[testfat] PASS 7/7` + `[testsarca] PASS 13/13` +
+Gate: `[testfs] PASS 5/5` + `[testfat] PASS 7/7` + `[testsarca] PASS 33/33` +
 `[usertests] PASS 58/58` + shell, zero FAIL/PANIC/FAULT.
 
 | Fase | Descrizione | Stato |
@@ -92,9 +92,15 @@ Voci con scope e vittoria dichiarati (non date).
        seedato, init dual-mode + pinning FNV/BLAKE2s, testsarca 13/13).
        Prossimo: stesura di dettaglio + ADR per A2, poi 56.
        Vittoria: spec scritta + primo mount.
-- [ ] **56 (A2)** (dopo 55, in corso: 56.1 versioni in RAM fatto (testsarca 21/21); 56.2a fatto: casa `arcafs/`, formato on-disk + allocatore + `R_ARCA_DEBUG`, uuid auto al create, testsarca 27/27; restano 56.2b B+tree/commit e 56.2c recovery/sys-dal-volume): COW + snapshot/clone + GC (+ packing, + `R_OBJ_MGET`
-      se 53 lo chiede) + marker dir persistenti (§5).
-      Vittoria: rollback vero; retention log implementabile.
+- [x] **56 (A2)** (completata: 56.1 versioni in RAM 21/21; 56.2a casa `arcafs/`
+       + formato on-disk + allocatore + `R_ARCA_DEBUG` 27/27; 56.2b B+tree COW +
+       commit shadow+flip su disco, backend unico 32/32; 56.2c recovery/orphan-GC
+       + tabella snapshot persistente + sys-dal-volume all'avvio 33/33): COW +
+       snapshot/clone + GC + rollback/retention persistenti. Packing S1/S2,
+       `R_OBJ_MGET` (se 53 lo chiede) e marker dir persistenti (§5, → 56.3)
+       restano rinviati.
+       Vittoria conseguita: rollback vero (persistente, sopravvive al kill);
+       retention log implementabile (sblocco 57).
 - [ ] **57 (L0/L1) logging** (L0 prima di 55, L1 dopo 56; `arcafs.md` §15): L0
       convenzione `/var/log` su FAT + rotazione nel servizio; L1 bucket
       `log` nativo (seal + `R_SYNC` Group + retention via snapshot+GC).

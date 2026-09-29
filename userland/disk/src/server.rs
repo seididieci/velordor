@@ -417,6 +417,18 @@ fn real_main(_sp: u64) -> ! {
                                             count,
                                             false,
                                         ) {
+                                            // Coerenza cache (56.2c): il DMA
+                                            // salta `node_read_multi`, quindi
+                                            // la cache va popolata qui o una
+                                            // DEV_READ successiva servirebbe
+                                            // stale (osservato: gen ferma).
+                                            for j in 0..count {
+                                                crate::cache::insert_from(
+                                                    di,
+                                                    base + lba + j as u64,
+                                                    &buf[j * 512..(j + 1) * 512],
+                                                );
+                                            }
                                             unsafe {
                                                 rings::disk_resp_write(
                                                     nbytes as u64,
@@ -505,6 +517,18 @@ fn real_main(_sp: u64) -> ! {
                                         if eng.finish_dma(
                                             disk, chan, &mut buf[..nbytes], count, true,
                                         ) {
+                                            // Coerenza cache (56.2c): come il
+                                            // read DMA, il write DMA salta
+                                            // `node_write_multi`: senza fill
+                                            // una DEV_READ cached vedrebbe il
+                                            // vecchio contenuto.
+                                            for j in 0..count {
+                                                crate::cache::insert_from(
+                                                    di,
+                                                    base + lba + j as u64,
+                                                    &buf[j * 512..(j + 1) * 512],
+                                                );
+                                            }
                                             let _ = libr::reply(0, 0, 0);
                                             dma_done = true;
                                         }

@@ -45,3 +45,8 @@ pub const ARCA_SUB_FREE: u8 = 3;
 pub const ARCA_SUB_READ: u8 = 4;
 pub const ARCA_SUB_WRITE: u8 = 5;
 pub const ARCA_SUB_STAT: u8 = 6;
+/// USEDISK (Fase 56.2b): `R_ARCA_DEBUG` con payload `[7][on:1]` lega il
+/// motore B+tree su disco al volume aperto e instrada `R_OBJ_*`/`R_SNAP_*`
+/// sul backend disco (`on=1`) o su quello in-RAM (`on=0`, default).
+/// Flag secco server-side: un backend alla volta, mai merge silenziosi.
+pub const ARCA_SUB_USEDISK: u8 = 7;
