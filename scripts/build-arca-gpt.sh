@@ -47,15 +47,11 @@ def die(msg):
 
 if not os.path.isfile(ARCA_IMG):
     die("%s non trovato (creare prima con scripts/arca-tool.sh)" % ARCA_IMG)
+# Blocchi 0-1 interi (superblock + shadow + header-ext + root vuota).
 with open(ARCA_IMG, "rb") as f:
-    superblock = f.read(512)
-if len(superblock) != 512 or superblock[0:4] != b"ACFS":
-    die("superblock sorgente invalido in %s" % ARCA_IMG)
-with open(ARCA_IMG, "rb") as f:
-    f.seek(512)
-    shadow = f.read(512)
-if len(shadow) != 512 or shadow[0:4] != b"ACFS":
-    die("shadow sorgente invalido in %s" % ARCA_IMG)
+    volhead = f.read(14 * 512)
+if len(volhead) != 14 * 512 or volhead[0:4] != b"ACFS":
+    die("testa volume invalida in %s" % ARCA_IMG)
 
 img = bytearray(SECTORS * 512)
 
@@ -95,9 +91,8 @@ struct.pack_into("<Q", e0, 40, PART_LAST)
 arr[0:128] = e0
 img[2 * 512:2 * 512 + len(arr)] = arr
 
-# Partizione: superblock + shadow (phys 64/65)
-img[PART_START * 512:PART_START * 512 + 512] = superblock
-img[(PART_START + 1) * 512:(PART_START + 1) * 512 + 512] = shadow
+# Partizione: blocchi 0-1 (superblock + shadow + header-ext + root).
+img[PART_START * 512:PART_START * 512 + len(volhead)] = volhead
 
 # Backup: array a 65503, header a 65535 (current/backup scambiati)
 img[65503 * 512:65503 * 512 + len(arr)] = arr

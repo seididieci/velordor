@@ -8,6 +8,7 @@ edition = "2024"
 [dependencies]
 libr = { path = "../../libs/libr" }
 blake2s = { path = "../../blake2s" }
+arcafs = { path = "../../arcafs" }
 
 [profile.dev]
 panic = "abort"

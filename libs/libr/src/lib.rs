@@ -62,9 +62,23 @@ pub use syscall_numbers::{DISK_LIST, DISK_INFO, R_DISK_LIST, R_DISK_INFO};
 pub use syscall_numbers::{
     R_CLOSE, R_DELETE, R_MKDIR, R_MOUNT, R_OPEN, R_READ, R_READDIR, R_REGISTER, R_UMOUNT,
     R_WRITE, R_RIGHTS_DROP, R_RIGHTS_GET, R_STAT, R_LSEEK, R_DUP_GRANT, R_DUP_CLAIM,
-    R_DUP_CANCEL, R_PIPE_CREATE, R_SYNC, R_STATVFS, R_GET_HASH, R_OBJ_PUT, R_OBJ_GET,
-    OBJ_BUCKET_MAX, OBJ_KEY_MAX, R_SNAP_CREATE, R_SNAP_DELETE, R_SNAP_ROLLBACK,
-    R_SNAP_CLONE, R_OBJ_GET_ID, R_OBJ_STAT_ID, R_OBJ_DELETE, R_OBJ_STAT,
+    R_DUP_CANCEL, R_PIPE_CREATE, R_SYNC, R_STATVFS, R_GET_HASH,
+};
+/// Protocollo ArcaFS: casa `arcafs` (tag, bound, wire, formato); `libr` li
+/// riesporta cosi' i client esistenti (`libr::R_OBJ_*`, ...) non cambiano.
+pub use arcafs::proto::{
+    R_OBJ_PUT, R_OBJ_GET, OBJ_BUCKET_MAX, OBJ_KEY_MAX, R_SNAP_CREATE, R_SNAP_DELETE,
+    R_SNAP_ROLLBACK, R_SNAP_CLONE, R_OBJ_GET_ID, R_OBJ_STAT_ID, R_OBJ_DELETE, R_OBJ_STAT,
+    R_ARCA_DEBUG, ARCA_SUB_OPEN, ARCA_SUB_ALLOC, ARCA_SUB_FREE, ARCA_SUB_READ,
+    ARCA_SUB_WRITE, ARCA_SUB_STAT,
+};
+/// Blocchi on-disk ArcaFS (Fase 56.2a): casa `arcafs`, riesportati qui.
+pub use arcafs::format::{
+    ARCA_BLOCK_SECTORS, ARCA_XHDROFF, ARCA_XMAGIC, ARCA_XVER, ARCA_XHDRLEN,
+    ARCA_XHOFF_FREE, ARCA_XHOFF_HIGH, ARCA_XHOFF_NEXTID, ARCA_XHOFF_NEXTSNAP,
+    ARCA_XHOFF_FLAGS, ARCA_XHOFF_CHECK, ARCA_NMAGIC, ARCA_NODE_TYPE_RAW,
+    ARCA_NODE_TYPE_LEAF, ARCA_NODE_TYPE_INTERNAL, ARCA_NODE_PAYLOAD,
+    ARCA_NODE_PAYLOAD_LEN, ARCA_NODE_CHECK,
 };
 /// Bit dei diritti per-canale (Fase 17, self-restriction; DELETE in 18.2;
 /// SEEK in 40; GRANT/PIPE in 45; SYNC in 52): mask per `rights_drop`, valore
@@ -113,9 +127,9 @@ pub use syscall_numbers::{
 /// Tag TIME_* (Fase 50, P1 orologio): client→usertime, data/ora di sistema.
 /// Reply `TIME_NOW`: `w0` = secondi epoch (UTC), `w1` = centesimi di secondo.
 pub use syscall_numbers::TIME_NOW;
-/// Formato superblock ArcaFS (Fase 54, P5): single source userfs + guest
-/// `arca` + host `create` (mai duplicare offset/magic).
-pub use syscall_numbers::{
+/// Formato superblock ArcaFS: casa `arcafs` (condiviso guest/host); `libr`
+/// li riesporta cosi' i client esistenti non cambiano import.
+pub use arcafs::format::{
     ARCA_BLOCK_SIZE, ARCA_MAGIC, ARCA_OFF_ALLOC, ARCA_OFF_AUTO, ARCA_OFF_BLOCK_SIZE,
     ARCA_OFF_CHECK, ARCA_OFF_FLAGS, ARCA_OFF_GEN, ARCA_OFF_MAGIC, ARCA_OFF_MOUNT,
     ARCA_OFF_REFCOUNT, ARCA_OFF_ROOT, ARCA_OFF_UUID, ARCA_OFF_VERSION, ARCA_SUPER_LEN,

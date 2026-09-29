@@ -16,32 +16,84 @@ use std::fs::OpenOptions;
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::process::exit;
 
-use syscall_numbers as sn;
+use arcafs as af;
 
 fn usage() -> ! {
-    eprintln!("uso: arca create <path> [--uuid HEX16] [--size-mib N]  (default 1 MiB)");
+    eprintln!("uso: arca create <path> [--uuid HEX16] [--size-mib N]  (default 1 MiB, uuid auto)");
     exit(2);
 }
 
-/// Costruisce i 128 byte di superblock (LE esplicito, checksum FNV-1a).
-fn build_super(uuid: u64, generation: u64, mountpoint: &str) -> [u8; sn::ARCA_SUPER_LEN] {
-    let mut sb = [0u8; sn::ARCA_SUPER_LEN];
-    sb[sn::ARCA_OFF_MAGIC..sn::ARCA_OFF_MAGIC + 4].copy_from_slice(sn::ARCA_MAGIC);
-    sb[sn::ARCA_OFF_VERSION..sn::ARCA_OFF_VERSION + 4]
-        .copy_from_slice(&sn::ARCA_VERSION.to_le_bytes());
-    sb[sn::ARCA_OFF_BLOCK_SIZE..sn::ARCA_OFF_BLOCK_SIZE + 4]
-        .copy_from_slice(&sn::ARCA_BLOCK_SIZE.to_le_bytes());
-    sb[sn::ARCA_OFF_UUID..sn::ARCA_OFF_UUID + 8].copy_from_slice(&uuid.to_le_bytes());
-    sb[sn::ARCA_OFF_GEN..sn::ARCA_OFF_GEN + 8].copy_from_slice(&generation.to_le_bytes());
-    // root/refcount/alloc restano 0 (volume vuoto in P5).
-    let mp = mountpoint.as_bytes();
-    let n = mp.len().min(63);
-    sb[sn::ARCA_OFF_MOUNT..sn::ARCA_OFF_MOUNT + n].copy_from_slice(&mp[..n]);
-    sb[sn::ARCA_OFF_AUTO] = 0;
-    sb[sn::ARCA_OFF_FLAGS] = 0;
-    let checksum = sn::image_hash(&sb[..sn::ARCA_OFF_CHECK]);
-    sb[sn::ARCA_OFF_CHECK..sn::ARCA_OFF_CHECK + 8].copy_from_slice(&checksum.to_le_bytes());
-    sb
+/// Inizializza un volume vuoto su `f` a `base` settori (0 = whole-disk):
+/// header-estensione + nodo root al blocco 1 + ROOT nel superblock.
+/// Fallisce loud (exit 1) su qualunque errore IO.
+fn init_empty_volume(f: &mut std::fs::File, base: u64, uuid: u64) {
+    use std::io::{Seek, SeekFrom, Write};
+    // Root vuota al blocco 1 (relativo a `base`).
+    let mut root = [0u8; 3584];
+    af::format::node_fill(&mut root, af::format::ARCA_NODE_TYPE_RAW, 0, &[0u8; af::format::ARCA_NODE_PAYLOAD_LEN]);
+    let root_off = (base + 7) * 512;
+    if f.seek(SeekFrom::Start(root_off)).is_err() || f.write_all(&root).is_err() {
+        eprintln!("scrittura root fallita");
+        exit(1);
+    }
+    // Header-estensione a settori base+2..base+6.
+    let xh = af::format::HeaderExt {
+        free_head: 0,
+        high_water: 2,
+        next_id: 1,
+        next_snap: 1,
+        flags: 0,
+    };
+    let enc = af::format::xhdr_encode(&xh);
+    let xh_off = base * 512 + af::format::ARCA_XHDROFF as u64;
+    if f.seek(SeekFrom::Start(xh_off)).is_err() || f.write_all(&enc).is_err() {
+        eprintln!("scrittura header-estensione fallita");
+        exit(1);
+    }
+    // ROOT = 1 nel superblock (checksum ricalcolato).
+    let mut sec0 = [0u8; 512];
+    if f.seek(SeekFrom::Start(base * 512)).is_err()
+        || std::io::Read::read_exact(f, &mut sec0).is_err()
+        || af::format::superblock_set_root(&mut sec0, 1).is_none()
+    {
+        eprintln!("ROOT nel superblock fallito");
+        exit(1);
+    }
+    if f.seek(SeekFrom::Start(base * 512)).is_err() || f.write_all(&sec0).is_err() {
+        eprintln!("scrittura superblock con ROOT fallita");
+        exit(1);
+    }
+    // Shadow sincronizzato (stessa generazione al format: crash-safe per
+    // costruzione, il flip entra con il commit 56.2b).
+    if f.seek(SeekFrom::Start((base + 1) * 512)).is_err() || f.write_all(&sec0).is_err() {
+        eprintln!("scrittura shadow fallita");
+        exit(1);
+    }
+    println!(
+        "arca: volume inizializzato (root=1, uuid={:016X})",
+        uuid,
+    );
+}
+
+/// Genera un UUID volume a 64 bit dall'OS RNG (`/dev/urandom`, 8 byte).
+/// Fallback senza entropia: `(nanos xor pid)` — mai collisione pratica su
+/// volumi creati a mano, ma il path primario resta l'OS (documentato qui,
+/// non nascosto). Zero dipendenze esterne (repo offline, niente registry).
+fn auto_uuid() -> u64 {
+    if let Ok(mut f) = OpenOptions::new().read(true).open("/dev/urandom") {
+        let mut b = [0u8; 8];
+        if std::io::Read::read_exact(&mut f, &mut b).is_ok() {
+            let v = u64::from_le_bytes(b);
+            if v != 0 {
+                return v;
+            }
+        }
+    }
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos() as u64)
+        .unwrap_or(0x9E3779B97F4A7C15);
+    (nanos ^ (std::process::id() as u64).wrapping_mul(0x100000001B3)).max(1)
 }
 
 /// Estrae il nome del disco base da un path di partizione.
@@ -204,7 +256,10 @@ fn main() {
         usage();
     }
     let path = &args[2];
-    let mut uuid: u64 = 1;
+    // UUID auto-generato (Fase 56.2a): l'unicita' del volume non puo'
+    // dipendere dall'utente (default 1 = collisioni garantite tra volumi).
+    // `--uuid` resta solo come override esplicito (test deterministici).
+    let mut uuid: u64 = auto_uuid();
     let mut size_mib: u64 = 1;
     let mut i = 3;
     while i < args.len() {
@@ -237,7 +292,7 @@ fn main() {
         i += 1;
     }
 
-    let sb = build_super(uuid, 1, "");
+    let sb = af::format::superblock_build(uuid, 1, "");
 
     // Determina se e' una partizione o whole-disk
     let is_partition = path.trim_start_matches("/dev/")
@@ -249,7 +304,7 @@ fn main() {
         // Partizione: trova start_lba dalla tabella del disco
         match find_partition_offset(path) {
             Some((start, size)) => {
-                let mut f = match OpenOptions::new().write(true).open(path) {
+                let mut f = match OpenOptions::new().read(true).write(true).open(path) {
                     Ok(f) => f,
                     Err(e) => {
                         eprintln!("create {}: {}", path, e);
@@ -268,13 +323,14 @@ fn main() {
                     eprintln!("scrittura superblock a offset {} fallita", offset);
                     exit(1);
                 }
+                init_empty_volume(&mut f, start, uuid);
                 println!(
                     "arca: creato {} (partizione start={} size={} MiB), uuid={:016X}, gen=1, block_size={}",
                     path,
                     start,
                     size * 512 / 1024 / 1024,
                     uuid,
-                    sn::ARCA_BLOCK_SIZE
+                    af::format::ARCA_BLOCK_SIZE
                 );
             }
             None => {
@@ -285,7 +341,7 @@ fn main() {
     } else {
         // Whole-disk o file immagine: LBA0
         let size = size_mib * 1024 * 1024;
-        let mut f = match OpenOptions::new().create(true).write(true).truncate(true).open(path) {
+        let mut f = match OpenOptions::new().create(true).read(true).write(true).truncate(true).open(path) {
             Ok(f) => f,
             Err(e) => {
                 eprintln!("create {}: {}", path, e);
@@ -301,12 +357,13 @@ fn main() {
             eprintln!("set_len {} fallita", size);
             exit(1);
         }
+        init_empty_volume(&mut f, 0, uuid);
         println!(
             "arca: creato {} ({} MiB), uuid={:016X}, gen=1, block_size={}",
             path,
             size_mib,
             uuid,
-            sn::ARCA_BLOCK_SIZE
+            af::format::ARCA_BLOCK_SIZE
         );
     }
     

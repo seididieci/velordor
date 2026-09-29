@@ -313,31 +313,12 @@ pub const DISK_INFO: u64 = 0x57;
 //   Reply 0 o ERR. Usato dalla barriera `R_SYNC(GROUP)`.
 pub const DISK_FLUSH: u64 = 0x58;
 
-// ── Formato on-disk superblock ArcaFS (Fase 54, P5) ───────────────────
-// Single source userfs + guest `arca` + host `create` (tools/arca): MAI
-// duplicare offset/magic altrove (il round-trip create→mount→stat e' il test
-// che li tiene d'accordo). Blocco 128 B a LBA0 (+ shadow LBA1): checksum
-// FNV-1a u64 su [0..120] in [120..128] (self-verifying, come il manifest).
-// Il seal BLAKE2s-256 (§3) NON sta qui: wiring in A2 (campo riservato futuro
-// oltre i 128 B o superblock v2 — mai Endian ambigue: tutto LE esplicito).
-pub const ARCA_MAGIC: &[u8; 4] = b"ACFS";
-pub const ARCA_VERSION: u32 = 1;
-pub const ARCA_BLOCK_SIZE: u32 = 3584;
-/// Byte serializzati del superblock (1 settore ne contiene 4: si leggono i
-/// primi 128 di LBA0/LBA1).
-pub const ARCA_SUPER_LEN: usize = 128;
-pub const ARCA_OFF_MAGIC: usize = 0; // [u8; 4]
-pub const ARCA_OFF_VERSION: usize = 4; // u32 LE
-pub const ARCA_OFF_BLOCK_SIZE: usize = 8; // u32 LE
-pub const ARCA_OFF_UUID: usize = 12; // u64 LE (volume_uuid, mai riusato)
-pub const ARCA_OFF_GEN: usize = 20; // u64 LE (generation, commit + flip)
-pub const ARCA_OFF_ROOT: usize = 28; // u64 LE (0 = volume vuoto P5)
-pub const ARCA_OFF_REFCOUNT: usize = 36; // u64 LE (0 in P5)
-pub const ARCA_OFF_ALLOC: usize = 44; // u64 LE (hint placement)
-pub const ARCA_OFF_MOUNT: usize = 52; // [u8; 64] mountpoint (NUL-padded)
-pub const ARCA_OFF_AUTO: usize = 116; // u8 (auto-mount)
-pub const ARCA_OFF_FLAGS: usize = 117; // u8 (bit 0 = dirty)
-pub const ARCA_OFF_CHECK: usize = 120; // u64 LE (FNV-1a di [0..120])
+// ── Formato superblock ArcaFS: casa propria (Fase 56.2a) ──────────────
+// ARCA_MAGIC/VERSION/BLOCK_SIZE/SUPER_LEN/OFF_* vivono in `arcafs::format`
+// (condivisi guest/host); il commento di formato resta qui sotto come
+// mappa: blocco 128 B a LBA0 (+ shadow LBA1), checksum FNV-1a u64 su
+// [0..120] in [120..128] (self-verifying). Il seal BLAKE2s-256 (§3) NON
+// sta qui: wiring in A2.
 
 // ── Tag delle operazioni FS (nel frame del ring, non nell'IPC) ────────────
 // Single source of truth (Fase 17): prima duplicati in `libr`, `userfs` e
@@ -414,31 +395,10 @@ pub const R_STATVFS: u32 = 0x24;
 //   mount `Local` (ramfs/FAT via trait `read`); device/remoti/sintetici e
 //   mount inattivi → ERR. Gate RIGHTS_READDIR + subtree come R_STAT.
 pub const R_GET_HASH: u32 = 0x25;
-/// Object store nativo ArcaFS (Fase 55, A1): PUT (w0=size, payload=bucket\0key\0[data]) e GET (w0=offset, w1=count, payload=bucket\0key\0). Stateful server-side: il server tiene lo stato della richiesta.
-pub const R_OBJ_PUT: u32 = 0x26;
-pub const R_OBJ_GET: u32 = 0x27;
-/// Versioni + snapshot (Fase 56.1, A2 in RAM): ogni PUT crea una versione
-/// (mai overwrite); snapshot per-bucket con pin delle versioni, clone di
-/// bucket, rollback per-chiave (nuova versione clonata, mai truncate).
-/// GET_ID/STAT_ID parlano per object_id; STAT/DELETE per (bucket,key).
-/// Formati payload: CREATE `[blen:1][bucket]` → reply snap_id;
-/// DELETE `[snap_id:8]`; ROLLBACK `[snap_id:8][obj-prefix]` → nuova size;
-/// CLONE `[snap_id:8][dblen:1][dstbucket]` → oggetti clonati;
-/// GET_ID `[id:8]` (w1=offset, come GET); STAT_ID `[id:8]` → (size, nv);
-/// DELETE `[obj-prefix]`; STAT `[obj-prefix]` → (id, size, frame [nv,mtime]).
-pub const R_SNAP_CREATE: u32 = 0x28;
-pub const R_SNAP_DELETE: u32 = 0x29;
-pub const R_SNAP_ROLLBACK: u32 = 0x2A;
-pub const R_SNAP_CLONE: u32 = 0x2B;
-pub const R_OBJ_GET_ID: u32 = 0x2C;
-pub const R_OBJ_STAT_ID: u32 = 0x2D;
-pub const R_OBJ_DELETE: u32 = 0x2E;
-pub const R_OBJ_STAT: u32 = 0x2F;
-/// Bound nomi object store (Fase 55, hygiene): bucket ≤ 16 B, chiave ≤ 255 B
-/// (1 byte di lunghezza nel frame: oltre e' inesprimibile sul wire).
-/// Entrambi i lati rifiutano loud oltre il bound (mai troncamento `as u8`).
-pub const OBJ_BUCKET_MAX: usize = 16;
-pub const OBJ_KEY_MAX: usize = 255;
+// ── ArcaFS: casa propria (Fase 56.2a) ────────────────────────────────
+// Tag R_OBJ_*/R_SNAP_*/R_ARCA_DEBUG, bound OBJ_*_MAX e formato blocchi
+// (ARCA_*) vivono nel crate `arcafs` (il kernel non li usa — verificato).
+// Qui restano solo i tag che kernel o piu' server condividono.
 /// Modi `R_SYNC` (Fase 52, P3): nessuna garanzia richiesta / barriera
 /// esplicita (flush+barriera) / ogni write stabile prima della reply.
 /// `PERWRITE` e' gia' il comportamento FAT (write-through); ramfs resta

@@ -4,8 +4,9 @@ version = "0.1.0"
 edition = "2021"
 
 # Tool host (std), fuori dal workspace del kernel: scrive arca.img a build
-# time (P5) e crescera' fino al tool completo in A7.
+# time e crescera' fino al tool completo in A7. Dipende dal crate `arcafs`
+# via path (stesso formato del guest, niente copie vendored da sincronizzare).
 [workspace]
 
 [dependencies]
-syscall-numbers = { path = "crates/syscall-numbers" }
+arcafs = { path = "../../arcafs" }

@@ -4,12 +4,12 @@
 //! Chunking automatico: GET > RING_MAX_PAYLOAD → loop client con offset++.
 
 use super::ring::{req_ring_write, resp_ring_read_payload, resp_ring_consume, RING_MAX_PAYLOAD};
-use crate::{fs_notify_result, fs_reply_check, Error, FS_NOTIFY, R_OBJ_GET, R_OBJ_PUT};
-use crate::{
-    R_SNAP_CREATE, R_SNAP_DELETE, R_SNAP_ROLLBACK, R_SNAP_CLONE, R_OBJ_GET_ID,
-    R_OBJ_STAT_ID, R_OBJ_DELETE, R_OBJ_STAT,
+use crate::{fs_notify_result, fs_reply_check, Error, FS_NOTIFY};
+use arcafs::proto::{
+    R_OBJ_GET, R_OBJ_PUT, R_SNAP_CREATE, R_SNAP_DELETE, R_SNAP_ROLLBACK, R_SNAP_CLONE,
+    R_OBJ_GET_ID, R_OBJ_STAT_ID, R_OBJ_DELETE, R_OBJ_STAT,
 };
-use crate::{OBJ_BUCKET_MAX, OBJ_KEY_MAX};
+use arcafs::wire;
 use alloc::vec;
 use alloc::vec::Vec;
 
@@ -75,7 +75,7 @@ pub fn obj_get(bucket: &[u8], key: &[u8]) -> Result<Vec<u8>, Error> {
 pub fn obj_put(bucket: &[u8], key: &[u8], data: &[u8]) -> Result<u64, Error> {
     // Valida i nomi una volta sola (il PUT vuoto salta il loop: senza,
     // nomi oltre bound passerebbero con Ok(0)).
-    if build_obj_prefix(bucket, key).is_none() {
+    if wire::obj_prefix(bucket, key).is_none() {
         return Err(Error::Invalid);
     }
     let total_len = data.len();
@@ -120,31 +120,14 @@ pub fn obj_put(bucket: &[u8], key: &[u8], data: &[u8]) -> Result<u64, Error> {
     Ok(total_len as u64)
 }
 
-/// Prefisso comune `[bucket_len:1][bucket]\0[key_len:1][key]\0`: None oltre
-/// i bound (`OBJ_BUCKET_MAX`/`OBJ_KEY_MAX` — sul wire la lunghezza sta in
-/// 1 byte, oltre e' inesprimibile: si rifiuta, mai `as u8` troncante).
-fn build_obj_prefix(bucket: &[u8], key: &[u8]) -> Option<Vec<u8>> {
-    if bucket.len() > OBJ_BUCKET_MAX || key.len() > OBJ_KEY_MAX {
-        return None;
-    }
-    let mut p = Vec::with_capacity(1 + bucket.len() + 1 + 1 + key.len() + 1);
-    p.push(bucket.len() as u8);
-    p.extend_from_slice(bucket);
-    p.push(0);
-    p.push(key.len() as u8);
-    p.extend_from_slice(key);
-    p.push(0);
-    Some(p)
-}
-
-/// Costruisce il payload per GET: prefisso + niente dati.
+/// Payload GET: prefisso condiviso (`arcafs::wire`, niente dati).
 fn build_get_payload(bucket: &[u8], key: &[u8]) -> Option<Vec<u8>> {
-    build_obj_prefix(bucket, key)
+    wire::obj_prefix(bucket, key)
 }
 
-/// Costruisce il payload per PUT: prefisso + chunk dati.
+/// Payload PUT: prefisso condiviso + chunk dati.
 fn build_put_payload(bucket: &[u8], key: &[u8], data: &[u8]) -> Option<Vec<u8>> {
-    let mut p = build_obj_prefix(bucket, key)?;
+    let mut p = wire::obj_prefix(bucket, key)?;
     p.extend_from_slice(data);
     Some(p)
 }
@@ -179,12 +162,7 @@ fn obj_scalar(tag: u32, payload: &[u8]) -> Result<u64, Error> {
 
 /// Snapshot del bucket → snap_id.
 pub fn snap_create(bucket: &[u8]) -> Result<u64, Error> {
-    if bucket.len() > OBJ_BUCKET_MAX {
-        return Err(Error::Invalid);
-    }
-    let mut p = Vec::with_capacity(1 + bucket.len());
-    p.push(bucket.len() as u8);
-    p.extend_from_slice(bucket);
+    let p = wire::bucket_only(bucket).ok_or(Error::Invalid)?;
     obj_scalar(R_SNAP_CREATE, &p)
 }
 
@@ -197,19 +175,15 @@ pub fn snap_delete(snap_id: u64) -> Result<(), Error> {
 pub fn snap_rollback(bucket: &[u8], key: &[u8], snap_id: u64) -> Result<u64, Error> {
     let mut p = Vec::with_capacity(8 + 1 + bucket.len() + 1 + 1 + key.len() + 1);
     p.extend_from_slice(&snap_id.to_le_bytes());
-    p.extend_from_slice(&build_obj_prefix(bucket, key).ok_or(Error::Invalid)?);
+    p.extend_from_slice(&wire::obj_prefix(bucket, key).ok_or(Error::Invalid)?);
     obj_scalar(R_SNAP_ROLLBACK, &p)
 }
 
 /// Clona il bucket pinnato in `dst` (nuovi id) → oggetti clonati.
 pub fn snap_clone(snap_id: u64, dst: &[u8]) -> Result<u64, Error> {
-    if dst.len() > OBJ_BUCKET_MAX {
-        return Err(Error::Invalid);
-    }
     let mut p = Vec::with_capacity(8 + 1 + dst.len());
     p.extend_from_slice(&snap_id.to_le_bytes());
-    p.push(dst.len() as u8);
-    p.extend_from_slice(dst);
+    p.extend_from_slice(&wire::bucket_only(dst).ok_or(Error::Invalid)?);
     obj_scalar(R_SNAP_CLONE, &p)
 }
 
@@ -258,7 +232,7 @@ pub fn obj_get_id(id: u64) -> Result<Vec<u8>, Error> {
 
 /// Stat per (bucket,key): (id, size head, versioni, mtime head).
 pub fn obj_stat(bucket: &[u8], key: &[u8]) -> Result<(u64, u64, u64, u64), Error> {
-    let prefix = build_obj_prefix(bucket, key).ok_or(Error::Invalid)?;
+    let prefix = wire::obj_prefix(bucket, key).ok_or(Error::Invalid)?;
     let frame = || req_ring_write(R_OBJ_STAT, prefix.len() as u64, 0, &prefix);
     if !frame() {
         return Err(Error::RingFull);
@@ -316,6 +290,103 @@ pub fn obj_stat_id(id: u64) -> Result<(u64, u64, u64), Error> {
 
 /// Cancella nome + catena viva (gli snapshot restano validi).
 pub fn obj_delete(bucket: &[u8], key: &[u8]) -> Result<(), Error> {
-    let prefix = build_obj_prefix(bucket, key).ok_or(Error::Invalid)?;
+    let prefix = wire::obj_prefix(bucket, key).ok_or(Error::Invalid)?;
     obj_scalar(R_OBJ_DELETE, &prefix).map(|_| ())
+}
+
+// ── Debug volume on-disk (Fase 56.2a, scaffold) ─────────────────────
+// UN tag + sub-op (`arcafs::proto::ARCA_SUB_*`): primo byte payload.
+// Frame risposta SEMPRE consumato (disciplina anti-desync); a errore i
+// registri portano sentinelle (via `fs_reply_check`). Il payload dedicato
+// (READ/STAT) si legge solo dopo registri-ok (mai oltre l'header).
+
+use arcafs::format::ARCA_NODE_PAYLOAD_LEN;
+use arcafs::proto::{
+    ARCA_SUB_ALLOC, ARCA_SUB_FREE, ARCA_SUB_OPEN, ARCA_SUB_READ, ARCA_SUB_STAT,
+    ARCA_SUB_WRITE, R_ARCA_DEBUG,
+};
+
+/// Invia un sub-op debug: ritorna (w0, w1, len) della reply SENZA consumare
+/// (il chiamante consuma dopo aver controllato i registri).
+fn arca_request(sub: u8, payload: &[u8]) -> Result<(u64, u64, usize), Error> {
+    let mut p = Vec::with_capacity(1 + payload.len());
+    p.push(sub);
+    p.extend_from_slice(payload);
+    let frame = || req_ring_write(R_ARCA_DEBUG, p.len() as u64, 0, &p);
+    if !frame() {
+        return Err(Error::RingFull);
+    }
+    match fs_notify_result(FS_NOTIFY, frame) {
+        Some((a, b, len)) => Ok((a, b, len)),
+        None => Err(Error::NotReady),
+    }
+}
+
+/// Richiesta scalare: valore in w0 o sentinella (frame vuoto 16 B).
+fn arca_scalar(sub: u8, payload: &[u8]) -> Result<u64, Error> {
+    let (a, _, _) = arca_request(sub, payload)?;
+    let v = fs_reply_check(a);
+    resp_ring_consume(16);
+    v
+}
+
+/// Lega il volume debug alla source (`/dev/sdc`). Fallisce loud se non
+/// formattato.
+pub fn arca_open(path: &str) -> Result<(), Error> {
+    arca_scalar(ARCA_SUB_OPEN, path.as_bytes()).map(|_| ())
+}
+
+/// Alloca un blocco (mai 0).
+pub fn arca_alloc() -> Result<u64, Error> {
+    arca_scalar(ARCA_SUB_ALLOC, &[])
+}
+
+/// Libera un blocco (0/mai-allocato/doppio → errore).
+pub fn arca_free(block: u64) -> Result<(), Error> {
+    arca_scalar(ARCA_SUB_FREE, &block.to_le_bytes()).map(|_| ())
+}
+
+/// Legge un nodo verificato (3560 B di payload).
+pub fn arca_read_node(block: u64) -> Result<Vec<u8>, Error> {
+    let (a, _, _) = arca_request(ARCA_SUB_READ, &block.to_le_bytes())?;
+    let n = match fs_reply_check(a) {
+        Ok(v) if v == block => v,
+        Ok(_) => {
+            resp_ring_consume(16);
+            return Err(Error::Failed);
+        }
+        Err(e) => {
+            resp_ring_consume(16);
+            return Err(e);
+        }
+    };
+    let _ = n;
+    let mut buf = vec![0u8; ARCA_NODE_PAYLOAD_LEN];
+    resp_ring_read_payload(&mut buf, ARCA_NODE_PAYLOAD_LEN);
+    Ok(buf)
+}
+
+/// Scrive un nodo opaco (type RAW, gen 0 server-side).
+pub fn arca_write_node(block: u64, data: &[u8; ARCA_NODE_PAYLOAD_LEN]) -> Result<(), Error> {
+    let mut p = Vec::with_capacity(8 + ARCA_NODE_PAYLOAD_LEN);
+    p.extend_from_slice(&block.to_le_bytes());
+    p.extend_from_slice(data);
+    arca_scalar(ARCA_SUB_WRITE, &p).map(|_| ())
+}
+
+/// (high_water, live, free_head) del volume.
+pub fn arca_stat_vol() -> Result<(u64, u64, u64), Error> {
+    let (high, live, _) = arca_request(ARCA_SUB_STAT, &[])?;
+    let ok = fs_reply_check(high).and(fs_reply_check(live));
+    match ok {
+        Ok(_) => {
+            let mut f = [0u8; 8];
+            resp_ring_read_payload(&mut f, 8);
+            Ok((high, live, u64::from_le_bytes(f)))
+        }
+        Err(e) => {
+            resp_ring_consume(16);
+            Err(e)
+        }
+    }
 }

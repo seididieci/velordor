@@ -1741,18 +1741,30 @@
          Restano ad A2: persistenza oggetti su volume (store oggi in RAM),
          snapshot/GC, `sys.content_hash` come xattr (oggi re-hash vs
          manifest). Gate: 5/5 + 7/7 + 13/13 + 58/58, zero FAIL/PANIC/FAULT;
-         boot produzione (ARCA_IMG=0, due drive) pulito.   - [ ] Fase 56 (A2, in corso: 56.1 versioni in RAM fatto).
-         Store versionato: ogni PUT = nuova versione (offset 0 da zero,
-         offset > 0 clone+patch COW); `object_id` monotonico mai riusato +
-         indice inverso; snapshot per-bucket con pin a copie (refcount
-         rimandato agli extent condivisi di 56.2, dichiarato); rollback =
+         boot produzione (ARCA_IMG=0, due drive) pulito.
+   - [ ] Fase 56 (A2, in corso: 56.1 + 56.2a fatti).
+         56.1 — store versionato in RAM: ogni PUT = nuova versione (offset
+         0 da zero, offset > 0 clone+patch COW); `object_id` monotonico mai
+         riusato + indice inverso; snapshot per-bucket con pin a copie
+         (refcount agli extent condivisi in 56.2, dichiarato); rollback =
          nuova head clonata (stesso bucket); clone = nuovo bucket/nuovi id;
          GC = retention 8 + drop a snap-delete. Tag 0x28–0x2F (`R_SNAP_*`,
          `R_OBJ_GET_ID/STAT_ID/DELETE/STAT`; reply STAT a due registri).
-         `testsarca` 21/21 (+8: catena, snap, rollback, delete-snap,
-         retention, delete, clone, stat/id). Bug: `//!` in mezzo ad
-         `arca.rs` (E0753), struct duplicata dal mio stesso edit, tag non
-         importati in userfs, `from_le_bytes` su `&[u8;8]` (serve deref),
-         lettura frame STAT prima dei registri (oltre l'header a errore).
-         Restano 56.2 (B+tree on-disk) e 56.3 (packing/MGET/marker).
-         Gate: 5/5 + 7/7 + 21/21 + 58/58, zero FAIL/PANIC/FAULT.
+         `testsarca` 21/21 (+8). Bug: `//!` mid-file, struct duplicata,
+         tag non importati, `from_le_bytes` su reference, frame STAT letto
+         prima dei registri.
+         56.2a — casa `arcafs/` (tag/wire/formato condivisi guest/host;
+         wrapper IPC restano in `libr` per non creare il ciclo
+         `libr`↔`arcafs`; `libr` riesporta, zero churn; tool host via
+         path-dep, vendored `syscall-numbers` cancellata) + formato on-disk
+         (blocchi 3584 B, header-ext nel blocco 0, nodi con checksum FNV) +
+         allocatore freelist + `R_ARCA_DEBUG` (sub-op, un tag solo) + `arca
+         create` che inizializza il volume (ROOT=1, uuid auto da OS RNG).
+         `testsarca` 27/27 (+6: open, alloc, write/read, stat, LIFO,
+         rifiuti). Bug: EBADF host (handle write-only), w0 confuso con
+         blocco, open disco invece di partizione, `gen` keyword ed.2024,
+         `?` in fn `!`, stack overflow da ritorno by-value 3.5K (Box +
+         `#[inline(never)]`, regola in §18). `userfs.bin` al 90% di
+         `SPAWN_IMAGE_MAX`: budget contato per 56.2b. Gate: 5/5 + 7/7 +
+         27/27 + 58/58, zero FAIL/PANIC/FAULT. Restano 56.2b (B+tree/commit)
+         e 56.2c (recovery/sys-dal-volume).

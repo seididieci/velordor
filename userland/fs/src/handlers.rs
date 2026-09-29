@@ -1014,31 +1014,6 @@ pub fn handle_lseek(
 
 // ── Object store nativo ArcaFS (Fase 55, A1) ────────────────────────
 
-/// Parsa il prefisso comune `[bucket_len:1][bucket]\0[key_len:1][key]\0` e
-/// ritorna `(bucket, key, resto)`. Qualunque malformazione → `ERR_INVALID`
-/// (mai panico su slice, mai letture oltre il payload).
-fn parse_obj_prefix(payload: &[u8]) -> Result<(&[u8], &[u8], &[u8]), u64> {
-    let mut cursor = 0usize;
-    let bucket_len = *payload.get(cursor).ok_or(ERR_INVALID)? as usize;
-    cursor += 1;
-    let bucket = payload.get(cursor..cursor + bucket_len).ok_or(ERR_INVALID)?;
-    cursor += bucket_len;
-    if *payload.get(cursor).ok_or(ERR_INVALID)? != 0 {
-        return Err(ERR_INVALID);
-    }
-    cursor += 1;
-    let key_len = *payload.get(cursor).ok_or(ERR_INVALID)? as usize;
-    cursor += 1;
-    let key = payload.get(cursor..cursor + key_len).ok_or(ERR_INVALID)?;
-    cursor += key_len;
-    if *payload.get(cursor).ok_or(ERR_INVALID)? != 0 {
-        return Err(ERR_INVALID);
-    }
-    cursor += 1;
-    let rest = payload.get(cursor..).ok_or(ERR_INVALID)?;
-    Ok((bucket, key, rest))
-}
-
 /// Handler R_OBJ_PUT: scrive/estende un oggetto in ArcaFs (chunk a `offset`).
 /// Ritorna i byte accettati (`ERR_INVALID` a nomi oltre bound via `put_chunk`).
 pub fn handle_obj_put(
@@ -1046,7 +1021,7 @@ pub fn handle_obj_put(
     payload: &[u8],
     offset: usize,
 ) -> Result<u64, u64> {
-    let (bucket, key, data) = parse_obj_prefix(payload)?;
+    let (bucket, key, data) = arcafs::wire::parse_obj_prefix(payload).ok_or(ERR_INVALID)?;
     // Scrive il chunk (offset 0 = nuova versione, >0 = append/patch).
     let n = arca.put_chunk(bucket, key, offset, data).ok_or(ERR_INVALID)?;
     Ok(n as u64)
@@ -1082,7 +1057,7 @@ fn obj_get_id_inner<'a>(
     offset: usize,
     count: usize,
 ) -> Result<(usize, &'a [u8]), u64> {
-    let id = parse_snap_id(payload)?;
+    let id = arcafs::wire::parse_u64(payload).ok_or(ERR_INVALID)?;
     let blob = arca.get_id(id)?;
     let blob_len = blob.len();
     if offset >= blob_len {
@@ -1121,7 +1096,7 @@ pub fn handle_obj_stat(
     arca: &crate::arca::ArcaFs,
     payload: &[u8],
 ) -> Result<(u64, u64, [u8; 16]), u64> {
-    let (bucket, key, rest) = parse_obj_prefix(payload)?;
+    let (bucket, key, rest) = arcafs::wire::parse_obj_prefix(payload).ok_or(ERR_INVALID)?;
     if !rest.is_empty() {
         return Err(ERR_INVALID);
     }
@@ -1137,7 +1112,7 @@ pub fn handle_obj_stat_id(
     arca: &crate::arca::ArcaFs,
     payload: &[u8],
 ) -> Result<(u64, u64, [u8; 8]), u64> {
-    let id = parse_snap_id(payload)?;
+    let id = arcafs::wire::parse_u64(payload).ok_or(ERR_INVALID)?;
     let (size, nv, mtime) = arca.stat_id(id)?;
     Ok((size, nv, mtime.to_le_bytes()))
 }
@@ -1148,7 +1123,7 @@ pub fn handle_obj_delete(
     arca: &mut crate::arca::ArcaFs,
     payload: &[u8],
 ) -> Result<u64, u64> {
-    let (bucket, key, rest) = parse_obj_prefix(payload)?;
+    let (bucket, key, rest) = arcafs::wire::parse_obj_prefix(payload).ok_or(ERR_INVALID)?;
     if !rest.is_empty() {
         return Err(ERR_INVALID);
     }
@@ -1156,18 +1131,99 @@ pub fn handle_obj_delete(
     Ok(0)
 }
 
-/// Parsa `[len:1][bytes]` esatti (niente trailing): bucket singolo per
-/// SNAP_CREATE/CLONE. Errore se lungo o con resto.
-fn parse_bucket_only(payload: &[u8]) -> Result<&[u8], u64> {
-    let blen = *payload.first().ok_or(ERR_INVALID)? as usize;
-    let bucket = payload.get(1..1 + blen).ok_or(ERR_INVALID)?;
-    if payload.len() != 1 + blen {
-        return Err(ERR_INVALID);
+// ── Volume on-disk: admin debug formato/allocatore (Fase 56.2a) ────
+// UN solo tag (`R_ARCA_DEBUG`, sub-op in `arcafs::proto`): scaffold per il
+// gate su volume di scratch; gating di policy in A7. Il binding vive nel
+// server (`Option<ArcaVolume>`). Mai nel percorso dati R_OBJ_* (in-RAM
+// fino a 56.2b).
+
+/// Esito del debug: scalare (reply generica) o con frame dedicato (il
+/// chiamante scrive reply a due registri e fa `continue`, pattern PIPE).
+/// Il payload viaggia in `Box` (heap): il loop server gira su 16 KiB di
+/// stack con buffer 4K nei handler (Fase 24.2) — un ritorno by-value da
+/// 3.5 KiB qui, specie se inlinato, sfonda lo stack (osservato: #PF in
+/// guardia a ogni boot). Mai grandi array per-valore in questo path.
+pub enum ArcaDebugOut {
+    Scalar(u64),
+    Read(u64, alloc::boxed::Box<[u8; arcafs::format::ARCA_NODE_PAYLOAD_LEN]>),
+    Stats(u64, u64, u64),
+}
+
+/// Handler R_ARCA_DEBUG: primo byte payload = sub-op (`ARCA_SUB_*`).
+/// OPEN lega il volume alla source (`/dev/sdc`, resolve come i mount);
+/// senza volume legato gli altri sub rifiutano (frame gia' consumato).
+/// Il blocco viaggia solo nel payload (w0 e' la lunghezza, come gli altri
+/// tag: mai semantica nei registri oltre l'expect).
+/// `#[inline(never)]`: il suo frame (~4K con i buffer nodo) NON deve
+/// fondersi nel frame del loop server (vedi sopra).
+#[inline(never)]
+pub fn handle_arca_debug(
+    dbgvol: &mut Option<crate::volume::ArcaVolume>,
+    payload: &[u8],
+) -> Result<ArcaDebugOut, u64> {
+    use arcafs::proto::*;
+    let sub = *payload.first().ok_or(ERR_INVALID)?;
+    let rest = payload.get(1..).ok_or(ERR_INVALID)?;
+    if sub == ARCA_SUB_OPEN {
+        let path = core::str::from_utf8(rest).map_err(|_| ERR_INVALID)?;
+        let handle = mount::resolve_mount_source(path).ok_or(ERR)?;
+        match crate::volume::ArcaVolume::open(handle) {
+            Some(v) => {
+                *dbgvol = Some(v);
+                return Ok(ArcaDebugOut::Scalar(0));
+            }
+            None => return Err(ERR),
+        }
     }
-    if bucket.len() > libr::OBJ_BUCKET_MAX {
-        return Err(ERR_INVALID);
+    let vol = dbgvol.as_mut().ok_or(ERR)?;
+    match sub {
+        ARCA_SUB_ALLOC => {
+            if !rest.is_empty() {
+                return Err(ERR_INVALID);
+            }
+            Ok(ArcaDebugOut::Scalar(vol.alloc().ok_or(ERR)?))
+        }
+        ARCA_SUB_FREE => {
+            let n = arcafs::wire::parse_u64(rest).ok_or(ERR_INVALID)?;
+            if vol.free(n) {
+                Ok(ArcaDebugOut::Scalar(0))
+            } else {
+                Err(ERR)
+            }
+        }
+        ARCA_SUB_READ => {
+            let n = arcafs::wire::parse_u64(rest).ok_or(ERR_INVALID)?;
+            // Box (heap): mai 3.5K sullo stack di questa funzione, che il
+            // chiamante tiene in frame per il match (vedi `ArcaDebugOut`).
+            let mut data = alloc::boxed::Box::new([0u8; arcafs::format::ARCA_NODE_PAYLOAD_LEN]);
+            match vol.read_node(n, &mut data) {
+                Some(_) => Ok(ArcaDebugOut::Read(n, data)),
+                None => Err(ERR),
+            }
+        }
+        ARCA_SUB_WRITE => {
+            let (n, data) = arcafs::wire::split_id_rest(rest).ok_or(ERR_INVALID)?;
+            if data.len() != arcafs::format::ARCA_NODE_PAYLOAD_LEN {
+                return Err(ERR_INVALID);
+            }
+            // Box (heap): vedi sopra — niente array 3.5K in frame.
+            let mut payload_buf = alloc::boxed::Box::new([0u8; arcafs::format::ARCA_NODE_PAYLOAD_LEN]);
+            payload_buf.copy_from_slice(data);
+            if vol.write_node(n, arcafs::format::ARCA_NODE_TYPE_RAW, 0, &payload_buf) {
+                Ok(ArcaDebugOut::Scalar(0))
+            } else {
+                Err(ERR)
+            }
+        }
+        ARCA_SUB_STAT => {
+            if !rest.is_empty() {
+                return Err(ERR_INVALID);
+            }
+            let (high, live, free) = vol.stats();
+            Ok(ArcaDebugOut::Stats(high, live, free))
+        }
+        _ => Err(ERR_INVALID),
     }
-    Ok(bucket)
 }
 
 /// Handler R_SNAP_CREATE: snapshot del bucket → reply snap_id.
@@ -1175,20 +1231,8 @@ pub fn handle_snap_create(
     arca: &mut crate::arca::ArcaFs,
     payload: &[u8],
 ) -> Result<u64, u64> {
-    let bucket = parse_bucket_only(payload)?;
+    let bucket = arcafs::wire::parse_bucket_only(payload).ok_or(ERR_INVALID)?;
     arca.snap_create(bucket).map(|id| id as u64).ok_or(ERR_INVALID)
-}
-
-/// Parsa `[snap_id:8]` esatti.
-fn parse_snap_id(payload: &[u8]) -> Result<u64, u64> {
-    let id = payload
-        .first_chunk::<8>()
-        .map(|b| u64::from_le_bytes(*b))
-        .ok_or(ERR_INVALID)?;
-    if payload.len() != 8 {
-        return Err(ERR_INVALID);
-    }
-    Ok(id)
 }
 
 /// Handler R_SNAP_DELETE: sgancia lo snapshot (GC delle copie pinnate).
@@ -1196,7 +1240,7 @@ pub fn handle_snap_delete(
     arca: &mut crate::arca::ArcaFs,
     payload: &[u8],
 ) -> Result<u64, u64> {
-    let id = parse_snap_id(payload)?;
+    let id = arcafs::wire::parse_u64(payload).ok_or(ERR_INVALID)?;
     if arca.snap_delete(id) {
         Ok(0)
     } else {
@@ -1210,9 +1254,8 @@ pub fn handle_snap_rollback(
     arca: &mut crate::arca::ArcaFs,
     payload: &[u8],
 ) -> Result<u64, u64> {
-    let (idbytes, rest0) = payload.split_at_checked(8).ok_or(ERR_INVALID)?;
-    let id = parse_snap_id(idbytes)?;
-    let (bucket, key, rest) = parse_obj_prefix(rest0)?;
+    let (id, rest0) = arcafs::wire::split_id_rest(payload).ok_or(ERR_INVALID)?;
+    let (bucket, key, rest) = arcafs::wire::parse_obj_prefix(rest0).ok_or(ERR_INVALID)?;
     if !rest.is_empty() {
         return Err(ERR_INVALID);
     }
@@ -1225,9 +1268,8 @@ pub fn handle_snap_clone(
     arca: &mut crate::arca::ArcaFs,
     payload: &[u8],
 ) -> Result<u64, u64> {
-    let (idbytes, rest0) = payload.split_at_checked(8).ok_or(ERR_INVALID)?;
-    let id = parse_snap_id(idbytes)?;
-    let dst = parse_bucket_only(rest0)?;
+    let (id, rest0) = arcafs::wire::split_id_rest(payload).ok_or(ERR_INVALID)?;
+    let dst = arcafs::wire::parse_bucket_only(rest0).ok_or(ERR_INVALID)?;
     arca.snap_clone(id, dst)
 }
 
@@ -1239,7 +1281,7 @@ fn obj_get_inner<'a>(
     offset: usize,
     count: usize,
 ) -> Result<(usize, &'a [u8]), u64> {
-    let (bucket, key, _) = parse_obj_prefix(payload)?;
+    let (bucket, key, _) = arcafs::wire::parse_obj_prefix(payload).ok_or(ERR_INVALID)?;
     let blob = arca.get(bucket, key)?;
     let blob_len = blob.len();
     if offset >= blob_len {

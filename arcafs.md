@@ -76,7 +76,11 @@ snapshot, GC).
 - Identita': `object_id: u64` monotonico per volume, immutabile, mai riusato
   (disciplina F2: niente ABA). La chiave e' rinominabile, l'UUID no.
 - Unicita' globale: `(volume_uuid, object_id)` — niente UUID-128, niente
-  collisioni al merge (A8).
+  collisioni al merge (A8). Nota 56.2a: l'u64 resta (merge = A8, trigger
+  per UUID-128 con superblock v2 o registry — il superblock ha 2 byte
+  liberi, l'allargamento si paga solo quando serve); il `volume_uuid` e'
+  auto-generato al `create` (OS RNG, `--uuid` solo override), mai default
+  fisso.
 - **Non content-addressed**: l'identita' e' `object_id`, non un hash del
   contenuto; niente dedup automatico in v1. Trade-off dichiarato: identita'
   e rename semplici e niente ABA, a costo di spazio duplicato. Un
@@ -656,3 +660,25 @@ Primo passo A2: semantica versionata senza disco (il B+tree on-disk e' 56.2).
   assente — mai dati inventati. Frame SEMPRE scritto anche a errore
   (disciplina anti-desync della Fase 55); il client consuma prima di
   controllare i registri (mai letture oltre l'header).
+
+## 18. Fase 56.2a — formato on-disk + allocatore (decisioni)
+
+- **Blocco 3584 B = 7 settori** (1 op `DISK_*` esatta), partition-relative;
+  blocco 0 = superblock + shadow + header-estensione (settori 2-6, i primi
+  1024 B intoccati); blocco 0 mai allocato. Header-estensione 56 B con
+  checksum (free_head, high_water da 1, next_id/next_snap per 56.2b, flags
+  con DIRTY per il commit). Nodo: magic + type (RAW opaco in 56.2a) + gen
+  (0) + payload 3560 + FNV (tag128 crypto rimandato ad A7).
+- **`arca create` inizializza il volume** (header-ext + root vuota + ROOT=1
+  con checksum; shadow sincronizzato al format). `volume_uuid` auto da OS
+  RNG (`--uuid` solo override deterministico).
+- **Debug via UN tag** (`R_ARCA_DEBUG` + sub-op): scaffold gate su volume di
+  scratch, gating di policy in A7. Mai nel percorso R_OBJ_* (in-RAM).
+- **Casa `arcafs/`**: tag/wire/formato condivisi guest/host; i wrapper IPC
+  restano in `libr` (evita il ciclo `libr`↔`arcafs`); `libr` riesporta.
+- **Lezione stack**: il loop userfs gira su 16 KiB con buffer 4K nei
+  handler — un ritorno by-value da 3.5 KiB (+inline) sfonda la guardia
+  (osservato: #PF deterministico a ogni boot). Regola: payload grandi in
+  `Box`, handler pesanti `#[inline(never)]`, mai array KiB per-valore nel
+  loop. `userfs.bin` al 90% di `SPAWN_IMAGE_MAX`: budget codice contato
+  per 56.2b.

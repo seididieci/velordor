@@ -1,5 +1,4 @@
-//! usertestsarca — test ArcaFS P5+A1+56.1 (Fase 54/55/56): BLAKE2s +
-//! content_hash + object store nativo + versioni/snapshot + volumi MBR/GPT.
+//! usertestsarca — test ArcaFS P5+A1+56.1+56.2a (Fase 54/55/56).
 //!
 //! Assert (con i drive ArcaFS presenti; il core senza, run manuale):
 //!   1. vettori BLAKE2s (vuoto/abc/lungo, valori noti)
@@ -25,6 +24,12 @@
 //!  19. delete oggetto: GET/STAT rifiutati (56.1)
 //!  20. clone di bucket: count + dati (56.1)
 //!  21. STAT ritorna id + GET_ID/STAT_ID round-trip (56.1)
+//!  22. volume on-disk: open + open assente rifiutata (56.2a)
+//!  23. alloc due blocchi distinti mai-zero (56.2a)
+//!  24. write/read round-trip 3560 B con checksum (56.2a)
+//!  25. stat volume: high_water/live coerenti (56.2a)
+//!  26. free + realloc LIFO dallo stesso blocco (56.2a)
+//!  27. double-free, free(0), free ignoto, read(0) rifiutati (56.2a)
 //! Con `ARCA_IMG=1` (gate) i drive ci sono sempre; senza, il core (1-6)
 //! resta PASS — n/n adattivo, mai FAIL per drive assente.
 
@@ -381,6 +386,63 @@ fn real_main(_sp: u64) -> ! {
             _ => false,
         };
         c.ok("stat id + get_id/stat_id", v21);
+    }
+
+    // 22-27. Volume on-disk debug (56.2a, partizione `/dev/sdc1`
+    // formattata da `arca create`: header-ext + root vuota; immagini
+    // rigenerate a ogni run, quindi allocazioni deterministiche).
+    {
+        // 22. open + open assente rifiutata.
+        let v22 = libr::arca_open("/dev/sdc1").is_ok() && libr::arca_open("/dev/sdZ").is_err();
+        c.ok("vol open + assente", v22);
+        // 23. alloc due blocchi distinti mai-zero.
+        let b1 = libr::arca_alloc().ok();
+        let b2 = libr::arca_alloc().ok();
+        let v23 = match (b1, b2) {
+            (Some(a), Some(b)) => a >= 1 && b >= 1 && a != b,
+            _ => false,
+        };
+        c.ok("alloc distinti mai-zero", v23);
+        // 24. write/read round-trip 3560 B (checksum verificata dal server).
+        let mut pat = [0u8; libr::ARCA_NODE_PAYLOAD_LEN];
+        for (i, b) in pat.iter_mut().enumerate() {
+            *b = ((i * 7) % 251) as u8;
+        }
+        let v24 = match (b1, b2) {
+            (Some(a), Some(b)) => {
+                libr::arca_write_node(a, &pat).is_ok()
+                    && matches!(libr::arca_read_node(a), Ok(v) if v == pat)
+                    && libr::arca_write_node(b, &pat).is_ok()
+                    && matches!(libr::arca_read_node(b), Ok(v) if v == pat)
+            }
+            _ => false,
+        };
+        c.ok("write/read nodi", v24);
+        // 25. stat: high_water avanzata di 2 (format parte da 2), 2 live.
+        let v25 = matches!(libr::arca_stat_vol(), Ok((high, live, _)) if high == 4 && live == 2);
+        c.ok("stat volume", v25);
+        // 26. free + realloc LIFO dallo stesso blocco.
+        let v26 = match b1 {
+            Some(a) => {
+                libr::arca_free(a).is_ok()
+                    && matches!(libr::arca_alloc(), Ok(b) if b == a)
+                    && matches!(libr::arca_stat_vol(), Ok((_, live, _)) if live == 2)
+            }
+            _ => false,
+        };
+        c.ok("free + realloc LIFO", v26);
+        // 27. rifiuti: double-free, free(0), free ignoto, read(0).
+        let v27 = match b1 {
+            Some(a) => {
+                libr::arca_free(a).is_ok()
+                    && libr::arca_free(a).is_err()
+                    && libr::arca_free(0).is_err()
+                    && libr::arca_free(99999).is_err()
+                    && libr::arca_read_node(0).is_err()
+            }
+            _ => false,
+        };
+        c.ok("rifiuti allocatore", v27);
     }
 
     if c.pass == c.total {

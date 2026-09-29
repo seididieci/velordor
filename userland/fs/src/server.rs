@@ -166,6 +166,10 @@ fn real_main(_sp: u64) -> ! {
     // Montata come `LocalFs` se negotiate() trova magic="ACFS" su un disco/partizione.
     let mut arca = crate::arca::ArcaFs::stub(0, 0, 0);
 
+    // Volume on-disk debug (Fase 56.2a, scaffold): legato da R_ARCA_DEBUG/OPEN,
+    // vive finche' userfs vive (al restart si rilega: il formato e' su disco).
+    let mut dbgvol: Option<volume::ArcaVolume> = None;
+
     // Primo consumatore nativo N0: bucket `sys` seedato da /fat PRIMA del
     // READY (init spawna console/shell per object_id solo dopo l'ACK; a ogni
     // restart lo store rinasce vuoto e il seed ricorre).
@@ -458,6 +462,9 @@ fn real_main(_sp: u64) -> ! {
             R_OBJ_PUT => w0 as usize,
             // R_OBJ_GET: payload=bucket\0key\0, payload_len in w0, offset in w1.
             R_OBJ_GET => w0 as usize,
+            // Debug volume (Fase 56.2a): UN tag, sub-op nel payload;
+            // la lunghezza e' nei formati dei sub (single source in `arcafs`).
+            R_ARCA_DEBUG => w0 as usize,
             // Versioni + snapshot (Fase 56.1): lunghezze payload nei formati
             // dei tag (single source nei commenti di `syscall-numbers`).
             R_SNAP_CREATE | R_SNAP_ROLLBACK | R_SNAP_CLONE | R_OBJ_DELETE | R_OBJ_STAT => w0 as usize,
@@ -666,6 +673,27 @@ fn real_main(_sp: u64) -> ! {
                 // Payload: [bucket_len][bucket]\0[key_len][key]\0
                 // w0 = payload_len, w1 = offset
                 handlers::handle_obj_get(&arca, payload, w1 as usize, RING_MAX_PAYLOAD)
+            }
+
+            R_ARCA_DEBUG => {
+                // Sub-op nel payload (`arcafs::proto::ARCA_SUB_*`): scalari
+                // per via generica; READ/STAT scrivono frame dedicato qui
+                // (pattern R_PIPE_CREATE: reply a due registri + `continue`).
+                match handlers::handle_arca_debug(&mut dbgvol, payload) {
+                    Ok(handlers::ArcaDebugOut::Scalar(v)) => Ok(v),
+                    Ok(handlers::ArcaDebugOut::Read(block, data)) => {
+                        rings::resp_ring_write(block, 0, &data[..]);
+                        let _ = libr::reply(0, block, 0);
+                        continue;
+                    }
+                    Ok(handlers::ArcaDebugOut::Stats(high, live, free)) => {
+                        let f = free.to_le_bytes();
+                        rings::resp_ring_write(high, live, &f);
+                        let _ = libr::reply(0, high, live);
+                        continue;
+                    }
+                    Err(e) => Err(e),
+                }
             }
 
             R_OBJ_GET_ID => {
