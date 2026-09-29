@@ -104,16 +104,18 @@ fn seed_sys(
 ) {
     for (path, key) in SYS_SEED {
         let mut data = Vec::new();
-        if seed_read(mounts, fgen, path, &mut data) {
-            let n = arca.put(b"sys", key, &data);
-            println!(
+        if !seed_read(mounts, fgen, path, &mut data) {
+            println!("[userfs] sys: {} non seedato (init ripiega su FAT)", path);
+            continue;
+        }
+        match arca.put(b"sys", key, &data) {
+            Some(n) => println!(
                 "[userfs] sys: {}B {} <- {}",
                 n,
                 core::str::from_utf8(key).unwrap_or("?"),
                 path
-            );
-        } else {
-            println!("[userfs] sys: {} non seedato (init ripiega su FAT)", path);
+            ),
+            None => println!("[userfs] sys: {} chiave oltre bound (init ripiega su FAT)", path),
         }
     }
 }

@@ -63,6 +63,7 @@ pub use syscall_numbers::{
     R_CLOSE, R_DELETE, R_MKDIR, R_MOUNT, R_OPEN, R_READ, R_READDIR, R_REGISTER, R_UMOUNT,
     R_WRITE, R_RIGHTS_DROP, R_RIGHTS_GET, R_STAT, R_LSEEK, R_DUP_GRANT, R_DUP_CLAIM,
     R_DUP_CANCEL, R_PIPE_CREATE, R_SYNC, R_STATVFS, R_GET_HASH, R_OBJ_PUT, R_OBJ_GET,
+    OBJ_BUCKET_MAX, OBJ_KEY_MAX,
 };
 /// Bit dei diritti per-canale (Fase 17, self-restriction; DELETE in 18.2;
 /// SEEK in 40; GRANT/PIPE in 45; SYNC in 52): mask per `rights_drop`, valore

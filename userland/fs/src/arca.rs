@@ -35,22 +35,23 @@ impl ArcaFs {
         Self { generation, uuid, partition_offset, objects: BTreeMap::new() }
     }
 
-    /// Cerca un oggetto, ritorna Some(blob) o None.
-    pub fn get(&self, bucket: &[u8], key: &[u8]) -> Option<&Vec<u8>> {
-        self.objects.get(&Self::make_key(bucket, key))
+    /// Cerca un oggetto: Ok(blob) o Err (`INVALID` a nomi oltre bound,
+    /// `NOTFOUND` a chiave assente — mai dati inventati, mai troncamenti).
+    pub fn get(&self, bucket: &[u8], key: &[u8]) -> Result<&Vec<u8>, u64> {
+        let k = Self::make_key(bucket, key).ok_or(crate::ERR_INVALID)?;
+        self.objects.get(&k).ok_or(crate::ERR_NOTFOUND)
     }
 
-    /// Inserisce/aggiorna un oggetto. Ritorna size del blob.
-    pub fn put(&mut self, bucket: &[u8], key: &[u8], data: &[u8]) -> usize {
-        let k = Self::make_key(bucket, key);
-        self.objects.insert(k, data.to_vec());
-        data.len()
+    /// Inserisce/aggiorna un oggetto (nuova versione): delega a `put_chunk`
+    /// a offset 0. None a nomi oltre bound.
+    pub fn put(&mut self, bucket: &[u8], key: &[u8], data: &[u8]) -> Option<usize> {
+        self.put_chunk(bucket, key, 0, data)
     }
 
     /// Scrive un chunk a `offset`: offset 0 = nuova versione (azzera), poi
-    /// estende/patchea. Ritorna i byte accettati (per il chunking PUT).
-    pub fn put_chunk(&mut self, bucket: &[u8], key: &[u8], offset: usize, data: &[u8]) -> usize {
-        let k = Self::make_key(bucket, key);
+    /// estende/patchea. Ritorna i byte accettati, None a nomi oltre bound.
+    pub fn put_chunk(&mut self, bucket: &[u8], key: &[u8], offset: usize, data: &[u8]) -> Option<usize> {
+        let k = Self::make_key(bucket, key)?;
         let entry = self.objects.entry(k).or_default();
         if offset == 0 {
             entry.clear();
@@ -60,24 +61,23 @@ impl ArcaFs {
             entry.resize(end, 0);
         }
         entry[offset..end].copy_from_slice(data);
-        data.len()
+        Some(data.len())
     }
 
-    /// Costruisce la key flat per l'hash map.
-    fn make_key(bucket: &[u8], key: &[u8]) -> Vec<u8> {
+    /// Costruisce la key flat per l'hash map. None oltre i bound condivisi
+    /// (`OBJ_*_MAX` in `syscall-numbers` via `libr`): sul wire la lunghezza
+    /// sta in 1 byte, oltre e' inesprimibile — si rifiuta, mai `as u8`.
+    fn make_key(bucket: &[u8], key: &[u8]) -> Option<Vec<u8>> {
+        if bucket.len() > libr::OBJ_BUCKET_MAX || key.len() > libr::OBJ_KEY_MAX {
+            return None;
+        }
         let mut k = Vec::with_capacity(1 + bucket.len() + 1 + 1 + key.len());
         k.push(bucket.len() as u8);
         k.extend_from_slice(bucket);
         k.push(0); // separator
         k.push(key.len() as u8);
         k.extend_from_slice(key);
-        k
-    }
-
-    /// Lista le chiavi dentro un bucket (pattern `bucket\0`).
-    pub fn list_keys(&self, bucket: &[u8]) -> Vec<&Vec<u8>> {
-        let prefix = Self::make_key(bucket, &[]);
-        self.objects.range(prefix.clone()..).take_while(|(k, _)| k.starts_with(&prefix)).map(|(k, _)| k).collect()
+        Some(k)
     }
 }
 

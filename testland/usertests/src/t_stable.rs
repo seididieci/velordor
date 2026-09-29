@@ -599,5 +599,19 @@ pub fn t_sys_native() -> bool {
         println!("[usertests] t58: chiave assente restituisce dati?!");
         return false;
     }
+    // Bound nomi (hygiene Fase 55): bucket > 16B e chiave > 255B rifiutati
+    // loud su entrambi i lati (mai troncamento `as u8`).
+    let long_bucket = [b'B'; 17];
+    if libr::obj_put(&long_bucket, b"k", b"v").is_ok() {
+        println!("[usertests] t58: bucket oltre bound accettato?!");
+        return false;
+    }
+    let long_key = [b'K'; 256];
+    if libr::obj_put(b"sys", &long_key, b"v").is_ok()
+        || libr::obj_get(b"sys", &long_key).is_ok()
+    {
+        println!("[usertests] t58: chiave oltre bound accettata?!");
+        return false;
+    }
     true
 }

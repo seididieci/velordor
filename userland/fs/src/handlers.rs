@@ -1014,51 +1014,42 @@ pub fn handle_lseek(
 
 // ── Object store nativo ArcaFS (Fase 55, A1) ────────────────────────
 
-/// Handler R_OBJ_PUT: inserisce/aggiorna un oggetto in ArcaFs.
+/// Parsa il prefisso comune `[bucket_len:1][bucket]\0[key_len:1][key]\0` e
+/// ritorna `(bucket, key, resto)`. Qualunque malformazione → `ERR_INVALID`
+/// (mai panico su slice, mai letture oltre il payload).
+fn parse_obj_prefix(payload: &[u8]) -> Result<(&[u8], &[u8], &[u8]), u64> {
+    let mut cursor = 0usize;
+    let bucket_len = *payload.get(cursor).ok_or(ERR_INVALID)? as usize;
+    cursor += 1;
+    let bucket = payload.get(cursor..cursor + bucket_len).ok_or(ERR_INVALID)?;
+    cursor += bucket_len;
+    if *payload.get(cursor).ok_or(ERR_INVALID)? != 0 {
+        return Err(ERR_INVALID);
+    }
+    cursor += 1;
+    let key_len = *payload.get(cursor).ok_or(ERR_INVALID)? as usize;
+    cursor += 1;
+    let key = payload.get(cursor..cursor + key_len).ok_or(ERR_INVALID)?;
+    cursor += key_len;
+    if *payload.get(cursor).ok_or(ERR_INVALID)? != 0 {
+        return Err(ERR_INVALID);
+    }
+    cursor += 1;
+    let rest = payload.get(cursor..).ok_or(ERR_INVALID)?;
+    Ok((bucket, key, rest))
+}
+
 /// Handler R_OBJ_PUT: scrive/estende un oggetto in ArcaFs (chunk a `offset`).
-/// Ritorna i byte accettati.
+/// Ritorna i byte accettati (`ERR_INVALID` a nomi oltre bound via `put_chunk`).
 pub fn handle_obj_put(
     arca: &mut crate::arca::ArcaFs,
     payload: &[u8],
     offset: usize,
 ) -> Result<u64, u64> {
-    // Parse payload: [bucket_len:1][bucket]\0[key_len:1][key]\0[data...]
-    let mut cursor = 0usize;
-
-    // Leggi bucket_len (1 byte)
-    let bucket_len = *payload.get(cursor).ok_or(ERR_INVALID)? as usize;
-    cursor += 1;
-
-    // Leggi bucket
-    let bucket = payload.get(cursor..cursor + bucket_len).ok_or(ERR_INVALID)?;
-    cursor += bucket_len;
-
-    // Verifica separator \0
-    if *payload.get(cursor).ok_or(ERR_INVALID)? != 0 {
-        return Err(ERR_INVALID);
-    }
-    cursor += 1;
-
-    // Leggi key_len (1 byte)
-    let key_len = *payload.get(cursor).ok_or(ERR_INVALID)? as usize;
-    cursor += 1;
-
-    // Leggi key
-    let key = payload.get(cursor..cursor + key_len).ok_or(ERR_INVALID)?;
-    cursor += key_len;
-
-    // Verifica separator \0
-    if *payload.get(cursor).ok_or(ERR_INVALID)? != 0 {
-        return Err(ERR_INVALID);
-    }
-    cursor += 1;
-
-    // Leggi data (da cursor fino alla fine)
-    let data = payload.get(cursor..).ok_or(ERR_INVALID)?;
-
+    let (bucket, key, data) = parse_obj_prefix(payload)?;
     // Scrive il chunk (offset 0 = nuova versione, >0 = append/patch).
-    let n = arca.put_chunk(bucket, key, offset, data) as u64;
-    Ok(n)
+    let n = arca.put_chunk(bucket, key, offset, data).ok_or(ERR_INVALID)?;
+    Ok(n as u64)
 }
 
 /// Handler R_OBJ_GET: legge un oggetto da ArcaFs (stateless, chunking).
@@ -1083,38 +1074,16 @@ pub fn handle_obj_get(
     }
 }
 
-/// Parsing + lookup: `Ok((blob_len, chunk))` o `Err(sentinella)`.
+/// Parsing + lookup: `Ok((blob_len, chunk))` o `Err(sentinella)`
+/// (`INVALID` a nomi oltre bound, `NOTFOUND` a chiave assente).
 fn obj_get_inner<'a>(
     arca: &'a crate::arca::ArcaFs,
     payload: &[u8],
     offset: usize,
     count: usize,
 ) -> Result<(usize, &'a [u8]), u64> {
-    // Parse payload: [bucket_len:1][bucket]\0[key_len:1][key]\0
-    let mut cursor = 0usize;
-
-    let bucket_len = *payload.get(cursor).ok_or(ERR_INVALID)? as usize;
-    cursor += 1;
-
-    let bucket = payload.get(cursor..cursor + bucket_len).ok_or(ERR_INVALID)?;
-    cursor += bucket_len;
-
-    if *payload.get(cursor).ok_or(ERR_INVALID)? != 0 {
-        return Err(ERR_INVALID);
-    }
-    cursor += 1;
-
-    let key_len = *payload.get(cursor).ok_or(ERR_INVALID)? as usize;
-    cursor += 1;
-
-    let key = payload.get(cursor..cursor + key_len).ok_or(ERR_INVALID)?;
-    cursor += key_len;
-
-    if *payload.get(cursor).ok_or(ERR_INVALID)? != 0 {
-        return Err(ERR_INVALID);
-    }
-
-    let blob = arca.get(bucket, key).ok_or(ERR_NOTFOUND)?;
+    let (bucket, key, _) = parse_obj_prefix(payload)?;
+    let blob = arca.get(bucket, key)?;
     let blob_len = blob.len();
     if offset >= blob_len {
         return Ok((blob_len, &[])); // EOF

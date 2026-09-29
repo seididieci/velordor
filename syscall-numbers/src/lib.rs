@@ -417,6 +417,11 @@ pub const R_GET_HASH: u32 = 0x25;
 /// Object store nativo ArcaFS (Fase 55, A1): PUT (w0=size, payload=bucket\0key\0[data]) e GET (w0=offset, w1=count, payload=bucket\0key\0). Stateful server-side: il server tiene lo stato della richiesta.
 pub const R_OBJ_PUT: u32 = 0x26;
 pub const R_OBJ_GET: u32 = 0x27;
+/// Bound nomi object store (Fase 55, hygiene): bucket ≤ 16 B, chiave ≤ 255 B
+/// (1 byte di lunghezza nel frame: oltre e' inesprimibile sul wire).
+/// Entrambi i lati rifiutano loud oltre il bound (mai troncamento `as u8`).
+pub const OBJ_BUCKET_MAX: usize = 16;
+pub const OBJ_KEY_MAX: usize = 255;
 /// Modi `R_SYNC` (Fase 52, P3): nessuna garanzia richiesta / barriera
 /// esplicita (flush+barriera) / ogni write stabile prima della reply.
 /// `PERWRITE` e' gia' il comportamento FAT (write-through); ramfs resta

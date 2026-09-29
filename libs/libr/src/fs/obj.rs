@@ -5,17 +5,22 @@
 
 use super::ring::{req_ring_write, resp_ring_read_payload, resp_ring_consume, RING_MAX_PAYLOAD};
 use crate::{fs_notify_result, fs_reply_check, Error, FS_NOTIFY, R_OBJ_GET, R_OBJ_PUT};
+use crate::{OBJ_BUCKET_MAX, OBJ_KEY_MAX};
 use alloc::vec;
 use alloc::vec::Vec;
 
 /// GET un oggetto da ArcaFS (stateless, chunking automatico).
-/// Ritorna il blob completo o Error.
+/// Ritorna il blob completo o Error (`Invalid` a bucket/chiave oltre bound,
+/// mai troncamento silenzioso).
 pub fn obj_get(bucket: &[u8], key: &[u8]) -> Result<Vec<u8>, Error> {
     let mut offset = 0usize;
     let mut result = Vec::new();
 
     loop {
-        let payload = build_get_payload(bucket, key);
+        let payload = match build_get_payload(bucket, key) {
+            Some(p) => p,
+            None => return Err(Error::Invalid),
+        };
         let frame = || req_ring_write(R_OBJ_GET, payload.len() as u64, offset as u64, &payload);
         if !frame() {
             return Err(Error::RingFull);
@@ -61,14 +66,23 @@ pub fn obj_get(bucket: &[u8], key: &[u8]) -> Result<Vec<u8>, Error> {
     Ok(result)
 }
 
-/// PUT un oggetto in ArcaFS. Ritorna size scritta o Error.
+/// PUT un oggetto in ArcaFS. Ritorna size scritta o Error (`Invalid` a
+/// bucket/chiave oltre bound, mai troncamento silenzioso).
 pub fn obj_put(bucket: &[u8], key: &[u8], data: &[u8]) -> Result<u64, Error> {
+    // Valida i nomi una volta sola (il PUT vuoto salta il loop: senza,
+    // nomi oltre bound passerebbero con Ok(0)).
+    if build_obj_prefix(bucket, key).is_none() {
+        return Err(Error::Invalid);
+    }
     let total_len = data.len();
     let mut written = 0usize;
 
     while written < total_len {
         let want = (total_len - written).min(RING_MAX_PAYLOAD);
-        let payload = build_put_payload(bucket, key, &data[written..written + want]);
+        let payload = match build_put_payload(bucket, key, &data[written..written + want]) {
+            Some(p) => p,
+            None => return Err(Error::Invalid),
+        };
 
         if !req_ring_write(R_OBJ_PUT, payload.len() as u64, written as u64, &payload) {
             return if written > 0 { Ok(written as u64) } else { Err(Error::RingFull) };
@@ -102,8 +116,13 @@ pub fn obj_put(bucket: &[u8], key: &[u8], data: &[u8]) -> Result<u64, Error> {
     Ok(total_len as u64)
 }
 
-/// Costruisce il payload per GET: [bucket_len:1][bucket]\0[key_len:1][key]\0
-fn build_get_payload(bucket: &[u8], key: &[u8]) -> Vec<u8> {
+/// Prefisso comune `[bucket_len:1][bucket]\0[key_len:1][key]\0`: None oltre
+/// i bound (`OBJ_BUCKET_MAX`/`OBJ_KEY_MAX` — sul wire la lunghezza sta in
+/// 1 byte, oltre e' inesprimibile: si rifiuta, mai `as u8` troncante).
+fn build_obj_prefix(bucket: &[u8], key: &[u8]) -> Option<Vec<u8>> {
+    if bucket.len() > OBJ_BUCKET_MAX || key.len() > OBJ_KEY_MAX {
+        return None;
+    }
     let mut p = Vec::with_capacity(1 + bucket.len() + 1 + 1 + key.len() + 1);
     p.push(bucket.len() as u8);
     p.extend_from_slice(bucket);
@@ -111,18 +130,17 @@ fn build_get_payload(bucket: &[u8], key: &[u8]) -> Vec<u8> {
     p.push(key.len() as u8);
     p.extend_from_slice(key);
     p.push(0);
-    p
+    Some(p)
 }
 
-/// Costruisce il payload per PUT: [bucket_len:1][bucket]\0[key_len:1][key]\0[data...]
-fn build_put_payload(bucket: &[u8], key: &[u8], data: &[u8]) -> Vec<u8> {
-    let mut p = Vec::with_capacity(1 + bucket.len() + 1 + 1 + key.len() + 1 + data.len());
-    p.push(bucket.len() as u8);
-    p.extend_from_slice(bucket);
-    p.push(0);
-    p.push(key.len() as u8);
-    p.extend_from_slice(key);
-    p.push(0);
+/// Costruisce il payload per GET: prefisso + niente dati.
+fn build_get_payload(bucket: &[u8], key: &[u8]) -> Option<Vec<u8>> {
+    build_obj_prefix(bucket, key)
+}
+
+/// Costruisce il payload per PUT: prefisso + chunk dati.
+fn build_put_payload(bucket: &[u8], key: &[u8], data: &[u8]) -> Option<Vec<u8>> {
+    let mut p = build_obj_prefix(bucket, key)?;
     p.extend_from_slice(data);
-    p
+    Some(p)
 }
