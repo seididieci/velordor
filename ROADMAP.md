@@ -99,8 +99,11 @@ Voci con scope e vittoria dichiarati (non date).
       prova `ACFS` prima di `vfat`, `arca create --whole-disk`/
       `--in-partition` (+ `--init-gpt`); dischi dati restano whole-disk.
       **In corso**: Passo 1 (tag + backend in-memory + libr wrapper) e
-      Passo 2 (init dual-mode + parser GPT) fatti; testsarca 11/11. Restano:
-      popolamento `sys`, mount in partizione, hash BLAKE2s in `init`.
+      Passo 2 (init dual-mode + parser GPT) fatti; Parte 4 (mount in
+      partizione MBR: immagine `arca-part.img`, scan `sda1..sda4` in
+      testsarca) fatta e debuggata (`sdc1` rilevata, mount `/arca` PASS);
+      testsarca 11/11. Restano: popolamento `sys`, hash BLAKE2s in `init`,
+      parser GPT da riallineare allo spec.
       Vittoria: boot con servizi da `sys` (whole-disk e GPT in-partizione),
       fallback FAT provato, gate verde.
 - [ ] **56 (A2)** (dopo 55): COW + snapshot/clone + GC (+ packing, + `R_OBJ_MGET`

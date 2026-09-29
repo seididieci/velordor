@@ -1690,7 +1690,7 @@
          `off`; (2) un edit a `syscall-numbers` aveva rimosso le const
          `R_SYNC`/`R_STATVFS` (reintrodotte). Gate: 5/5 + 7/7 + 8/8 + 57/57,
          zero FAIL/PANIC/FAULT; boot produzione (due drive, ARCA_IMG=0) pulito.
-   - [ ] Fase 55 (A1+N0, in corso: Passo 1+2 fatti, Parte 4 rimandata).
+   - [ ] Fase 55 (A1+N0, in corso: Passo 1+2 fatti, Parte 4 implementata).
          Passo 1 — object store nativo: tag `R_OBJ_PUT` 0x26 / `R_OBJ_GET`
          0x27; backend in-memory `ArcaFs` in userfs (BTreeMap flat
          `[len]bucket\0[len]key` → blob) + handler PUT (con offset per il
@@ -1701,8 +1701,10 @@
          (fallback loggato, senza la parola FAIL: il gate anti-rot cerca
          FAIL/PANIC). Parser GPT in userdisk (`parse_gpt`/`parse_partitions`,
          guard protective-MBR `0xEE`, `PartLoc` a u64 LBA48; MBR invariato).
-         `testsarca` esteso (round-trip piccolo, chunking 10000B, chiave
-         assente → errore): nuovo gate `[testsarca] PASS 11/11`.
+         Parte 4 — mount in partizione: `build-arca-part.sh` (MBR 32MB +
+         superblock a LBA63), terzo drive in `run.sh` con `ARCA_IMG=1`,
+         `testsarca::find_arca` esteso a `sda1..sda4` (scan per magic, mai per
+         lettera): nuovo gate `[testsarca] PASS 11/11`.
          Bug trovati e fissati (lezione sui ring): (1) `R_OBJ_GET` dichiarava
          expect = 0 nel frame ma scriveva il payload bucket/key → il server
          consumava 20 byte su 20+payload e disallineava il request ring (il
@@ -1718,7 +1720,18 @@
          (4) PUT usava w0 = data-len come expect ma il payload includeva il
          prefisso bucket/key: sotto-consumo; ora w0 = payload-len e w1 =
          offset, `ArcaFs::put_chunk` scrive a offset (offset 0 = nuova
-         versione). Rimandato a una fase successiva: mount ArcaFS in
-         partizione (Parte 4), popolamento del bucket `sys` per il vero boot
-         nativo, hash BLAKE2s in `init`. Gate: 5/5 + 7/7 + 11/11 + 57/57,
-         zero FAIL/PANIC/FAULT.
+         versione). (5) `build-arca-part.sh` scriveva la tabella MBR a offset
+         440 invece di `0x1BE` in un file di 506 byte (short write su
+         `dd bs=512`): signature a 504 invece di `0x1FE` → userdisk leggeva
+         `sig=[0x0,0x0]` e non esponeva `sdc1`; ora offset/dimensione esatti
+         (446+64+2 = 512, settori 65473) con check fail-loud su signature e
+         magic, e copia di superblock+shadow a LBA63/64. (6) `STATIC_MOUNTS`
+         puntava a `/dev/sda1` (disco sbagliato: l'immagine partizionata e'
+         il terzo drive) e `negotiate()` fingeva un `partition_offset` sempre
+         0: rimosso lo statico (il mount resta dinamico via `find_arca`) e
+         documentato che la traduzione LBA-nodo → fisico vive nel driver
+         (`nodes::locate`). Ipotesi "QEMU IDE secondary master" smentita:
+         `sdc` enumera regolarmente. Restano: popolamento del bucket `sys`
+         per il vero boot nativo, hash BLAKE2s in `init`, parser GPT (offset
+         header/entry da riallineare allo spec). Gate: 5/5 + 7/7 + 11/11 +
+         57/57, zero FAIL/PANIC/FAULT.
