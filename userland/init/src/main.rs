@@ -41,6 +41,42 @@ fn expected_hash(bin: &[u8]) -> Option<u64> {
     }
 }
 
+/// Content-hash BLAKE2s-256 atteso (Fase 55, N0: `sys.content_hash`,
+/// arcafs.md §8): generato a build-time dagli stessi byte (gen-service-
+/// hashes.sh via hashlib; la crate `blake2s` e' l'implementazione guest,
+/// tenute d'accordo da testsarca). Stesse esclusioni di `expected_hash`.
+fn expected_blake(bin: &[u8]) -> Option<[u8; 32]> {
+    match bin {
+        b"userconsole" => Some(BLAKE_USERCONSOLE),
+        b"useruptime" => Some(BLAKE_USERUPTIME),
+        b"userdevfs" => Some(BLAKE_USERDEVFS),
+        b"userkbd" => Some(BLAKE_USERKBD),
+        b"usertty" => Some(BLAKE_USERTTY),
+        b"userposix" => Some(BLAKE_USERPOSIX),
+        b"usershell" => Some(BLAKE_USERSHELL),
+        b"usertime" => Some(BLAKE_USERTIME),
+        _ => None,
+    }
+}
+
+/// Doppio pinning (Fase 55, N0): FNV-1a (manifest storico, veloce) +
+/// BLAKE2s-256 (tamper-evidence, TCB). Ritorna true se OGNI pin esistente
+/// passa; un binario senza pin (embedded/test) passa sempre (niente da
+/// confrontare). Stesso predicato usato da t58 per provare il rifiuto.
+fn verify_image(bin: &[u8], img: &[u8]) -> bool {
+    if let Some(expected) = expected_hash(bin) {
+        if libr::image_hash(img) != expected {
+            return false;
+        }
+    }
+    if let Some(expected) = expected_blake(bin) {
+        if blake2s::blake2s(img) != expected {
+            return false;
+        }
+    }
+    true
+}
+
 /// Attende dal canale `chan` un messaggio con tag `tag` e lo consuma SENZA
 /// reply (i READY sono fire-and-forget via send_async: rispondere accoderebbe
 /// uno spurious message nel server). Usato per sincronizzare l'avvio.
@@ -113,16 +149,17 @@ fn spawn_file(meta: &SvcMeta) -> Option<i64> {
         }
     };
     // `checked` = un pinning da manifest esisteva ed e' passato: solo allora
-    // il log dice `hash-ok` (mai claim senza verifica).
-    let checked = match expected_hash(meta.bin) {
-        Some(expected) => {
-            if libr::image_hash(&img) != expected {
-                println!(" -> FAILED (hash mismatch)");
-                return None;
-            }
-            true
+    // il log dice `hash-ok` (mai claim senza verifica). Doppio pinning N0:
+    // FNV + BLAKE2s (un disco manomesso non diventa mai servizio).
+    let pinned = expected_hash(meta.bin).is_some() || expected_blake(meta.bin).is_some();
+    let checked = if pinned {
+        if !verify_image(meta.bin, &img) {
+            println!(" -> FAILED (hash mismatch)");
+            return None;
         }
-        None => false,
+        true
+    } else {
+        false
     };
     let name = match core::str::from_utf8(meta.bin) {
         Ok(s) => s,
@@ -167,15 +204,12 @@ fn spawn_image_from_vec(img: &[u8], meta: &SvcMeta) -> Option<i64> {
         Ok(s) => s,
         Err(_) => return None,
     };
-    match expected_hash(meta.bin) {
-        Some(expected) => {
-            if libr::image_hash(img) != expected {
-                println!(" -> FAILED (hash mismatch)");
-                return None;
-            }
-        }
-        None => {}
-    };
+    // Doppio pinning N0 (vedi `verify_image`): mismatch = None (a boot e'
+    // panic come prima; in restart e' retry-con-hold con log loud).
+    if !verify_image(meta.bin, img) {
+        println!(" -> FAILED (hash mismatch)");
+        return None;
+    }
     let sm = match libr::SpawnMeta::new(name, meta.prio, meta.io) {
         Some(m) => m,
         None => return None,
@@ -462,7 +496,10 @@ const SVC_POSIX: SvcMeta = SvcMeta {
 const SVC_SHELL: SvcMeta = SvcMeta {
     bin: b"usershell",
     path: Some("/fat/bin/shell.bin"),
-    obj: Some((b"sys", b"bin/usershell.bin")),
+    // Chiave volutamente assente dal bucket `sys` (seedato solo con
+    // console/shell veri): OGNI boot prova il ramo fallback FAT del
+    // dual-mode (log "ripiego su FAT" + shell viva = fallback provato).
+    obj: Some((b"sys", b"bin/shell-missing.bin")),
     prio: 16,
     io: &[],
 };

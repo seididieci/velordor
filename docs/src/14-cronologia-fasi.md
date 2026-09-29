@@ -1690,7 +1690,7 @@
          `off`; (2) un edit a `syscall-numbers` aveva rimosso le const
          `R_SYNC`/`R_STATVFS` (reintrodotte). Gate: 5/5 + 7/7 + 8/8 + 57/57,
          zero FAIL/PANIC/FAULT; boot produzione (due drive, ARCA_IMG=0) pulito.
-   - [ ] Fase 55 (A1+N0, in corso: Passo 1+2 fatti, Parte 4 implementata).
+   - [x] Fase 55 (A1+N0: object store + init nativo, mount MBR/GPT, sys, hash).
          Passo 1 — object store nativo: tag `R_OBJ_PUT` 0x26 / `R_OBJ_GET`
          0x27; backend in-memory `ArcaFs` in userfs (BTreeMap flat
          `[len]bucket\0[len]key` → blob) + handler PUT (con offset per il
@@ -1700,38 +1700,45 @@
          Option<(bucket,key)>`; `spawn_entry` prova ArcaFS e ripiega su FAT
          (fallback loggato, senza la parola FAIL: il gate anti-rot cerca
          FAIL/PANIC). Parser GPT in userdisk (`parse_gpt`/`parse_partitions`,
-         guard protective-MBR `0xEE`, `PartLoc` a u64 LBA48; MBR invariato).
-         Parte 4 — mount in partizione: `build-arca-part.sh` (MBR 32MB +
-         superblock a LBA63), terzo drive in `run.sh` con `ARCA_IMG=1`,
-         `testsarca::find_arca` esteso a `sda1..sda4` (scan per magic, mai per
-         lettera): nuovo gate `[testsarca] PASS 11/11`.
-         Bug trovati e fissati (lezione sui ring): (1) `R_OBJ_GET` dichiarava
-         expect = 0 nel frame ma scriveva il payload bucket/key → il server
-         consumava 20 byte su 20+payload e disallineava il request ring (il
-         successivo `open` FAT falliva con "file illeggibile", preceduto da
-         `resync request ring`); l'expect ora e' la lunghezza payload in w0.
-         (2) `resp_ring_read` NON avanza la tail: l'errore GET ritornava
-         senza consumare il frame ERR da 16 B, che restava nel response ring
-         e veniva letto dalla `open` successiva (desync); ora il frame errore
-         viene consumato. (3) `handle_obj_get` scriveva la response ma il
-         server ne scriveva una seconda (R_OBJ_GET non era nella lista
-         "handler che scrivono gia' il frame"): doppio frame; ora
-         `handle_obj_get` scrive SEMPRE (dati o ERR) e il server salta.
-         (4) PUT usava w0 = data-len come expect ma il payload includeva il
-         prefisso bucket/key: sotto-consumo; ora w0 = payload-len e w1 =
-         offset, `ArcaFs::put_chunk` scrive a offset (offset 0 = nuova
-         versione). (5) `build-arca-part.sh` scriveva la tabella MBR a offset
-         440 invece di `0x1BE` in un file di 506 byte (short write su
-         `dd bs=512`): signature a 504 invece di `0x1FE` → userdisk leggeva
-         `sig=[0x0,0x0]` e non esponeva `sdc1`; ora offset/dimensione esatti
-         (446+64+2 = 512, settori 65473) con check fail-loud su signature e
-         magic, e copia di superblock+shadow a LBA63/64. (6) `STATIC_MOUNTS`
-         puntava a `/dev/sda1` (disco sbagliato: l'immagine partizionata e'
-         il terzo drive) e `negotiate()` fingeva un `partition_offset` sempre
-         0: rimosso lo statico (il mount resta dinamico via `find_arca`) e
-         documentato che la traduzione LBA-nodo → fisico vive nel driver
-         (`nodes::locate`). Ipotesi "QEMU IDE secondary master" smentita:
-         `sdc` enumera regolarmente. Restano: popolamento del bucket `sys`
-         per il vero boot nativo, hash BLAKE2s in `init`, parser GPT (offset
-         header/entry da riallineare allo spec). Gate: 5/5 + 7/7 + 11/11 +
-         57/57, zero FAIL/PANIC/FAULT.
+         guard protective-MBR, `PartLoc` a u64 LBA48; MBR invariato). Parte 4
+         — mount in partizione: `build-arca-part.sh` (MBR 32MB + superblock a
+         LBA63), terzo drive in `run.sh` con `ARCA_IMG=1`,
+         `testsarca::find_arca` per magic (mai per lettera). Chiusura: parser
+         GPT riscritto per spec UEFI (header: magic 0/current 24/usable
+         40-48/entry-LBA 72/count 80/size 84; entry 128 B con first a +32 e
+         last a +40, anche a cavallo di settore) + quarto drive
+         `arca-gpt.img` (`build-arca-gpt.sh`: protective MBR, header, 128
+         entry, ACFS a LBA64/65, backup header/array) in `run.sh` con
+         `ARCA_IMG=1`; tool host riallineato (start MBR in LE, GPT per spec,
+         shadow scritto anche in partizione). N0: `seed_sys` in userfs
+         popola `sys` da /fat a ogni avvio (anche restart); init carica
+         console per object_id, shell con chiave assente (= fallback FAT
+         provato a ogni boot, log "ripiego su FAT" + shell viva);
+         `verify_image` a doppio pinning FNV+BLAKE2s (manifest `BLAKE_*` da
+         hashlib, implementazioni guest/host tenute d'accordo da testsarca)
+         su entrambi i path (FAT e obj). `testsarca` 13/13 (+GPT:
+         protective a byte 450 + ACFS in partizione + mount/umount);
+         `usertests` 58/58 (+t58: sys==FAT, blake==manifest, flip rifiutato,
+         chiave assente→errore). Bug trovati e fissati (lezione sui ring):
+         (1) `R_OBJ_GET` dichiarava expect = 0 ma scriveva il payload →
+         disallineamento request ring (expect ora = payload-len in w0).
+         (2) `resp_ring_read` NON avanza la tail: il frame ERR restava e
+         veniva letto dall'op successiva (ora consumato). (3) doppio frame
+         response su GET (ora `handle_obj_get` scrive SEMPRE e il server
+         salta). (4) PUT con w0 = data-len invece di payload-len
+         (sotto-consumo; ora w0 = payload-len, w1 = offset, `put_chunk`).
+         (5) `build-arca-part.sh` scriveva la tabella MBR a offset 440 in un
+         file di 506 byte (signature a 504): `sig=[0x0,0x0]`, niente `sdc1`;
+         ora 446+64+2 = 512 con check fail-loud + shadow a LBA64. (6) Static
+         `/dev/sda1` (disco sbagliato) rimosso; placeholder
+         `partition_offset` rimosso (la traduzione LBA vive in
+         `nodes::locate`). (7) Guard GPT a byte 446 invece di 450 (il tipo
+         e' a 446+4; 446 e' il boot flag) — guest, tool host e spec
+         allineati. (8) Header/entry GPT con offset inventati (44/48/56/64/
+         112/120, first a +48/last a +56, un'entry per settore) — riscritti
+         per spec; start MBR del tool host ricalcolato CHS invece di LE.
+         Ipotesi "QEMU IDE secondary master" smentita (sdc/sdd enumerano).
+         Restano ad A2: persistenza oggetti su volume (store oggi in RAM),
+         snapshot/GC, `sys.content_hash` come xattr (oggi re-hash vs
+         manifest). Gate: 5/5 + 7/7 + 13/13 + 58/58, zero FAIL/PANIC/FAULT;
+         boot produzione (ARCA_IMG=0, due drive) pulito.

@@ -44,7 +44,7 @@ POL_OUT="$OUT_DIR/service_policy.rs"
 poltmp="$POL_OUT.tmp"
 
 python3 - "$BUILD" "$tmp" "$poltmp" <<'EOF'
-import glob, os, sys
+import glob, hashlib, os, sys
 
 def fnv1a(data: bytes) -> int:
     h = 0xCBF29CE484222325
@@ -79,6 +79,11 @@ lines = [
     "// Consumatori via `include!(env!(\"VELORDOR_SERVICE_HASHES\"))`: init",
     "// (manifest pre-spawn), userfs (policy FS_REGISTER su identita'),",
     "// usertests (t51: peer_info atteso). Rigenerato a ogni build.",
+    "// Fase 55 (N0): per ogni binario anche BLAKE2s-256 (`BLAKE_*`, array",
+    "// di 32 byte): e' il `sys.content_hash` che init confronta al load da",
+    "// ArcaFS/FAT (re-hash dei byte, arcafs.md §8/N0). Python hashlib e la",
+    "// crate `blake2s` sono due implementazioni indipendenti tenute",
+    "// d'accordo da testsarca (vettori noti).",
 ]
 for p in bins:
     with open(p, "rb") as f:
@@ -88,6 +93,10 @@ for p in bins:
     stem = os.path.splitext(os.path.basename(p))[0]
     const = "HASH_" + "".join(c.upper() if (c.isalnum()) else "_" for c in stem)
     lines.append("pub const %s: u64 = 0x%016X; // %s (%d B)" % (const, fnv1a(data), os.path.basename(p), len(data)))
+    bconst = "BLAKE_" + "".join(c.upper() if (c.isalnum()) else "_" for c in stem)
+    digest = hashlib.blake2s(data).digest()
+    lines.append("pub const %s: [u8; 32] = [%s]; // blake2s(%s)" % (
+        bconst, ", ".join("0x%02X" % b for b in digest), os.path.basename(p)))
 
 # Mask per-binario (Fase 45, SYNC in 52): nome stem -> mask ops (bit RIGHTS_*
 # di syscall-numbers: OPEN=0x1 READ=0x2 WRITE=0x4 READDIR=0x8 MKDIR=0x10

@@ -39,10 +39,12 @@ bash scripts/inject-bins.sh
 ./scripts/arca-tool.sh
 
 # Fase 55, Parte 4: crea arca-part.img (MBR + partizione con superblock ArcaFS
-# a offset LBA63) quando ARCA_IMG=1. Serve per testare il mount in partizione
-# invece che su whole-disk.
+# a offset LBA63) e arca-gpt.img (GPT + partizione ArcaFS a LBA64) quando
+# ARCA_IMG=1. Servono per testare il mount in partizione MBR e GPT invece
+# che su whole-disk.
 if [ "${ARCA_IMG:-0}" = "1" ]; then
     ./scripts/build-arca-part.sh
+    python3 ./scripts/build-arca-gpt.sh
 fi
 
 KERNEL=target/x86_64-unknown-none/release/velordor-kernel
@@ -57,10 +59,12 @@ if [ "${SWAP_DRIVES:-0}" = "1" ]; then
 else
     DRIVES="-drive file=userland/fs/fat.img,format=raw,if=ide -drive file=userland/fs/fat2.img,format=raw,if=ide"
 fi
-# Terzo drive ArcaFS opt-in (Fase 54, P5; Fase 55, Parte 4: partizione MBR).
-# La suite lo cerca via magic, mai per lettera (sda/sdb restano i due FAT).
+# Terzo/quarto drive ArcaFS opt-in (Fase 54, P5; Fase 55, Parte 4: partizioni
+# MBR su arca-part.img e GPT su arca-gpt.img = secondary master/slave).
+# La suite li cerca via magic, mai per lettera (sda/sdb restano i due FAT).
 if [ "${ARCA_IMG:-0}" = "1" ]; then
     DRIVES="$DRIVES -drive file=userland/disk/arca-part.img,format=raw,if=ide"
+    DRIVES="$DRIVES -drive file=userland/disk/arca-gpt.img,format=raw,if=ide"
 fi
 # shellcheck disable=SC2086
 exec qemu-system-x86_64 \

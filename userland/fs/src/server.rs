@@ -21,6 +21,103 @@ fn driver_name_of(chan: u64) -> &'static str {
     }
 }
 
+/// Tabella seed del bucket `sys` (Fase 55, N0): path FAT → chiave oggetto.
+/// Solo i binari che init carica per object_id (stessi byte iniettati su
+/// /fat via `inject-bins.sh`: l'hash manifest li copre in entrambi i path).
+const SYS_SEED: &[(&str, &[u8])] = &[
+    ("/fat/bin/console.bin", b"bin/userconsole.bin"),
+    ("/fat/bin/shell.bin", b"bin/usershell.bin"),
+];
+
+/// Bound seed: nessun servizio supera 256 KiB (stesso tetto di
+/// `spawn_image_from_vec` in init: cio' che non si puo' spawnare non si seeda).
+const SYS_SEED_MAX: usize = 262144;
+
+/// Legge un file via mount interni (stesso resolve dei client, niente IPC).
+/// Ritorna false a mount inattivo/file assente/troppo grande (il chiamante
+/// logga e init ripiega su FAT — mai wedge il boot).
+fn seed_read(
+    mounts: &mut Vec<mount::FsMount>,
+    fgen: &mut u64,
+    path: &str,
+    out: &mut Vec<u8>,
+) -> bool {
+    let (id, rel) = match mount::resolve_fsmount(mounts, path, fgen) {
+        Some(v) => v,
+        None => return false,
+    };
+    let mi = match mount::by_id(mounts, id) {
+        Some(i) => i,
+        None => return false,
+    };
+    let h = {
+        let m = match mounts.get_mut(mi) {
+            Some(m) => m,
+            None => return false,
+        };
+        let fs = match m.local_dyn() {
+            Some(f) => f,
+            None => return false,
+        };
+        match fs.open_dyn(rel, 0) {
+            Ok(h) => h,
+            Err(_) => return false,
+        }
+    };
+    let mut off = 0usize;
+    loop {
+        if off >= SYS_SEED_MAX {
+            return false;
+        }
+        let mut chunk = [0u8; 4096];
+        let n = {
+            let m = match mounts.get_mut(mi) {
+                Some(m) => m,
+                None => return false,
+            };
+            let fs = match m.local_dyn() {
+                Some(f) => f,
+                None => return false,
+            };
+            match fs.read_dyn(h, off, &mut chunk) {
+                Ok(n) => n,
+                Err(_) => return false,
+            }
+        };
+        if n == 0 {
+            break;
+        }
+        out.extend_from_slice(&chunk[..n]);
+        off += n;
+    }
+    !out.is_empty()
+}
+
+/// Popola il bucket `sys` dell'object store in-memory (Fase 55, N0): a
+/// runtime A1 gli oggetti vivono in RAM (la persistenza su volume e' A2);
+/// il seed li carica da /fat a OGNI avvio (anche restart dopo t28: lo store
+/// muore col processo). A seed mancato init ripiega su FAT (dual-mode).
+fn seed_sys(
+    arca: &mut crate::arca::ArcaFs,
+    mounts: &mut Vec<mount::FsMount>,
+    fgen: &mut u64,
+) {
+    for (path, key) in SYS_SEED {
+        let mut data = Vec::new();
+        if seed_read(mounts, fgen, path, &mut data) {
+            let n = arca.put(b"sys", key, &data);
+            println!(
+                "[userfs] sys: {}B {} <- {}",
+                n,
+                core::str::from_utf8(key).unwrap_or("?"),
+                path
+            );
+        } else {
+            println!("[userfs] sys: {} non seedato (init ripiega su FAT)", path);
+        }
+    }
+}
+
 libr::entry!(real_main);
 fn real_main(_sp: u64) -> ! {
     println!("[userfs] starting");
@@ -66,6 +163,11 @@ fn real_main(_sp: u64) -> ! {
     // ArcaFs in-memory (Fase 55, A1): hash map bucket:key → blob.
     // Montata come `LocalFs` se negotiate() trova magic="ACFS" su un disco/partizione.
     let mut arca = crate::arca::ArcaFs::stub(0, 0, 0);
+
+    // Primo consumatore nativo N0: bucket `sys` seedato da /fat PRIMA del
+    // READY (init spawna console/shell per object_id solo dopo l'ACK; a ogni
+    // restart lo store rinasce vuoto e il seed ricorre).
+    seed_sys(&mut arca, &mut fat_mounts, &mut fat_gen);
 
     // Client registrati: pid → (req_ring_phys, resp_ring_phys).
     let mut rings: BTreeMap<u64, (u64, u64)> = BTreeMap::new();

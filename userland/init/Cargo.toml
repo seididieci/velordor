@@ -8,6 +8,7 @@ edition = "2024"
 
 [dependencies]
 libr = { path = "../../libs/libr" }
+blake2s = { path = "../../blake2s" }
 
 # Produzione (default): init NON esegue la test suite, va dritto ai servizi
 # interattivi (shell subito usabile). Con `--no-default-features` (via

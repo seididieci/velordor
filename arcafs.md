@@ -6,8 +6,10 @@ Filosofia ADR-0025: nativo dentro (userfs), personalita' al bordo (libr);
 provider trait ADR-0038; policy/identita'/sandbox ADR-0037.
 
 Stato: sessione guidata A0 completata (decisioni T0–T10) + piano OS-first
-P1–P5 concordato (§13). Prossimo: fasi preparatorie P1–P5, poi stesura di
-dettaglio punto per punto e A1+N0 (singolo-device locale + init nativo).
+P1–P5 concordato (§13) e chiuso (Fasi 50–54) + A1+N0 chiuso (Fase 55:
+object store in-memory, mount MBR/GPT, `sys` seedato, init dual-mode).
+Prossimo: stesura di dettaglio punto per punto e A2 (persistenza, COW,
+snapshot, GC).
 
 > Nota sui gate: i numeri citati altrove sono snapshot storici; il gate
 > corrente vive in `docs/src/11-testing.md` e in `ROADMAP.md`
@@ -438,7 +440,8 @@ Caricare i servizi da ArcaFS e' quindi quasi tutto userspace.
 
 - **PartLoc → enum**: `PartLoc::Mbr { start: u32, sectors: u32 }` (invariato) +
   `PartLoc::Gpt { start: u64, sectors: u64 }` (LBA48 come richiesto).
-- **Guard protective-MBR**: LBA0 byte 446 = `0xEE` → segnale GPT. Se presente,
+- **Guard protective-MBR**: tipo della prima voce di LBA0 (byte 450 =
+  446+4, NON 446 che e' il boot flag) = `0xEE` → segnale GPT. Se presente,
   non chiamare mai `sniff_identity()` sul settore 0 (e' superblock ArcaFS o
   spazzatura, non BPB FAT).
 - **GPT header a LBA1**: magic `EFI-part` (8B), versione, CRC32 (saltato per
@@ -454,7 +457,8 @@ Caricare i servizi da ArcaFS e' quindi quasi tutto userspace.
 - **Nomi partizioni GPT**: stesso namespace MBR (`sdXn`: `sda1`, `sda2`...).
   La logica di resolve in `nodes.rs` e' identica (per nome).
 - **Integrazione server.rs**: dopo il whole-disk node, chiama
-  `part::parse_mbr_or_gpt()` che: (1) legge LBA0, (2) se byte 446 == `0xEE` →
+  `part::parse_mbr_or_gpt()` che: (1) legge LBA0, (2) se il tipo della prima
+  voce (byte 450) == `0xEE` →
   `parse_gpt()`, (3) altrimenti → `parse_mbr()` (comportamento attuale).
 - **locate() in nodes.rs**: estendere a gestire `PartLoc::Gpt { start, sectors }`
   dove i campi sono `u64` (LBA48). I calcoli di base/sectore restano gli stessi.

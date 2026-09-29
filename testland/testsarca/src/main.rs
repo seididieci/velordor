@@ -1,6 +1,7 @@
-//! usertestsarca — test ArcaFS P5 (Fase 54): BLAKE2s + content_hash + volume.
+//! usertestsarca — test ArcaFS P5+A1 (Fase 54/55): BLAKE2s + content_hash +
+//! object store nativo + volumi MBR/GPT.
 //!
-//! Assert (con il drive ArcaFS presente; il core senza, run manuale):
+//! Assert (con i drive ArcaFS presenti; il core senza, run manuale):
 //!   1. vettori BLAKE2s (vuoto/abc/lungo, valori noti)
 //!   2. ramfs: hash BLAKE2s via `R_GET_HASH` == ricalcolo indipendente
 //!   3. tamper: contenuto diverso -> hash diverso
@@ -9,12 +10,15 @@
 //!   6. chiave assente -> errore (mai dati inventati)
 //!   7. un disco o partizione espone il superblock ACFS (scan per magic, mai
 //!      per lettera — Fase 55, Parte 4: esteso a sda1..sda4)
-//!   8. mount `/arca` del volume ArcaFS (stub P5) riesce
-//!   9. `open` sul mount stub rifiutato (mai dati inventati)
-//!  10. `readdir` sul mount stub rifiutato
+//!   8. mount `/arca` del volume ArcaFS riesce
+//!   9. `open` sul mount rifiutato (stub: mai dati inventati)
+//!  10. `readdir` sul mount rifiutato
 //!  11. umount `/arca` riesce (cleanup)
-//! Con `ARCA_IMG=1` (gate) il drive c'e' sempre; senza, il core (1-6) resta
-//! PASS — n/n adattivo, mai FAIL per drive assente.
+//!  12. un disco GPT (protective-MBR 0xEE a byte 450) espone ACFS in
+//!      partizione (parse GPT guest: header+entry UEFI reali)
+//!  13. mount/umount del volume GPT con `open` rifiutato
+//! Con `ARCA_IMG=1` (gate) i drive ci sono sempre; senza, il core (1-6)
+//! resta PASS — n/n adattivo, mai FAIL per drive assente.
 
 #![no_std]
 #![no_main]
@@ -42,6 +46,36 @@ impl Checks {
     }
 }
 
+/// Verifica completa del superblock ArcaFS (magic + versione + block-size +
+/// checksum FNV-1a self-verifying): un BPB FAT non puo' collidere.
+fn is_arca_super(sec: &[u8; 512]) -> bool {
+    let sb = &sec[..libr::ARCA_SUPER_LEN];
+    if sb[libr::ARCA_OFF_MAGIC..libr::ARCA_OFF_MAGIC + 4] != *libr::ARCA_MAGIC {
+        return false;
+    }
+    let u32le = |o: usize| u32::from_le_bytes([sb[o], sb[o + 1], sb[o + 2], sb[o + 3]]);
+    let u64le = |o: usize| {
+        u64::from_le_bytes([
+            sb[o], sb[o + 1], sb[o + 2], sb[o + 3], sb[o + 4], sb[o + 5], sb[o + 6], sb[o + 7],
+        ])
+    };
+    u32le(libr::ARCA_OFF_VERSION) == libr::ARCA_VERSION
+        && u32le(libr::ARCA_OFF_BLOCK_SIZE) == libr::ARCA_BLOCK_SIZE
+        && libr::image_hash(&sb[..libr::ARCA_OFF_CHECK]) == u64le(libr::ARCA_OFF_CHECK)
+}
+
+/// Legge 512 B da un path /dev (open/read/close) o None.
+fn read_sector(path: &str) -> Option<[u8; 512]> {
+    let Ok(fd) = libr::open(path, 0) else { return None };
+    let mut sec = [0u8; 512];
+    let n = libr::read_fs(fd, &mut sec, 512);
+    let _ = libr::close(fd);
+    if n != Ok(512) {
+        return None;
+    }
+    Some(sec)
+}
+
 /// Cerca un disco o partizione il cui LBA0 e' un superblock ArcaFS valido.
 /// Ritorna il nome breve (es. "sdc" o "sda1") in un buffer, o None.
 /// Scan per magic (lettera-agnostico).
@@ -53,28 +87,11 @@ fn find_arca() -> Option<[u8; 4]> {
 
         // Whole-disk: sda, sdb, ...
         let mut name = [b's', b'd', letter, 0];
-        let path_len = 8usize;
         let mut pbuf = [0u8; 16];
         pbuf[..5].copy_from_slice(b"/dev/");
         pbuf[5..8].copy_from_slice(&name[..3]);
-        let Ok(fd) = libr::open(core::str::from_utf8(&pbuf[..path_len]).unwrap_or(""), 0) else { continue };
-        let mut sec = [0u8; 512];
-        let n = libr::read_fs(fd, &mut sec, 512);
-        let _ = libr::close(fd);
-        if n != Ok(512) { continue; }
-        let sb = &sec[..libr::ARCA_SUPER_LEN];
-        if sb[libr::ARCA_OFF_MAGIC..libr::ARCA_OFF_MAGIC + 4] == *libr::ARCA_MAGIC {
-            // Verifica completa: magic + versione + block-size + checksum
-            let u32le = |o: usize| u32::from_le_bytes([sb[o], sb[o + 1], sb[o + 2], sb[o + 3]]);
-            let u64le = |o: usize| {
-                u64::from_le_bytes([
-                    sb[o], sb[o + 1], sb[o + 2], sb[o + 3], sb[o + 4], sb[o + 5], sb[o + 6], sb[o + 7],
-                ])
-            };
-            if u32le(libr::ARCA_OFF_VERSION) == libr::ARCA_VERSION
-                && u32le(libr::ARCA_OFF_BLOCK_SIZE) == libr::ARCA_BLOCK_SIZE
-                && libr::image_hash(&sb[..libr::ARCA_OFF_CHECK]) == u64le(libr::ARCA_OFF_CHECK)
-            {
+        if let Some(sec) = read_sector(core::str::from_utf8(&pbuf[..8]).unwrap_or("")) {
+            if is_arca_super(&sec) {
                 return Some([b's', b'd', letter, 0]);
             }
         }
@@ -82,27 +99,44 @@ fn find_arca() -> Option<[u8; 4]> {
         // Partizioni: sda1..sda4, sdb1..sdb4, ...
         for p in 1..=4u8 {
             name = [b's', b'd', letter, b'0' + p];
-            let path_len = 9usize;
             pbuf[..5].copy_from_slice(b"/dev/");
             pbuf[5..9].copy_from_slice(&name);
-            let Ok(fd) = libr::open(core::str::from_utf8(&pbuf[..path_len]).unwrap_or(""), 0) else { continue };
-            let mut sec = [0u8; 512];
-            let n = libr::read_fs(fd, &mut sec, 512);
-            let _ = libr::close(fd);
-            if n != Ok(512) { continue; }
-            let sb = &sec[..libr::ARCA_SUPER_LEN];
-            if sb[libr::ARCA_OFF_MAGIC..libr::ARCA_OFF_MAGIC + 4] == *libr::ARCA_MAGIC {
-                let u32le = |o: usize| u32::from_le_bytes([sb[o], sb[o + 1], sb[o + 2], sb[o + 3]]);
-                let u64le = |o: usize| {
-                    u64::from_le_bytes([
-                        sb[o], sb[o + 1], sb[o + 2], sb[o + 3], sb[o + 4], sb[o + 5], sb[o + 6], sb[o + 7],
-                    ])
-                };
-                if u32le(libr::ARCA_OFF_VERSION) == libr::ARCA_VERSION
-                    && u32le(libr::ARCA_OFF_BLOCK_SIZE) == libr::ARCA_BLOCK_SIZE
-                    && libr::image_hash(&sb[..libr::ARCA_OFF_CHECK]) == u64le(libr::ARCA_OFF_CHECK)
-                {
+            if let Some(sec) = read_sector(core::str::from_utf8(&pbuf[..9]).unwrap_or("")) {
+                if is_arca_super(&sec) {
                     return Some(name);
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Cerca un disco GPT (protective-MBR: tipo prima voce 0xEE a byte 450, NON
+/// 446 che e' il boot flag) la cui partizione espone ACFS. Ritorna
+/// (disco, partizione) o None. Prova il parse GPT guest end-to-end:
+/// protective → header UEFI → entry → superblock partition-relative.
+fn find_gpt_arca() -> Option<([u8; 4], [u8; 4])> {
+    for i in 0..8u64 {
+        let letter = b'a' + i as u8;
+        if letter > b'z' { break; }
+        let disk = [b's', b'd', letter, 0];
+        let mut pbuf = [0u8; 16];
+        pbuf[..5].copy_from_slice(b"/dev/");
+        pbuf[5..8].copy_from_slice(&disk[..3]);
+        let sec0 = match read_sector(core::str::from_utf8(&pbuf[..8]).unwrap_or("")) {
+            Some(s) => s,
+            None => continue,
+        };
+        if sec0[450] != 0xEE {
+            continue;
+        }
+        for p in 1..=4u8 {
+            let part = [b's', b'd', letter, b'0' + p];
+            pbuf[..5].copy_from_slice(b"/dev/");
+            pbuf[5..9].copy_from_slice(&part);
+            if let Some(sec) = read_sector(core::str::from_utf8(&pbuf[..9]).unwrap_or("")) {
+                if is_arca_super(&sec) {
+                    return Some((disk, part));
                 }
             }
         }
@@ -216,6 +250,48 @@ fn real_main(_sp: u64) -> ! {
             // Run manuale senza ARCA_IMG: il core passa comunque (mai FAIL
             // per drive assente); la scansione e' la riga 4 del gate.
             println!("[testsarca] nessun volume ACFS (ARCA_IMG=0?): salto 4-8");
+        }
+    }
+
+    // 12-13. Volume GPT in partizione (solo se presente: con ARCA_IMG=1 c'e'
+    // sempre; senza, salto senza FAIL come sopra).
+    match find_gpt_arca() {
+        Some((disk, part)) => {
+            let dlen = if disk[3] == 0 { 3 } else { 4 };
+            let plen = if part[3] == 0 { 3 } else { 4 };
+            println!(
+                "[testsarca] GPT: {} protective + {} con ACFS",
+                core::str::from_utf8(&disk[..dlen]).unwrap_or("?"),
+                core::str::from_utf8(&part[..plen]).unwrap_or("?"),
+            );
+            c.ok("volume ACFS in partizione GPT", true);
+            let mut src = [0u8; 16];
+            src[..5].copy_from_slice(b"/dev/");
+            src[5..5 + plen].copy_from_slice(&part[..plen]);
+            let src = core::str::from_utf8(&src[..5 + plen]).unwrap_or("/dev/sdd1");
+            // Round-trip mount in un solo assert: mount ok + open rifiutato
+            // (stub) + umount ok. Dettaglio nel log a fallimento parziale.
+            let gpt_ok = match libr::mount(src, "/arca") {
+                Ok(()) => {
+                    let open_ok = libr::open("/arca/anything", 0).is_err();
+                    let umount_ok = libr::umount("/arca").is_ok();
+                    if !open_ok {
+                        println!("[testsarca] GPT: open su stub riuscita?!");
+                    }
+                    if !umount_ok {
+                        println!("[testsarca] GPT: umount fallito");
+                    }
+                    open_ok && umount_ok
+                }
+                Err(_) => {
+                    println!("[testsarca] GPT: mount {} fallito", src);
+                    false
+                }
+            };
+            c.ok("mount/umount GPT + open rifiutato", gpt_ok);
+        }
+        None => {
+            println!("[testsarca] nessun volume GPT (ARCA_IMG=0?): salto 12-13");
         }
     }
 

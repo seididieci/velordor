@@ -11,10 +11,10 @@ ricompilare se stesso. Ordina le priorita' (storage veloce prima, servizi
 fuori dal kernel poi, personalita' per software reale dopo) senza pianificare
 nulla da solo.
 
-## Stato (completate 1-54)
+## Stato (completate 1-55)
 
-Gate: `[testfs] PASS 5/5` + `[testfat] PASS 7/7` + `[usertests] PASS 57/57` +
-shell, zero FAIL/PANIC/FAULT.
+Gate: `[testfs] PASS 5/5` + `[testfat] PASS 7/7` + `[testsarca] PASS 13/13` +
+`[usertests] PASS 58/58` + shell, zero FAIL/PANIC/FAULT.
 
 | Fase | Descrizione | Stato |
 |------|-------------|-------|
@@ -70,6 +70,7 @@ shell, zero FAIL/PANIC/FAULT.
 | 52 | Durabilita' P3 (`R_SYNC` modi+barriera, `RIGHTS_SYNC`, `R_STATVFS` nel trait, `SYS_MEMINFO`, contratto, t32/t37 estesi) | ✅ Completata |
 | 53 | Misura bulk P4 (audit CAP, sweep 4K/16K/64K ramfs+FAT hot/cold in userbench, tabella costo-vs-dimensione) | ✅ Completata |
 | 54 | Integrita' + attrezzi P5 (crate `blake2s`, `R_GET_HASH`, superblock ArcaFS, `negotiate()`→arcafs stub, `arca create` host, `arca list/stat` guest, testsarca 8/8) | ✅ Completata |
+| 55 | ArcaFS A1+N0 (`R_OBJ_PUT/GET` + store in-memory, parser GPT per spec, mount MBR/GPT in partizione, `sys` seedato, init dual-mode + doppio pinning FNV/BLAKE2s, fallback FAT provato, testsarca 13/13, t58) | ✅ Completata |
 
 ## Pianificate
 
@@ -85,27 +86,12 @@ Voci con scope e vittoria dichiarati (non date).
       (orologio), P2/51 chiusa (vocabolario disco + dati S1/S2), P3/52 chiusa
       (durabilita': contratto + barriera + sensori), P4/53 chiusa (misura
       bulk: tabella costo-vs-dimensione in `13-performance.md`), P5/54 chiusa
-      (integrita' + attrezzi: BLAKE2s, content_hash, `arca create`/`list`,
-      `negotiate()`→arcafs stub, testsarca 8/8). Prossimo: stesura di
-      dettaglio + ADR (dopo le P), poi 55.
-      Vittoria: spec scritta + primo mount.
-- [ ] **55 (A1+N0)** (dopo 54, mai A1 da solo): `R_OBJ_PUT/GET` via
-      `MountedFs::Local` + `init` dual-mode (nativo da bucket `sys` per
-      `object_id`, fallback FAT) + `SvcMeta.bucket/key`; hash manomesso
-      rifiutato (BLAKE2s); ArcaFS anche **in partizione** (readiness
-      data-plane, mai loader EFI): superblock partition-relative (LBA0+LBA1
-      del nodo), parser GPT in userdisk (protective-MBR `0xEE` mai dati,
-      `PartLoc` a u64, type GUID dedicato da registrare), `negotiate()`
-      prova `ACFS` prima di `vfat`, `arca create --whole-disk`/
-      `--in-partition` (+ `--init-gpt`); dischi dati restano whole-disk.
-      **In corso**: Passo 1 (tag + backend in-memory + libr wrapper) e
-      Passo 2 (init dual-mode + parser GPT) fatti; Parte 4 (mount in
-      partizione MBR: immagine `arca-part.img`, scan `sda1..sda4` in
-      testsarca) fatta e debuggata (`sdc1` rilevata, mount `/arca` PASS);
-      testsarca 11/11. Restano: popolamento `sys`, hash BLAKE2s in `init`,
-      parser GPT da riallineare allo spec.
-      Vittoria: boot con servizi da `sys` (whole-disk e GPT in-partizione),
-      fallback FAT provato, gate verde.
+       (integrita' + attrezzi: BLAKE2s, content_hash, `arca create`/`list`,
+       `negotiate()`→arcafs stub, testsarca 8/8). A1+N0/55 chiusa
+       (object store in-memory, mount MBR/GPT in partizione, `sys`
+       seedato, init dual-mode + pinning FNV/BLAKE2s, testsarca 13/13).
+       Prossimo: stesura di dettaglio + ADR per A2, poi 56.
+       Vittoria: spec scritta + primo mount.
 - [ ] **56 (A2)** (dopo 55): COW + snapshot/clone + GC (+ packing, + `R_OBJ_MGET`
       se 53 lo chiede) + marker dir persistenti (§5).
       Vittoria: rollback vero; retention log implementabile.

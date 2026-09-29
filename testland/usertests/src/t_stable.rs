@@ -557,3 +557,47 @@ pub fn t_identity() -> bool {
     }
     true
 }
+
+/// t58 — bucket `sys` nativo + content-hash BLAKE2s (Fase 55, N0).
+/// userfs seeda `sys` da /fat a ogni avvio (anche restart); init carica
+/// console per object_id, shell con chiave assente (= fallback FAT, vedi
+/// log di boot "ripiego su FAT"). Prova: (1) l'oggetto nativo e' byte-
+/// identico al file FAT; (2) il suo blake2s e' il manifest BLAKE (stesso
+/// predicato di `verify_image` in init); (3) un byte flippato cambia il
+/// digest (init lo rifiuterebbe); (4) la chiave assente da' errore
+/// (mai dati inventati).
+pub fn t_sys_native() -> bool {
+    let fat = match libr::load_file("/fat/bin/console.bin") {
+        Some(b) if !b.is_empty() => b,
+        _ => {
+            println!("[usertests] t58: /fat/bin/console.bin illeggibile");
+            return false;
+        }
+    };
+    let obj = match libr::obj_get(b"sys", b"bin/userconsole.bin") {
+        Ok(v) => v,
+        Err(_) => {
+            println!("[usertests] t58: obj sys/bin/userconsole.bin assente");
+            return false;
+        }
+    };
+    if obj != fat {
+        println!("[usertests] t58: sys != FAT ({} vs {} B)", obj.len(), fat.len());
+        return false;
+    }
+    if blake2s::blake2s(&obj) != crate::BLAKE_USERCONSOLE {
+        println!("[usertests] t58: blake sys != manifest");
+        return false;
+    }
+    let mut bad = obj.clone();
+    bad[0] ^= 0xFF;
+    if blake2s::blake2s(&bad) == crate::BLAKE_USERCONSOLE {
+        println!("[usertests] t58: digest invariato dopo flip?!");
+        return false;
+    }
+    if libr::obj_get(b"sys", b"bin/shell-missing.bin").is_ok() {
+        println!("[usertests] t58: chiave assente restituisce dati?!");
+        return false;
+    }
+    true
+}

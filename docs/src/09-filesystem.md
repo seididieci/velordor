@@ -223,8 +223,11 @@ usertests 17/17, shell 3/3.
   host `create` (mai duplicati; il round-trip create→mount→stat lo verifica).
 - **`negotiate()`**: legge LBA0 del nodo e prova ArcaFS PRIMA di vfat (match
   stretto: magic + versione + block size + checksum). Monta un'istanza
-  `MountedFs::Arca(ArcaFs)` **stub**: in P5 il volume e' riconosciuto ma non
-  leggibile (ogni op `ERR_NOTFOUND`/`ERR_READONLY`); A1 lo riempie (`R_OBJ_*`).
+  `MountedFs::Arca(ArcaFs)`; la vista POSIX resta stub (ogni op
+  `ERR_NOTFOUND`/`ERR_READONLY`), la vista nativa e' `R_OBJ_PUT`/`R_OBJ_GET`
+  su store in-memory (Fase 55, A1: bucket `sys` seedato da /fat a ogni
+  avvio; la persistenza su volume e' A2). Mount ArcaFS anche in partizione
+  MBR/GPT (superblock partition-relative, parser GPT per spec UEFI).
 - **`R_GET_HASH`** (`libr::get_hash`, opzione A compute-on-query): userfs
   rilegge il file a chunk 4K e calcola BLAKE2s-256 (nessuno stato, nessuno
   store; il seal per-versione arriva con ArcaFS in A1). `BLAKE2s` proprio

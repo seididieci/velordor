@@ -85,6 +85,9 @@ fn read_mbr_gpt(disk_path: &str, buf: &mut [u8; 512]) -> bool {
 
 /// Cerca una partizione attiva nel MBR (registro 446–511).
 /// Ritorna `Some((start_lba, size))` della prima entry con type != 0.
+/// BUG STORICO (Fase 55): lo start era ricalcolato a mano su 3 byte stile
+/// CHS invece che u32 LE a off+8 — ora single source col guest
+/// (`parse_mbr` in userdisk/part.rs).
 fn find_mbr_partition(buf: &[u8; 512]) -> Option<(u64, u64)> {
     // MBR partition table starts at offset 446 (0x1BE), 16 bytes per entry
     for i in 0..4 {
@@ -93,10 +96,7 @@ fn find_mbr_partition(buf: &[u8; 512]) -> Option<(u64, u64)> {
         if ptype == 0 {
             continue; // entry vuota
         }
-        // CHL → LBA: settori 0-2 di offset+8 (3 bytes, little-endian)
-        let start = u32::from(buf[off + 8]) as u64
-            | ((u32::from(buf[off + 9]) & 0x3F) as u64) << 8
-            | ((u32::from(buf[off + 10])) as u64) << 16;
+        let start = u32::from_le_bytes([buf[off + 8], buf[off + 9], buf[off + 10], buf[off + 11]]) as u64;
         let size = u32::from_le_bytes([
             buf[off + 12],
             buf[off + 13],
@@ -131,50 +131,66 @@ fn find_partition_offset(path: &str) -> Option<(u64, u64)> {
         return Some((start, size));
     }
 
-    // Prova GPT: byte 446 = 0xEE → protective MBR. La tabella e' a LBA1.
-    if buf[446] == 0xEE {
-        // Leggi LBA1 (la prima partizione GPT)
+    // Prova GPT: tipo prima voce (byte 450, NON 446 che e' il boot flag) =
+    // 0xEE → protective MBR. Header a LBA1, offset UEFI reali (stessi del
+    // guest `parse_gpt_header`: magic 0, current 24, first usable 40,
+    // last usable 48, entry LBA 72, count 80, size 84).
+    if buf[450] == 0xEE {
         let mut f = match OpenOptions::new().read(true).open(&disk_path) {
             Ok(f) => f,
             Err(_) => return None,
         };
-        if f.seek(SeekFrom::Start(512)).is_ok() && f.read_exact(&mut buf).is_ok() {
-            // GPT header a LBA1: offset 44 = number of partition entries
-            let num_entries = u32::from_le_bytes([buf[44], buf[45], buf[46], buf[47]]) as usize;
-            // Offset del primo entry nella tabella (di solito 512)
-            let entry_off = u32::from_le_bytes([buf[48], buf[49], buf[50], buf[51]]);
-            // Ogni entry e' 128 byte
-            for i in 0..num_entries {
-                let off = (entry_off + i as u32 * 128) as usize;
-                if off + 16 > 512 {
-                    break;
-                }
-                // Tipo GUID: primi 8 byte dell'entry
-                let type_low = u64::from_le_bytes([
-                    buf[off], buf[off+1], buf[off+2], buf[off+3],
-                    buf[off+4], buf[off+5], buf[off+6], buf[off+7],
-                ]);
-                if type_low == 0 {
-                    continue; // entry vuota
-                }
-                // Start LBA: bytes 8-15 dell'entry
-                let start = u64::from_le_bytes([
-                    buf[off + 8], buf[off + 9], buf[off + 10], buf[off + 11],
-                    buf[off + 12], buf[off + 13], buf[off + 14], buf[off + 15],
-                ]);
-                // Numero di settori: bytes 16-23
-                let size = u64::from_le_bytes([
-                    buf[off + 16], buf[off + 17], buf[off + 18], buf[off + 19],
-                    buf[off + 20], buf[off + 21], buf[off + 22], buf[off + 23],
-                ]);
-                if start > 0 && size > 0 {
-                    println!(
-                        "arca: partizione {} su {}: GPT start={} settori={}",
-                        path, disk_path, start, size
-                    );
-                    return Some((start, size));
-                }
+        let mut hdr = [0u8; 512];
+        if f.seek(SeekFrom::Start(512)).is_err() || f.read_exact(&mut hdr).is_err() {
+            return None;
+        }
+        if hdr[0..8] != *b"EFI PART" {
+            return None;
+        }
+        let u64le = |o: usize| u64::from_le_bytes([
+            hdr[o], hdr[o+1], hdr[o+2], hdr[o+3], hdr[o+4], hdr[o+5], hdr[o+6], hdr[o+7],
+        ]);
+        if u64le(24) != 1 {
+            return None;
+        }
+        let first_usable = u64le(40);
+        let last_usable = u64le(48);
+        let entries_lba = u64le(72);
+        let num_entries = u32::from_le_bytes([hdr[80], hdr[81], hdr[82], hdr[83]]) as u64;
+        let entry_size = u32::from_le_bytes([hdr[84], hdr[85], hdr[86], hdr[87]]);
+        if entry_size != 128 || num_entries == 0 {
+            return None;
+        }
+        // Legge l'array entry (128 B l'una, anche a cavallo di settore).
+        let total = (num_entries.min(128) * 128) as usize;
+        let arr_off = entries_lba * 512;
+        let arr_end = arr_off + total as u64;
+        let disk_len = f.seek(SeekFrom::End(0)).unwrap_or(0);
+        if arr_end > disk_len {
+            return None;
+        }
+        let mut arr = vec![0u8; total];
+        if f.seek(SeekFrom::Start(arr_off)).is_err() || f.read_exact(&mut arr).is_err() {
+            return None;
+        }
+        for i in 0..num_entries.min(128) {
+            let off = (i * 128) as usize;
+            let e = &arr[off..off + 128];
+            if e[0..16] == [0u8; 16] {
+                continue; // entry vuota
             }
+            // Entry UEFI: first LBA a +32, last LBA a +40 (u64 LE).
+            let start = u64::from_le_bytes(e[32..40].try_into().unwrap());
+            let last = u64::from_le_bytes(e[40..48].try_into().unwrap());
+            if start == 0 || start > last || start < first_usable || last > last_usable {
+                continue;
+            }
+            let size = last - start + 1;
+            println!(
+                "arca: partizione {} su {}: GPT start={} settori={}",
+                path, disk_path, start, size
+            );
+            return Some((start, size));
         }
     }
 
@@ -240,9 +256,15 @@ fn main() {
                         exit(1);
                     }
                 };
-                // Scrivi superblock a start_lba * 512
+                // Scrivi superblock a start_lba * 512 + shadow a start+1
+                // (partition-relative LBA0/LBA1, arcafs.md §16.4).
                 let offset = start * 512;
-                if f.seek(SeekFrom::Start(offset)).is_err() || f.write_all(&sb).is_err() {
+                let shadow = (start + 1) * 512;
+                let ok = f.seek(SeekFrom::Start(offset)).is_ok()
+                    && f.write_all(&sb).is_ok()
+                    && f.seek(SeekFrom::Start(shadow)).is_ok()
+                    && f.write_all(&sb).is_ok();
+                if !ok {
                     eprintln!("scrittura superblock a offset {} fallita", offset);
                     exit(1);
                 }
