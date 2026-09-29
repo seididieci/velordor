@@ -682,3 +682,73 @@ Primo passo A2: semantica versionata senza disco (il B+tree on-disk e' 56.2).
   `Box`, handler pesanti `#[inline(never)]`, mai array KiB per-valore nel
   loop. `userfs.bin` al 90% di `SPAWN_IMAGE_MAX`: budget codice contato
   per 56.2b.
+
+## 19. Piano 56.2b/56.2c (A2 su disco)
+
+Stato dopo 56.2a: formato blocchi, allocatore freelist, nodi opachi con
+checksum, `R_ARCA_DEBUG`, casa `arcafs/`, suite 27/27. Resta: portare la
+semantica 56.1 (versioni, snapshot, rollback, clone, retention) sui blocchi
+e accendere la persistenza. Due passi con gate separati.
+
+### 56.2b — B+tree + commit (il passo grosso)
+
+- **Nodi tipati**: LEAF (coppie key→valore) e INTERNAL (separatori + figli)
+  sopra il contenitore 56.2a (header magic+type+gen, payload 3560, footer
+  FNV). Chiavi: `object_id` u64 nel primary (8 B, confronto numerico),
+  `(bucket,key)` a lunghezza esplicita nel secondary. Foglie con overflow
+  per chiavi lunghe (record overflow linkati, mai tabelle fisse — regola
+  §0); discesa con separatori corti.
+- **Valori**: primary UUID → `{version_head, ...}`; le versioni sono record
+  a catena (nuova versione = nuovo record + rewrite del puntatore head,
+  mai overwrite — COW anche in 56.2b); secondary → UUID + stat
+  denormalizzata (size, mtime, version_head) per `stat` senza primary.
+- **Snapshot con extent condivisi**: le copie 56.1 diventano pin con
+  refcount sul `refcount_root` del superblock (campo già riservato);
+  DELETE/trim decrementano, lo zero libera. Il refcount vive nel commit
+  come il resto (crash-safe per costruzione, mai file separato).
+- **Allocatore**: freelist 56.2a + hint di placement (zone/co-location soft,
+  A5 cambia politica); `alloc_hint` del superblock come seed.
+- **Commit**: shadow superblock + flip di `generation`; DIRTY bit acceso
+  durante la mutazione, spento al flip. Niente journal (decisione §3
+  confermata). Ordine write: nodi nuovi → refcount → header-ext → shadow
+  → flip superblock; a ogni passo interrotto la generazione vecchia resta
+  valida (crash = generazione vecchia + orphan-GC in 56.2c).
+- **Cache nodi**: write-through in-heap, LRU, cap iniziale 256 nodi
+  (~1 MB, confermato in 56.2a); regola stack §18 vale per tutto il path
+  (nodi in `Box`, mai per-valore nel loop). Tuning coi numeri, non a stima.
+- **Vincolo binario**: `userfs.bin` al 90% di `SPAWN_IMAGE_MAX` — budget
+  codice contato: niente duplicazioni (riuso `arcafs::format`), `opt z`;
+  se sfora si sposta codice, non si alza il bound senza ADR.
+- **Vittoria 56.2b**: tutta la semantica 56.1 passa identica ma su disco
+  (stessi assert testsarca, backend diverso: il backend mem di 56.1 resta
+  come oracolo di confronto); suite estesa con split/merge forzati
+  (bulk insert oltre la capacità foglia) e crash a metà commit simulato
+  (kill userfs durante PUT pesanti → al remount generazione vecchia
+  intatta).
+- **Rischi noti**: split/merge con overflow record (il caso che rompe i
+  B+tree fatti in casa); refcount vs snapshot-delete concorrente al commit
+  (ordine write sopra); heap userfs sotto churn (VERSION_RETAIN=8 resta).
+
+### 56.2c — Recovery + sys-dal-volume (chiusura 56)
+
+- **Mount/recovery**: superblock valido → se DIRTY, orphan-GC (scan
+  refcount vs raggiungibili dalla root, free degli orfani) poi clear DIRTY
+  con commit; remount = reload completo = **test di crash deterministico**
+  (niente reboot nel gate: kill userfs + remount + snapshot sopravvissuto).
+- **sys-dal-volume**: `seed_sys` legge dal bucket `sys` del volume invece
+  che da /fat; fallback FAT se volume assente o chiave assente (dual-mode
+  invariato, init intoccato). Con `ARCA_IMG=0` gli op nativi danno errore
+  loud e la suite resta adattiva.
+- **Reboot reale** (manuale, fuori gate): generazione N montata, snapshot
+  sopravvissuto, servizi da `sys` — prova finale prima di dichiarare la
+  vittoria 56 ("rollback vero; retention log implementabile", sblocco 57).
+- **Fuori scope 56** (confermato): packing S1/S2, `R_OBJ_MGET`, marker dir
+  persistenti (56.3); quota/subvolumi (A3); tag128 crypto (A7); loader EFI.
+
+### Gate e docs per passo
+
+- Suite `testsarca` cresce a ogni passo (stessi numeri solo se la semantica
+  e' identica; nuovi assert per split/commit/recovery); `usertests`
+  invariato salvo attori concorrenti necessari; gate e checklist anti-marcio
+  invariati (`11-testing.md`, `07-ipc.md` se nuovi tag, `run-tests.sh`,
+  conteggi `AGENTS.md`, `ROADMAP.md`, cronologia).
