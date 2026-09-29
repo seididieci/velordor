@@ -5,6 +5,10 @@
 
 use super::ring::{req_ring_write, resp_ring_read_payload, resp_ring_consume, RING_MAX_PAYLOAD};
 use crate::{fs_notify_result, fs_reply_check, Error, FS_NOTIFY, R_OBJ_GET, R_OBJ_PUT};
+use crate::{
+    R_SNAP_CREATE, R_SNAP_DELETE, R_SNAP_ROLLBACK, R_SNAP_CLONE, R_OBJ_GET_ID,
+    R_OBJ_STAT_ID, R_OBJ_DELETE, R_OBJ_STAT,
+};
 use crate::{OBJ_BUCKET_MAX, OBJ_KEY_MAX};
 use alloc::vec;
 use alloc::vec::Vec;
@@ -143,4 +147,175 @@ fn build_put_payload(bucket: &[u8], key: &[u8], data: &[u8]) -> Option<Vec<u8>> 
     let mut p = build_obj_prefix(bucket, key)?;
     p.extend_from_slice(data);
     Some(p)
+}
+
+// ── Versioni + snapshot (Fase 56.1) ─────────────────────────────────
+// Convenzione comune: richiesta con retry di scrittura frame (stesso
+// pattern di obj_put), frame risposta da 16 B consumato qui; i payload
+// dedicati (STAT) letti dal chiamante subito dopo, prima di qualunque
+// altra op sul ring (1-in-volo, Fase 13).
+
+/// Invia una richiesta object/snap e ritorna (w0, w1) della reply.
+/// Il frame risposta (header 16 B, niente payload dedicato) e' consumato.
+fn obj_request(tag: u32, w0: u64, w1: u64, payload: &[u8]) -> Result<(u64, u64), Error> {
+    let frame = || req_ring_write(tag, w0, w1, payload);
+    if !frame() {
+        return Err(Error::RingFull);
+    }
+    match fs_notify_result(FS_NOTIFY, frame) {
+        Some((a, b, _)) => {
+            resp_ring_consume(16);
+            Ok((a, b))
+        }
+        None => Err(Error::NotReady),
+    }
+}
+
+/// Richiesta scalare: valore in w0 o sentinella (mappata qui in dominio).
+fn obj_scalar(tag: u32, payload: &[u8]) -> Result<u64, Error> {
+    let (a, _) = obj_request(tag, payload.len() as u64, 0, payload)?;
+    fs_reply_check(a)
+}
+
+/// Snapshot del bucket → snap_id.
+pub fn snap_create(bucket: &[u8]) -> Result<u64, Error> {
+    if bucket.len() > OBJ_BUCKET_MAX {
+        return Err(Error::Invalid);
+    }
+    let mut p = Vec::with_capacity(1 + bucket.len());
+    p.push(bucket.len() as u8);
+    p.extend_from_slice(bucket);
+    obj_scalar(R_SNAP_CREATE, &p)
+}
+
+/// Elimina uno snapshot (GC delle copie pinnate).
+pub fn snap_delete(snap_id: u64) -> Result<(), Error> {
+    obj_scalar(R_SNAP_DELETE, &snap_id.to_le_bytes()).map(|_| ())
+}
+
+/// Rollback per-chiave dallo snapshot → nuova head size.
+pub fn snap_rollback(bucket: &[u8], key: &[u8], snap_id: u64) -> Result<u64, Error> {
+    let mut p = Vec::with_capacity(8 + 1 + bucket.len() + 1 + 1 + key.len() + 1);
+    p.extend_from_slice(&snap_id.to_le_bytes());
+    p.extend_from_slice(&build_obj_prefix(bucket, key).ok_or(Error::Invalid)?);
+    obj_scalar(R_SNAP_ROLLBACK, &p)
+}
+
+/// Clona il bucket pinnato in `dst` (nuovi id) → oggetti clonati.
+pub fn snap_clone(snap_id: u64, dst: &[u8]) -> Result<u64, Error> {
+    if dst.len() > OBJ_BUCKET_MAX {
+        return Err(Error::Invalid);
+    }
+    let mut p = Vec::with_capacity(8 + 1 + dst.len());
+    p.extend_from_slice(&snap_id.to_le_bytes());
+    p.push(dst.len() as u8);
+    p.extend_from_slice(dst);
+    obj_scalar(R_SNAP_CLONE, &p)
+}
+
+/// GET per object_id (chunking automatico come `obj_get`).
+pub fn obj_get_id(id: u64) -> Result<Vec<u8>, Error> {
+    let mut offset = 0usize;
+    let mut result = Vec::new();
+    let payload = id.to_le_bytes();
+    loop {
+        let frame = || req_ring_write(R_OBJ_GET_ID, payload.len() as u64, offset as u64, &payload);
+        if !frame() {
+            return Err(Error::RingFull);
+        }
+        match fs_notify_result(FS_NOTIFY, frame) {
+            Some((size, _, payload_len)) => {
+                let total = match fs_reply_check(size) {
+                    Ok(v) => v as usize,
+                    Err(e) => {
+                        resp_ring_consume(16);
+                        return Err(e);
+                    }
+                };
+                let remaining = total.saturating_sub(offset);
+                if remaining == 0 {
+                    resp_ring_consume(16);
+                    break;
+                }
+                let to_read = remaining.min(payload_len).min(RING_MAX_PAYLOAD);
+                if to_read == 0 {
+                    resp_ring_consume(16);
+                    break;
+                }
+                let mut buf = vec![0u8; to_read];
+                resp_ring_read_payload(&mut buf, to_read);
+                result.extend_from_slice(&buf);
+                offset += to_read;
+                if offset >= total {
+                    break;
+                }
+            }
+            None => return Err(Error::NotReady),
+        }
+    }
+    Ok(result)
+}
+
+/// Stat per (bucket,key): (id, size head, versioni, mtime head).
+pub fn obj_stat(bucket: &[u8], key: &[u8]) -> Result<(u64, u64, u64, u64), Error> {
+    let prefix = build_obj_prefix(bucket, key).ok_or(Error::Invalid)?;
+    let frame = || req_ring_write(R_OBJ_STAT, prefix.len() as u64, 0, &prefix);
+    if !frame() {
+        return Err(Error::RingFull);
+    }
+    match fs_notify_result(FS_NOTIFY, frame) {
+        Some((id, size, _)) => {
+            // Prima i registri (a errore il frame e' vuoto: leggerlo
+            // sarebbe oltre l'header, nel frame altrui — desync).
+            let ok = fs_reply_check(id).and(fs_reply_check(size));
+            match ok {
+                Ok(_) => {
+                    let mut f = [0u8; 16];
+                    resp_ring_read_payload(&mut f, 16);
+                    let nv = u64::from_le_bytes(f[..8].try_into().map_err(|_| Error::Invalid)?);
+                    let mtime = u64::from_le_bytes(f[8..].try_into().map_err(|_| Error::Invalid)?);
+                    // id/size gia' validati sopra (valori, non sentinelle).
+                    Ok((id, size, nv, mtime))
+                }
+                Err(e) => {
+                    resp_ring_consume(16);
+                    Err(e)
+                }
+            }
+        }
+        None => Err(Error::NotReady),
+    }
+}
+
+/// Stat per object_id: (size head, versioni, mtime head).
+pub fn obj_stat_id(id: u64) -> Result<(u64, u64, u64), Error> {
+    let payload = id.to_le_bytes();
+    let frame = || req_ring_write(R_OBJ_STAT_ID, payload.len() as u64, 0, &payload);
+    if !frame() {
+        return Err(Error::RingFull);
+    }
+    match fs_notify_result(FS_NOTIFY, frame) {
+        Some((size, nv, _)) => {
+            let ok = fs_reply_check(size).and(fs_reply_check(nv));
+            match ok {
+                Ok(_) => {
+                    let mut f = [0u8; 8];
+                    resp_ring_read_payload(&mut f, 8);
+                    let mtime = u64::from_le_bytes(f);
+                    Ok((size, nv, mtime))
+                }
+                Err(e) => {
+                    resp_ring_consume(16);
+                    Err(e)
+                }
+            }
+        }
+        None => Err(Error::NotReady),
+    }
+}
+
+/// Cancella nome + catena viva (gli snapshot restano validi).
+pub fn obj_delete(bucket: &[u8], key: &[u8]) -> Result<(), Error> {
+    let prefix = build_obj_prefix(bucket, key).ok_or(Error::Invalid)?;
+    obj_scalar(R_OBJ_DELETE, &prefix).map(|_| ())
 }

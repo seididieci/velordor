@@ -417,6 +417,23 @@ pub const R_GET_HASH: u32 = 0x25;
 /// Object store nativo ArcaFS (Fase 55, A1): PUT (w0=size, payload=bucket\0key\0[data]) e GET (w0=offset, w1=count, payload=bucket\0key\0). Stateful server-side: il server tiene lo stato della richiesta.
 pub const R_OBJ_PUT: u32 = 0x26;
 pub const R_OBJ_GET: u32 = 0x27;
+/// Versioni + snapshot (Fase 56.1, A2 in RAM): ogni PUT crea una versione
+/// (mai overwrite); snapshot per-bucket con pin delle versioni, clone di
+/// bucket, rollback per-chiave (nuova versione clonata, mai truncate).
+/// GET_ID/STAT_ID parlano per object_id; STAT/DELETE per (bucket,key).
+/// Formati payload: CREATE `[blen:1][bucket]` → reply snap_id;
+/// DELETE `[snap_id:8]`; ROLLBACK `[snap_id:8][obj-prefix]` → nuova size;
+/// CLONE `[snap_id:8][dblen:1][dstbucket]` → oggetti clonati;
+/// GET_ID `[id:8]` (w1=offset, come GET); STAT_ID `[id:8]` → (size, nv);
+/// DELETE `[obj-prefix]`; STAT `[obj-prefix]` → (id, size, frame [nv,mtime]).
+pub const R_SNAP_CREATE: u32 = 0x28;
+pub const R_SNAP_DELETE: u32 = 0x29;
+pub const R_SNAP_ROLLBACK: u32 = 0x2A;
+pub const R_SNAP_CLONE: u32 = 0x2B;
+pub const R_OBJ_GET_ID: u32 = 0x2C;
+pub const R_OBJ_STAT_ID: u32 = 0x2D;
+pub const R_OBJ_DELETE: u32 = 0x2E;
+pub const R_OBJ_STAT: u32 = 0x2F;
 /// Bound nomi object store (Fase 55, hygiene): bucket ≤ 16 B, chiave ≤ 255 B
 /// (1 byte di lunghezza nel frame: oltre e' inesprimibile sul wire).
 /// Entrambi i lati rifiutano loud oltre il bound (mai troncamento `as u8`).

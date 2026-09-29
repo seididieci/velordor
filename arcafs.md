@@ -627,3 +627,32 @@ Il FS fornisce le primitive, un servizio userspace separato fa il log
   P3 (`R_SYNC` + contratto di stabilita'), A2 (retention senza GC e' solo
   accumulo).
 - Formato record e policy di seal/retention: dettaglio in A2, non qui.
+
+## 17. Fase 56.1 — versioni in RAM (decisioni)
+
+Primo passo A2: semantica versionata senza disco (il B+tree on-disk e' 56.2).
+
+- **Ogni PUT = nuova versione**: offset 0 = versione da zero (compat A1);
+  offset > 0 = clone della head con range patchata (ogni chunk di upload e'
+  una versione COW — accumulo corretto + storia completa).
+- **Identita'**: `object_id` monotonico da 1, mai riusato (F2); indice
+  inverso id→key; `GET_ID`/`STAT_ID` per UUID, `STAT` per (bucket,key)
+  ritorna `(id, size, nversioni, mtime)`.
+- **Snapshot per-bucket con pin a COPIE** (non refcount): DELETE/trim non
+  invalidano mai uno snapshot. Scelta dichiaratamente transitoria: con
+  extent condivisi (56.2) le copie diventano refcount — tradeoff RAM vs
+  semplicita' a scala gate, documentato non nascosto.
+- **Rollback = nuova head clonata** (mai truncate: anche il rollback resta
+  in storia); solo stesso bucket (cross-bucket → `ERR_INVALID`).
+- **Clone = nuovo bucket, nuovi id** (una versione per chiave).
+- **GC 56.1 = retention (8, `VERSION_RETAIN`) + drop a snapshot-delete**.
+  N=8: abbastanza storia per rollback utili, poco costo in RAM a scala gate;
+  si rivaluta con i numeri d'uso (A3 ha la quota vera).
+- **Tag** `R_SNAP_CREATE/DELETE/ROLLBACK/CLONE` 0x28–0x2B,
+  `R_OBJ_GET_ID/STAT_ID/DELETE/STAT` 0x2C–0x2F; diritti: nessun bit (come
+  `R_OBJ_*`, ABAC e' A4). Reply STAT a due registri + frame dedicato
+  (pattern `R_PIPE_CREATE`).
+- **Errori**: `INVALID` oltre bound nomi / bucket mismatch, `NOTFOUND`
+  assente — mai dati inventati. Frame SEMPRE scritto anche a errore
+  (disciplina anti-desync della Fase 55); il client consuma prima di
+  controllare i registri (mai letture oltre l'header).

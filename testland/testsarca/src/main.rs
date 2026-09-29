@@ -1,5 +1,5 @@
-//! usertestsarca — test ArcaFS P5+A1 (Fase 54/55): BLAKE2s + content_hash +
-//! object store nativo + volumi MBR/GPT.
+//! usertestsarca — test ArcaFS P5+A1+56.1 (Fase 54/55/56): BLAKE2s +
+//! content_hash + object store nativo + versioni/snapshot + volumi MBR/GPT.
 //!
 //! Assert (con i drive ArcaFS presenti; il core senza, run manuale):
 //!   1. vettori BLAKE2s (vuoto/abc/lungo, valori noti)
@@ -17,6 +17,14 @@
 //!  12. un disco GPT (protective-MBR 0xEE a byte 450) espone ACFS in
 //!      partizione (parse GPT guest: header+entry UEFI reali)
 //!  13. mount/umount del volume GPT con `open` rifiutato
+//!  14. versioni: PUT ripetute = catena, GET = latest (56.1)
+//!  15. snapshot del bucket (56.1)
+//!  16. rollback ripristina la versione pinnata come nuova head (56.1)
+//!  17. snapshot delete non tocca il live (56.1)
+//!  18. retention: oltre 8 versioni si trimma la coda (56.1)
+//!  19. delete oggetto: GET/STAT rifiutati (56.1)
+//!  20. clone di bucket: count + dati (56.1)
+//!  21. STAT ritorna id + GET_ID/STAT_ID round-trip (56.1)
 //! Con `ARCA_IMG=1` (gate) i drive ci sono sempre; senza, il core (1-6)
 //! resta PASS — n/n adattivo, mai FAIL per drive assente.
 
@@ -293,6 +301,86 @@ fn real_main(_sp: u64) -> ! {
         None => {
             println!("[testsarca] nessun volume GPT (ARCA_IMG=0?): salto 12-13");
         }
+    }
+
+    // 14-21. Versioni + snapshot (56.1, bucket dedicato: niente interferenze
+    // con sys/test usati altrove).
+    {
+        let (b, k1) = (&b"v56"[..], &b"k1"[..]);
+        let a = b"versione-A";
+        let bb = b"versione-B";
+        // 14. PUT ripetute = catena, GET = latest.
+        let v14 = libr::obj_put(b, k1, a) == Ok(a.len() as u64)
+            && libr::obj_put(b, k1, bb) == Ok(bb.len() as u64)
+            && matches!(libr::obj_get(b, k1), Ok(v) if v == bb)
+            && matches!(libr::obj_stat(b, k1), Ok((_, sz, nv, _)) if sz == bb.len() as u64 && nv == 2);
+        c.ok("versioni: catena + latest", v14);
+        // 15-16. Snapshot + rollback (la pinnata diventa NUOVA head: A,B,C,B').
+        let cc = b"versione-C";
+        let s = libr::snap_create(b).ok();
+        c.ok("snap create", s.is_some());
+        let v16 = match s {
+            Some(sid) => {
+                libr::obj_put(b, k1, cc) == Ok(cc.len() as u64)
+                    && libr::snap_rollback(b, k1, sid).is_ok()
+                    && matches!(libr::obj_get(b, k1), Ok(v) if v == bb)
+                    && matches!(libr::obj_stat(b, k1), Ok((_, _, nv, _)) if nv == 4)
+            }
+            None => false,
+        };
+        c.ok("rollback ripristina pinnata", v16);
+        // 17. Delete dello snapshot: live intatto.
+        let v17 = match s {
+            Some(sid) => {
+                libr::snap_delete(sid).is_ok()
+                    && matches!(libr::obj_stat(b, k1), Ok((_, _, nv, _)) if nv == 4)
+                    && libr::snap_delete(sid).is_err()
+            }
+            None => false,
+        };
+        c.ok("snap delete non tocca live", v17);
+        // 18. Retention: 10 PUT oltre le 4 versioni → trim a 8, latest ok.
+        let mut v18 = true;
+        for i in 0..10u8 {
+            let d = [b'D', b'0' + i];
+            if libr::obj_put(b, k1, &d) != Ok(2) {
+                v18 = false;
+            }
+        }
+        v18 = v18
+            && matches!(libr::obj_get(b, k1), Ok(v) if v == [b'D', b'9'])
+            && matches!(libr::obj_stat(b, k1), Ok((_, sz, nv, _)) if sz == 2 && nv == 8);
+        c.ok("retention trim a 8", v18);
+        // 19. Delete oggetto: GET/STAT rifiutati.
+        let v19 = libr::obj_delete(b, k1).is_ok()
+            && libr::obj_get(b, k1).is_err()
+            && libr::obj_stat(b, k1).is_err()
+            && libr::obj_delete(b, k1).is_err();
+        c.ok("delete oggetto", v19);
+        // 20. Clone di bucket: count + dati.
+        let (cb, ka, kb) = (&b"csrc"[..], &b"a"[..], &b"b"[..]);
+        let v20 = libr::obj_put(cb, ka, b"uno") == Ok(3)
+            && libr::obj_put(cb, kb, b"due!") == Ok(4)
+            && match libr::snap_create(cb) {
+                Ok(sid) => {
+                    libr::snap_clone(sid, b"cdst") == Ok(2)
+                        && matches!(libr::obj_get(b"cdst", ka), Ok(v) if v == b"uno")
+                        && matches!(libr::obj_get(b"cdst", kb), Ok(v) if v == b"due!")
+                        && libr::snap_delete(sid).is_ok()
+                }
+                Err(_) => false,
+            };
+        c.ok("clone bucket", v20);
+        // 21. STAT ritorna id + GET_ID/STAT_ID round-trip.
+        let v21 = match libr::obj_stat(b"cdst", ka) {
+            Ok((id, sz, nv, _)) if id > 0 && sz == 3 && nv == 1 => {
+                matches!(libr::obj_get_id(id), Ok(v) if v == b"uno")
+                    && matches!(libr::obj_stat_id(id), Ok((s2, n2, _)) if s2 == 3 && n2 == 1)
+                    && libr::obj_get_id(id + 1000000).is_err()
+            }
+            _ => false,
+        };
+        c.ok("stat id + get_id/stat_id", v21);
     }
 
     if c.pass == c.total {

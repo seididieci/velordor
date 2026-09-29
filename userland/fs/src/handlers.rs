@@ -1074,6 +1074,163 @@ pub fn handle_obj_get(
     }
 }
 
+/// Parsing + lookup per ID: `Ok((blob_len, chunk))` o `Err(sentinella)`.
+/// Stesso contratto di `obj_get_inner`, chiave = object_id (8 B LE esatti).
+fn obj_get_id_inner<'a>(
+    arca: &'a crate::arca::ArcaFs,
+    payload: &[u8],
+    offset: usize,
+    count: usize,
+) -> Result<(usize, &'a [u8]), u64> {
+    let id = parse_snap_id(payload)?;
+    let blob = arca.get_id(id)?;
+    let blob_len = blob.len();
+    if offset >= blob_len {
+        return Ok((blob_len, &[])); // EOF
+    }
+    let to_read = (blob_len - offset).min(count);
+    Ok((blob_len, &blob[offset..offset + to_read]))
+}
+
+/// Handler R_OBJ_GET_ID: come GET ma per object_id. Scrive SEMPRE il frame
+/// (stessa disciplina anti-desync di `handle_obj_get`).
+pub fn handle_obj_get_id(
+    arca: &crate::arca::ArcaFs,
+    payload: &[u8],
+    offset: usize,
+    count: usize,
+) -> Result<u64, u64> {
+    let result = obj_get_id_inner(arca, payload, offset, count);
+    match result {
+        Ok((blob_len, data)) => {
+            rings::resp_ring_write(blob_len as u64, 0, data);
+            Ok(blob_len as u64)
+        }
+        Err(e) => {
+            rings::resp_ring_write(e, 0, &[]);
+            Err(e)
+        }
+    }
+}
+
+/// Stat per (bucket,key) o per id: (id_o_size, size_o_nv, frame [nv_o_mtime]).
+/// Il chiamante (dispatch) scrive reply a due registri + frame: vedi
+/// `R_PIPE_CREATE` per il pattern (qui senza `continue`: il reply generico
+/// non basta, serve w1).
+pub fn handle_obj_stat(
+    arca: &crate::arca::ArcaFs,
+    payload: &[u8],
+) -> Result<(u64, u64, [u8; 16]), u64> {
+    let (bucket, key, rest) = parse_obj_prefix(payload)?;
+    if !rest.is_empty() {
+        return Err(ERR_INVALID);
+    }
+    let (id, size, nv, mtime) = arca.stat(bucket, key)?;
+    let mut frame = [0u8; 16];
+    frame[..8].copy_from_slice(&nv.to_le_bytes());
+    frame[8..].copy_from_slice(&mtime.to_le_bytes());
+    Ok((id, size, frame))
+}
+
+/// Stat per object_id: (size, nv, frame [mtime]).
+pub fn handle_obj_stat_id(
+    arca: &crate::arca::ArcaFs,
+    payload: &[u8],
+) -> Result<(u64, u64, [u8; 8]), u64> {
+    let id = parse_snap_id(payload)?;
+    let (size, nv, mtime) = arca.stat_id(id)?;
+    Ok((size, nv, mtime.to_le_bytes()))
+}
+
+/// Handler R_OBJ_DELETE: rimuove nome + catena viva (gli snapshot tengono
+/// copie: mai invalidati). Reply generica (0/ERR), niente frame dedicato.
+pub fn handle_obj_delete(
+    arca: &mut crate::arca::ArcaFs,
+    payload: &[u8],
+) -> Result<u64, u64> {
+    let (bucket, key, rest) = parse_obj_prefix(payload)?;
+    if !rest.is_empty() {
+        return Err(ERR_INVALID);
+    }
+    arca.delete(bucket, key)?;
+    Ok(0)
+}
+
+/// Parsa `[len:1][bytes]` esatti (niente trailing): bucket singolo per
+/// SNAP_CREATE/CLONE. Errore se lungo o con resto.
+fn parse_bucket_only(payload: &[u8]) -> Result<&[u8], u64> {
+    let blen = *payload.first().ok_or(ERR_INVALID)? as usize;
+    let bucket = payload.get(1..1 + blen).ok_or(ERR_INVALID)?;
+    if payload.len() != 1 + blen {
+        return Err(ERR_INVALID);
+    }
+    if bucket.len() > libr::OBJ_BUCKET_MAX {
+        return Err(ERR_INVALID);
+    }
+    Ok(bucket)
+}
+
+/// Handler R_SNAP_CREATE: snapshot del bucket → reply snap_id.
+pub fn handle_snap_create(
+    arca: &mut crate::arca::ArcaFs,
+    payload: &[u8],
+) -> Result<u64, u64> {
+    let bucket = parse_bucket_only(payload)?;
+    arca.snap_create(bucket).map(|id| id as u64).ok_or(ERR_INVALID)
+}
+
+/// Parsa `[snap_id:8]` esatti.
+fn parse_snap_id(payload: &[u8]) -> Result<u64, u64> {
+    let id = payload
+        .first_chunk::<8>()
+        .map(|b| u64::from_le_bytes(*b))
+        .ok_or(ERR_INVALID)?;
+    if payload.len() != 8 {
+        return Err(ERR_INVALID);
+    }
+    Ok(id)
+}
+
+/// Handler R_SNAP_DELETE: sgancia lo snapshot (GC delle copie pinnate).
+pub fn handle_snap_delete(
+    arca: &mut crate::arca::ArcaFs,
+    payload: &[u8],
+) -> Result<u64, u64> {
+    let id = parse_snap_id(payload)?;
+    if arca.snap_delete(id) {
+        Ok(0)
+    } else {
+        Err(ERR_NOTFOUND)
+    }
+}
+
+/// Handler R_SNAP_ROLLBACK `[snap_id:8][obj-prefix]`: la versione pinnata
+/// diventa nuova head (clonata). Ritorna la nuova size.
+pub fn handle_snap_rollback(
+    arca: &mut crate::arca::ArcaFs,
+    payload: &[u8],
+) -> Result<u64, u64> {
+    let (idbytes, rest0) = payload.split_at_checked(8).ok_or(ERR_INVALID)?;
+    let id = parse_snap_id(idbytes)?;
+    let (bucket, key, rest) = parse_obj_prefix(rest0)?;
+    if !rest.is_empty() {
+        return Err(ERR_INVALID);
+    }
+    arca.snap_rollback(bucket, key, id)
+}
+
+/// Handler R_SNAP_CLONE `[snap_id:8][dlen:1][dstbucket]`: clona il bucket
+/// pinnato in un bucket nuovo (nuovi id). Ritorna gli oggetti clonati.
+pub fn handle_snap_clone(
+    arca: &mut crate::arca::ArcaFs,
+    payload: &[u8],
+) -> Result<u64, u64> {
+    let (idbytes, rest0) = payload.split_at_checked(8).ok_or(ERR_INVALID)?;
+    let id = parse_snap_id(idbytes)?;
+    let dst = parse_bucket_only(rest0)?;
+    arca.snap_clone(id, dst)
+}
+
 /// Parsing + lookup: `Ok((blob_len, chunk))` o `Err(sentinella)`
 /// (`INVALID` a nomi oltre bound, `NOTFOUND` a chiave assente).
 fn obj_get_inner<'a>(

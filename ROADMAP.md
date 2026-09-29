@@ -92,7 +92,9 @@ Voci con scope e vittoria dichiarati (non date).
        seedato, init dual-mode + pinning FNV/BLAKE2s, testsarca 13/13).
        Prossimo: stesura di dettaglio + ADR per A2, poi 56.
        Vittoria: spec scritta + primo mount.
-- [ ] **56 (A2)** (dopo 55): COW + snapshot/clone + GC (+ packing, + `R_OBJ_MGET`
+- [ ] **56 (A2)** (dopo 55, in corso 56.1: versioni + snapshot/clone/GC in RAM,
+      `R_SNAP_*` + `R_OBJ_GET_ID/STAT_ID/DELETE/STAT`, testsarca 21/21; restano
+      56.2 persistenza B+tree e 56.3 packing/MGET/marker): COW + snapshot/clone + GC (+ packing, + `R_OBJ_MGET`
       se 53 lo chiede) + marker dir persistenti (§5).
       Vittoria: rollback vero; retention log implementabile.
 - [ ] **57 (L0/L1) logging** (L0 prima di 55, L1 dopo 56; `arcafs.md` §15): L0

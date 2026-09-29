@@ -458,6 +458,10 @@ fn real_main(_sp: u64) -> ! {
             R_OBJ_PUT => w0 as usize,
             // R_OBJ_GET: payload=bucket\0key\0, payload_len in w0, offset in w1.
             R_OBJ_GET => w0 as usize,
+            // Versioni + snapshot (Fase 56.1): lunghezze payload nei formati
+            // dei tag (single source nei commenti di `syscall-numbers`).
+            R_SNAP_CREATE | R_SNAP_ROLLBACK | R_SNAP_CLONE | R_OBJ_DELETE | R_OBJ_STAT => w0 as usize,
+            R_SNAP_DELETE | R_OBJ_GET_ID | R_OBJ_STAT_ID => 8,
             R_READ | R_CLOSE | R_RIGHTS_GET | R_DUP_GRANT => 0,
             _ => {
                 // Tag impossibile: scarta tutto e riallinea (vedi req_resync).
@@ -664,6 +668,61 @@ fn real_main(_sp: u64) -> ! {
                 handlers::handle_obj_get(&arca, payload, w1 as usize, RING_MAX_PAYLOAD)
             }
 
+            R_OBJ_GET_ID => {
+                // Payload: [id:8], w1 = offset (come GET, per object_id)
+                handlers::handle_obj_get_id(&arca, payload, w1 as usize, RING_MAX_PAYLOAD)
+            }
+
+            // STAT a due registri + frame dedicato (pattern R_PIPE_CREATE):
+            // il reply generico porta un solo valore, qui servono due.
+            R_OBJ_STAT => {
+                match handlers::handle_obj_stat(&arca, payload) {
+                    Ok((id, size, frame)) => {
+                        rings::resp_ring_write(id, size, &frame);
+                        let _ = libr::reply(0, id, size);
+                    }
+                    Err(e) => {
+                        rings::resp_ring_write(e, 0, &[]);
+                        let _ = libr::reply(0, e, 0);
+                    }
+                }
+                continue;
+            }
+
+            R_OBJ_STAT_ID => {
+                match handlers::handle_obj_stat_id(&arca, payload) {
+                    Ok((size, nv, mtime)) => {
+                        rings::resp_ring_write(size, nv, &mtime);
+                        let _ = libr::reply(0, size, nv);
+                    }
+                    Err(e) => {
+                        rings::resp_ring_write(e, 0, &[]);
+                        let _ = libr::reply(0, e, 0);
+                    }
+                }
+                continue;
+            }
+
+            R_OBJ_DELETE => {
+                handlers::handle_obj_delete(&mut arca, payload)
+            }
+
+            R_SNAP_CREATE => {
+                handlers::handle_snap_create(&mut arca, payload)
+            }
+
+            R_SNAP_DELETE => {
+                handlers::handle_snap_delete(&mut arca, payload)
+            }
+
+            R_SNAP_ROLLBACK => {
+                handlers::handle_snap_rollback(&mut arca, payload)
+            }
+
+            R_SNAP_CLONE => {
+                handlers::handle_snap_clone(&mut arca, payload)
+            }
+
             R_LSEEK => {
                 // w0 = fd, w1 = offset (bit reinterpretati come i64),
                 // payload[0] = whence (expect = 1 garantisce il byte).
@@ -729,7 +788,7 @@ fn real_main(_sp: u64) -> ! {
         // Per gli altri handler, scriviamo solo il result.
         match op_tag {
             R_READ | R_READDIR | R_RIGHTS_GET | R_STAT | R_DISK_LIST | R_DISK_INFO | R_STATVFS
-            | R_GET_HASH | R_OBJ_GET => {
+            | R_GET_HASH | R_OBJ_GET | R_OBJ_GET_ID => {
                 // Gli handler locali hanno gia' scritto nella response ring.
                 // Per i remote, il driver ha gia' scritto nella response ring.
                 // Non fare nulla — il result e' gia' nel frame.

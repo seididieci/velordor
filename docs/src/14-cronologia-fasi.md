@@ -1741,4 +1741,18 @@
          Restano ad A2: persistenza oggetti su volume (store oggi in RAM),
          snapshot/GC, `sys.content_hash` come xattr (oggi re-hash vs
          manifest). Gate: 5/5 + 7/7 + 13/13 + 58/58, zero FAIL/PANIC/FAULT;
-         boot produzione (ARCA_IMG=0, due drive) pulito.
+         boot produzione (ARCA_IMG=0, due drive) pulito.   - [ ] Fase 56 (A2, in corso: 56.1 versioni in RAM fatto).
+         Store versionato: ogni PUT = nuova versione (offset 0 da zero,
+         offset > 0 clone+patch COW); `object_id` monotonico mai riusato +
+         indice inverso; snapshot per-bucket con pin a copie (refcount
+         rimandato agli extent condivisi di 56.2, dichiarato); rollback =
+         nuova head clonata (stesso bucket); clone = nuovo bucket/nuovi id;
+         GC = retention 8 + drop a snap-delete. Tag 0x28–0x2F (`R_SNAP_*`,
+         `R_OBJ_GET_ID/STAT_ID/DELETE/STAT`; reply STAT a due registri).
+         `testsarca` 21/21 (+8: catena, snap, rollback, delete-snap,
+         retention, delete, clone, stat/id). Bug: `//!` in mezzo ad
+         `arca.rs` (E0753), struct duplicata dal mio stesso edit, tag non
+         importati in userfs, `from_le_bytes` su `&[u8;8]` (serve deref),
+         lettura frame STAT prima dei registri (oltre l'header a errore).
+         Restano 56.2 (B+tree on-disk) e 56.3 (packing/MGET/marker).
+         Gate: 5/5 + 7/7 + 21/21 + 58/58, zero FAIL/PANIC/FAULT.

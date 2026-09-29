@@ -64,7 +64,8 @@ use libr::{
     R_CLOSE, R_DELETE, R_MKDIR, R_MOUNT, R_OPEN, R_READ, R_READDIR, R_REGISTER, R_UMOUNT,
     R_WRITE, R_RIGHTS_DROP, R_RIGHTS_GET, R_STAT, R_LSEEK, R_DUP_GRANT, R_DUP_CLAIM,
     R_DUP_CANCEL, R_PIPE_CREATE, R_DISK_LIST, R_DISK_INFO, R_SYNC, R_STATVFS, R_GET_HASH,
-    R_OBJ_PUT, R_OBJ_GET,
+    R_OBJ_PUT, R_OBJ_GET, R_SNAP_CREATE, R_SNAP_DELETE, R_SNAP_ROLLBACK, R_SNAP_CLONE,
+    R_OBJ_GET_ID, R_OBJ_STAT_ID, R_OBJ_DELETE, R_OBJ_STAT,
 };
 // Sentinelle di errore FS (Fase 40): i rifiuti tipizzati viaggiano qui invece
 // del generico ERR; il client li mappa in `posix::Error`. Fase 42: ERR_EMPTY

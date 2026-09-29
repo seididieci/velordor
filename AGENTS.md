@@ -120,7 +120,7 @@ velordor/
 
 ## Stato corrente
 
-Gate: `[testfs] PASS 5/5` + `[testfat] PASS 7/7` + `[testsarca] PASS 13/13` + `[usertests] PASS 58/58` + shell, zero FAIL/PANIC/FAULT (vedi `docs/src/11-testing.md`).
+Gate: `[testfs] PASS 5/5` + `[testfat] PASS 7/7` + `[testsarca] PASS 21/21` + `[usertests] PASS 58/58` + shell, zero FAIL/PANIC/FAULT (vedi `docs/src/11-testing.md`).
 
 - **Stato e futuro**: `ROADMAP.md` (sorgente unica: tabella completate 1-55, Pianificate, Parcheggiate).
 - **Storia dettagliata**: `docs/src/14-cronologia-fasi.md` (log per fase: decisioni, bug trovati, lezioni, validazioni).
@@ -316,10 +316,10 @@ rg '\[bench\]' /tmp/bench-run1.log /tmp/bench-run2.log /tmp/bench-run3.log
 # Suite di regressione (boot): 4 righe PASS attese e ZERO FAIL/PANIC
 #   [testfs] PASS 5/5
 #   [testfat] PASS 7/7
-#   [testsarca] PASS 13/13
+#   [testsarca] PASS 21/21
 #   [usertests] PASS 58/58
 timeout 150 ./run-tests.sh > /tmp/boot.log
-rg '\[testfs\] PASS 5/5|\[testfat\] PASS 7/7|\[testsarca\] PASS 13/13|\[usertests\] PASS 58/58' /tmp/boot.log
+rg '\[testfs\] PASS 5/5|\[testfat\] PASS 7/7|\[testsarca\] PASS 21/21|\[usertests\] PASS 58/58' /tmp/boot.log
 test "$(rg -c 'FAIL|PANIC|#.* FAULT' /tmp/boot.log)" = "0"
 ```
 
