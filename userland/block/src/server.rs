@@ -65,7 +65,7 @@ fn wait_dma(
 }
 
 fn real_main(_sp: u64) -> ! {
-    println!("[userdisk] starting, pid={}", libr::getpid());
+    println!("[block] starting, pid={}", libr::getpid());
 
     // 1. Rilevamento (solo HW, niente FS coinvolto).
     let mut infos = Vec::new();
@@ -75,16 +75,16 @@ fn real_main(_sp: u64) -> ! {
         let letter = (b'a' + i as u8) as char;
         let model = core::str::from_utf8(&info.model[..info.model_len]).unwrap_or("?");
         println!(
-            "[userdisk] sd{}: {} settori, {} {} ({})",
+            "[block] sd{}: {} settori, {} {} ({})",
             letter,
             info.sectors,
             if info.lba48 { "LBA48" } else { "LBA28" },
             if info.cmd == 0x1F0 { "primary" } else { "secondary" },
             if info.drive == 0 { "master" } else { "slave" }
         );
-        println!("[userdisk] sd{}: modello '{}'", letter, model);
+        println!("[block] sd{}: modello '{}'", letter, model);
         let serial = core::str::from_utf8(&info.serial[..info.serial_len]).unwrap_or("?");
-        println!("[userdisk] sd{}: seriale '{}'", letter, serial);
+        println!("[block] sd{}: seriale '{}'", letter, serial);
         // Topologia P2 (Fase 51): capability + geometria per S1/S2 di ArcaFS.
         // `alloc::format!` qui (non nel println diretto): il match con
         // `rpm` lega un valore da interpolare.
@@ -94,7 +94,7 @@ fn real_main(_sp: u64) -> ! {
             rpm => alloc::format!("{} RPM", rpm),
         };
         println!(
-            "[userdisk] sd{}: TRIM={}, settore {}/{}B, {}",
+            "[block] sd{}: TRIM={}, settore {}/{}B, {}",
             letter,
             if info.trim { "si" } else { "no" },
             info.sec_logical,
@@ -104,10 +104,10 @@ fn real_main(_sp: u64) -> ! {
         disks.push(block::AtaDisk::open(info.cmd, info.drive, info.lba48));
     }
     if atapi > 0 {
-        println!("[userdisk] {} device ATAPI skippati (PACKET futuro)", atapi);
+        println!("[block] {} device ATAPI skippati (PACKET futuro)", atapi);
     }
     if disks.is_empty() {
-        println!("[userdisk] nessun disco ATA: solo registrazione servizio");
+        println!("[block] nessun disco ATA: solo registrazione servizio");
     }
 
     // 1b. PCI Bus-Master (Fase 38.0d): trova il PIIX3-IDE, programma la BAR4 a
@@ -118,19 +118,19 @@ fn real_main(_sp: u64) -> ! {
         Some(dev) => match libr::pci::enable_bus_master(dev) {
             Some(b) => {
                 println!(
-                    "[userdisk] BMIBA={:#x} (irqline={}), DMA negoziato — data-plane ancora PIO fino a 38.1",
+                    "[block] BMIBA={:#x} (irqline={}), DMA negoziato — data-plane ancora PIO fino a 38.1",
                     b,
                     libr::pci::irq_line(dev)
                 );
                 Some(b)
             }
             None => {
-                println!("[userdisk] BAR4 fuori finestra/non verificata: resto in PIO");
+                println!("[block] BAR4 fuori finestra/non verificata: resto in PIO");
                 None
             }
         },
         None => {
-            println!("[userdisk] PIIX3-IDE non trovato su PCI: resto in PIO");
+            println!("[block] PIIX3-IDE non trovato su PCI: resto in PIO");
             None
         }
     };
@@ -147,11 +147,11 @@ fn real_main(_sp: u64) -> ! {
         infos[i].udma_neg = mode;
         match mode {
             Some(m) => println!(
-                "[userdisk] sd{}: UDMA mode {} negoziato — data-plane ancora PIO fino a 38.1c",
+                "[block] sd{}: UDMA mode {} negoziato — data-plane ancora PIO fino a 38.1c",
                 letter, m
             ),
             None => println!(
-                "[userdisk] sd{}: niente UDMA (word88={:#x}, word63={:#x}): resto in PIO",
+                "[block] sd{}: niente UDMA (word88={:#x}, word63={:#x}): resto in PIO",
                 letter, infos[i].udma_modes, infos[i].mdma_modes
             ),
         }
@@ -187,7 +187,7 @@ fn real_main(_sp: u64) -> ! {
                 part::PartitionResult::Mbr(parsed) => {
                     for (p, part) in parsed.iter().enumerate() {
                         println!(
-                            "[userdisk] sd{}{}: tipo MBR {:#04x}, start {}, settori {}",
+                            "[block] sd{}{}: tipo MBR {:#04x}, start {}, settori {}",
                             letter,
                             p + 1,
                             part.ptype,
@@ -209,7 +209,7 @@ fn real_main(_sp: u64) -> ! {
                 part::PartitionResult::Gpt(parsed) => {
                     for (p, part) in parsed.iter().enumerate() {
                         println!(
-                            "[userdisk] sd{}{}: GPT start {}, settori {}",
+                            "[block] sd{}{}: GPT start {}, settori {}",
                             letter,
                             p + 1,
                             part.start,
@@ -246,7 +246,7 @@ fn real_main(_sp: u64) -> ! {
         }
         // Riga identità per-nodo (Fase 16d): umana + asserzione host-side
         // del reorder (test-uuid-reorder.py cerca `uuid=<U2>` sulla lettera).
-        let mut idline = alloc::format!("[userdisk] {}: handle={:#x}", n.name, n.handle);
+        let mut idline = alloc::format!("[block] {}: handle={:#x}", n.name, n.handle);
         if let Some(u) = n.vol_uuid {
             idline.push_str(&alloc::format!(" uuid={:08X}", u));
         }
@@ -281,7 +281,7 @@ fn real_main(_sp: u64) -> ! {
         || libr::map_physical(disk_req_phys, DISK_REQ_VA, 1).is_err()
         || libr::map_physical(disk_resp_phys, DISK_RESP_VA, 1).is_err()
     {
-        println!("[userdisk] map ring fallita, exit");
+        println!("[block] map ring fallita, exit");
         libr::exit(1);
     }
     rings::fs_rings_reset();
@@ -295,11 +295,11 @@ fn real_main(_sp: u64) -> ! {
     // 4. Servizio Disk per nome (ADR-0008): userfs lo risolve per il
     // data-plane, init per la supervisione, il kernel non instrada IRQ.
     // (La BMIBA negoziata sopra e' in `bmiba`, il motore DMA in `dma` sotto.)
-    if libr::service_register(libr::Service::Disk).is_ok() {
-        println!("[userdisk] registered as service Disk");
+    if libr::service_register(libr::Service::Block).is_ok() {
+        println!("[block] registered as service Disk");
     }
 
-    // 5. READY al parent SUBITO (come console): userdisk parte PRIMA di userfs
+    // 5. READY al parent SUBITO (come console): block parte PRIMA di userfs
     // (16.3) e l'ACK non puo' aspettare il mount (deadlock: il mount aspetta
     // Fs che parte dopo). Fire-and-forget in `libr` (A3), retry bounded, mai hang.
     libr::signal_ready(1);
@@ -712,7 +712,7 @@ fn real_main(_sp: u64) -> ! {
             _ => None,
         };
         // Idempotente: reply ERR senza frame (convenzione driver), come
-        // devfs/kbd — il client vede -1, mai wedge.
+        // vela/kbd — il client vede -1, mai wedge.
         let _ = libr::reply(0, result.unwrap_or(ERR), 0);
     }
 }

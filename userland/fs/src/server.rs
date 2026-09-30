@@ -12,7 +12,7 @@ fn driver_name_of(chan: u64) -> &'static str {
     match libr::peer_info(chan) {
         Ok(h) if h == HASH_GPU => "gpu",
         Ok(h) if h == HASH_VELA => "vela",
-        Ok(h) if h == HASH_USERDISK => "userdisk",
+        Ok(h) if h == HASH_BLOCK => "block",
         Ok(h) if h == HASH_KBD => "kbd",
         Ok(h) if h == HASH_USERLOG => "userlog",
         Ok(h) if h == HASH_USERSHELL => "usershell",
@@ -152,7 +152,7 @@ fn real_main(_sp: u64) -> ! {
     }
 
     // Mount FAT32 dalle spec statiche (Fase 16b: stesso codice dei mount
-    // dinamici; IpcDisk riconnette da solo a ogni restart di userdisk, quindi
+    // dinamici; IpcDisk riconnette da solo a ogni restart di block, quindi
     // i mount sopravvivono alla morte del driver — t32). Spec inattive
     // (disco assente) restano in tabella e ritentano lazy al primo accesso.
     let mut fat_mounts: Vec<mount::FsMount> = Vec::new();
@@ -160,7 +160,7 @@ fn real_main(_sp: u64) -> ! {
     let mut next_mount_id: u64 = 1;
     for (src, tgt) in mount::STATIC_MOUNTS {
         if mount::apply_mount_spec(&mut fat_mounts, src, tgt, "", &mut next_mount_id) {
-            println!("[userfs] FAT32 montato a /{} (via userdisk)", tgt);
+            println!("[userfs] FAT32 montato a /{} (via block)", tgt);
         } else {
             println!("[userfs] mount {} -> {} inattivo (disco assente?)", src, tgt);
         }
@@ -221,7 +221,7 @@ fn real_main(_sp: u64) -> ! {
     // delle due estremita' (conteggio estremita', libera all'ultima close).
     let mut pipes = pipes::PipeTable::new();
 
-    // Connessione topologia verso userdisk (Fase 51, P2): serve il relay
+    // Connessione topologia verso block (Fase 51, P2): serve il relay
     // R_DISK_LIST/INFO (lookup+HELLO lazy al primo uso, riconnessione
     // automatica a morte driver come gli IpcDisk dei mount).
     let topo_disk = ipc_disk::IpcDisk::new(0);
@@ -414,7 +414,7 @@ fn real_main(_sp: u64) -> ! {
             // lo stale, primo in lista, avvelenerebbe resolve_mount anche
             // dopo una re-registrazione dello stesso prefix.
             mounts.retain(|m| m.driver_chan != chan);
-            // Se il morto era userdisk, invalida i client disco di tutti i
+            // Se il morto era block, invalida i client disco di tutti i
             // mount (Fase 16c: drop d'epoca — il prossimo accesso re-risolve
             // per nome e rimonta, t32). Veloce: solo compare dentro IpcDisk.
             // Le istanze cambiano: bumpa la generazione delle cache FileInfo.

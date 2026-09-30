@@ -2,7 +2,7 @@
 //!
 //! Misura il percorso dati END-TO-END con il TSC (calibrato sul PIT), senza
 //! cache che nascondano il collo di bottiglia (non ne esistono ancora: ogni
-//! op attraversa IPC + userfs + userdisk + PIO). Piattaforma di riferimento:
+//! op attraversa IPC + userfs + block + PIO). Piattaforma di riferimento:
 //! KVM (`scripts/bench.sh`, N run con media: i tempi TCG non sono reali).
 //!
 //! Op misurate (costo crescente del percorso):
@@ -30,7 +30,7 @@ use libr;
 use libr::{println, O_CREAT, O_TRUNC};
 
 /// Spoiler cache (Fase 53, P4): 300 settori sequenziali da /dev/sda letti e
-/// scartati — oltre le 256 entry CLOCK di userdisk: tutto l'evicted (dati +
+/// scartati — oltre le 256 entry CLOCK di block: tutto l'evicted (dati +
 /// metadati del file sotto misura). Freddo deterministico senza restart,
 /// senza protocollo, senza pagine extra. ~0.4 s a chiamata (KVM).
 fn spoil_cache() -> bool {

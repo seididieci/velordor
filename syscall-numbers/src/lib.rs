@@ -220,7 +220,7 @@ pub const PS_SCAN_MAX: u32 = 32;
 /// IPC tag: il client ha scritto nel request ring e notifica il server.
 pub const FS_NOTIFY: u64 = 0x32;
 // ── Tag IPC userland, single source (centralizzazione DocsB: prima duplicati
-// in `libr`, userfs/userdisk/init/tty/kbd e come letterali nei test) ────────
+// in `libr`, userfs/block/init/tty/kbd e come letterali nei test) ────────
 // - FS_REGISTER (0x30): un driver registra il prefix di mount (frame
 //   R_REGISTER nel request ring, letto da userfs).
 // - FS_BUF_REG (0x31): handshake register-only "i miei ring sono req=w0,
@@ -249,7 +249,7 @@ pub const INIT_BOUNCE: u64 = 0x7F;
 // prefix al server e inoltra l'op; il driver risponde sul relay.
 // - OPEN/READ/WRITE/CLOSE/READDIR: op sui nodi device (raw o sintetizzati).
 // - Type: NULL/ZERO (vela), KEYBOARD (tty, `/dev/input`), CONSOLE (gpu,
-//   `/dev/console`), KBD (kbd, `/dev/kbd`); userdisk usa handle disco<<16|sub.
+//   `/dev/console`), KBD (kbd, `/dev/kbd`); block usa handle disco<<16|sub.
 pub const DEV_OPEN: u64 = 0x20;
 pub const DEV_READ: u64 = 0x21;
 pub const DEV_WRITE: u64 = 0x22;
@@ -309,12 +309,12 @@ pub const LOG_RAM_TAIL: usize = 128;
 /// (Fase 14, ADR-0010). Non e' una richiesta: il parent non deve rispondere.
 pub const EXIT_NOTIFY: u64 = 0x7C;
 
-// ── Protocollo DISK_* (data-plane userfs→userdisk, Fase 16) ───────────────
+// ── Protocollo DISK_* (data-plane userfs→block, Fase 16) ───────────────
 // Single source of truth dei tag (Fase 16c): prima duplicati in
 // `userland/fs/src/ipc_disk.rs` e `userland/disk/src/main.rs`. I tag viaggiano
 // nei registri IPC; i payload (nomi, settori) nei ring dedicati.
 //
-// Canale diretto userfs→userdisk (service_lookup(Disk)):
+// Canale diretto userfs→block (service_lookup(Disk)):
 // - HELLO/OPEN/CLOSE: solo registri, niente frame.
 // - READ: un settore per chiamata, frame `[512:8][0:8][settore]` nel ring DISK_RESP.
 // - WRITE (20): un settore per chiamata, frame `[512:8][settore]` nel ring
@@ -322,7 +322,7 @@ pub const EXIT_NOTIFY: u64 = 0x7C;
 //   nessun frame di risposta.
 // - RESOLVE (16c): il nome nodo ("sda", "sda1") viaggia in un frame
 //   `[namelen:8][name]` nel ring DISK_REQ; la reply porta l'handle in w0
-//   (o ERR). userdisk e' l'unico proprietario della mappa nome→handle:
+//   (o ERR). block e' l'unico proprietario della mappa nome→handle:
 //   userfs non indovina piu' nulla dal nome.
 pub const DISK_HELLO: u64 = 0x50;
 pub const DISK_OPEN: u64 = 0x51;
@@ -359,7 +359,7 @@ pub const DISK_FLUSH: u64 = 0x58;
 
 // ── Tag delle operazioni FS (nel frame del ring, non nell'IPC) ────────────
 // Single source of truth (Fase 17): prima duplicati in `libr`, `userfs` e
-// (R_REGISTER) `userdisk`. Il formato frame e' `[tag:4][w0:8][w1:8][payload]`.
+// (R_REGISTER) `block`. Il formato frame e' `[tag:4][w0:8][w1:8][payload]`.
 pub const R_OPEN: u32 = 0x10;
 pub const R_READ: u32 = 0x11;
 pub const R_WRITE: u32 = 0x12;
@@ -590,10 +590,10 @@ pub enum Service {
     /// fa echo e serve `/dev/input/keyboard`. Registrato per la supervisione
     /// init (restart); nessun altro lo risolve per nome (i client usano il FS).
     Tty = 6,
-    /// Disk driver ATA in userspace (Fase 16, `userdisk`): rileva i dischi,
+    /// Driver ATA a blocchi in userspace (Fase 16, `block`, R6): rileva i dischi,
     /// espone `/dev/sdX` (+`/dev/sdXn` per le partizioni MBR). userfs lo
     /// risolve per nome per il data-plane `DISK_*`; init lo supervisiona.
-    Disk = 7,
+    Block = 7,
     /// Server di personalita' POSIX in userspace (Fase 39, P0 della roadmap
     /// 39-45, ADR-0030): tabelle fd virtuali, pipe, job control. Solo
     /// controllo e stato globale POSIX; il kernel resta neutro (ADR-0025) e
@@ -630,9 +630,9 @@ pub const CHANNEL_NONE: u64 = u64::MAX;
 /// kbd drena l'hardware ad ogni giro comunque (anche se la notify si perde
 /// per coda piena, il drain successivo recupera).
 pub const IRQ_NOTIFY_KBD: u64 = 0x41;
-/// Tag del messaggio con cui il kernel sveglia `userdisk` su IRQ14/15 (Fase 38,
+/// Tag del messaggio con cui il kernel sveglia `block` su IRQ14/15 (Fase 38,
 /// ATA DMA: bridge interrupt→IPC come IRQ1→kbd — un wake senza messaggio non
-/// farebbe mai ritorno da `recv()`; userdisk drena lo status Bus-Master ad ogni
+/// farebbe mai ritorno da `recv()`; block drena lo status Bus-Master ad ogni
 /// giro, anche su wake spurio o notify persa per coda piena). Fire-and-forget,
 /// MAI risposta: canale 0, nessun peer.
 pub const IRQ_NOTIFY_DISK: u64 = 0x42;

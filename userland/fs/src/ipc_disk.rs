@@ -1,21 +1,21 @@
-//! Client disco via IPC verso `userdisk` (Fase 16, resolve Fase 16c).
+//! Client disco via IPC verso `block` (Fase 16, resolve Fase 16c).
 //!
 //! Implementa `BlockSource` per il parser FAT32 sopra il protocollo `DISK_*`
 //! su canale diretto (service_lookup(Disk)): `HELLO` per handshake (i fisici
 //! viaggiano nella reply: w0 = req_phys, w1 = resp_phys), poi `READ` settoriali
 //! con `send` sincrona e frame risposta letto dalla finestra mappata.
 //!
-//! Risoluzione nomi (16c): userdisk e' la single source of truth della mappa
+//! Risoluzione nomi (16c): block e' la single source of truth della mappa
 //! nome→handle. `resolve(name)` scrive un frame `[namelen:8][name]` nel
-//! DISK_REQ ring (mappato a `DISK_REQ_VA`, stessa VA di userdisk: page table
+//! DISK_REQ ring (mappato a `DISK_REQ_VA`, stessa VA di block: page table
 //! per-processo, nessun conflitto) e manda `DISK_RESOLVE`; l'handle torna in
 //! w0 di reply (ERR = sconosciuto). userfs non indovina piu' nulla dal nome.
 //!
 //! Riconnessione (init-restart): il canale e' invalidato alla morte di
-//! userdisk (`note_peer_death` su EXIT_NOTIFY, o send fallita) e il prossimo
+//! block (`note_peer_death` su EXIT_NOTIFY, o send fallita) e il prossimo
 //! read/resolve rifa' lookup + HELLO + remap (bound, mai wedge). Il remap
 //! riallinea entrambi i ring: il contenuto appartiene all'epoca morta e l'op
-//! e' ritentata dal chiamante. `userdisk` non richiama mai `userfs`: le send
+//! e' ritentata dal chiamante. `block` non richiama mai `userfs`: le send
 //! sincrone non creano cicli (stesso argomento dei relay verso devfs/console).
 //!
 //! Single-threaded per costruzione (userfs e' monolitico): `Cell` basta, mai
@@ -32,17 +32,17 @@ use libr::{DISK_HELLO, DISK_OPEN, DISK_READ, DISK_RESOLVE, DISK_WRITE};
 /// Topologia P2 (Fase 51): LIST/INFO (single source in `syscall-numbers`).
 use libr::{DISK_INFO, DISK_LIST, DISK_FLUSH};
 
-/// Finestra del request ring di userdisk (stessa VA del server: ogni processo
+/// Finestra del request ring di block (stessa VA del server: ogni processo
 /// ha le proprie page table, nessun conflitto). userfs e' l'unico writer.
 const DISK_REQ_VA: u64 = 0x0000_4000_0024_0000;
-/// Finestra del response ring di userdisk (stessa VA del server: ogni processo
+/// Finestra del response ring di block (stessa VA del server: ogni processo
 /// ha le proprie page table, nessun conflitto).
 const DISK_RESP_VA: u64 = 0x0000_4000_0025_0000;
-/// Bound nomi di resolve (deve combaciare con `DISK_MAX_NAME` di userdisk).
+/// Bound nomi di resolve (deve combaciare con `DISK_MAX_NAME` di block).
 const DISK_MAX_NAME: usize = 16;
 // Geometria ring + errore IPC (A1): single source in `libr`.
 use libr::{ERR, RING_DATA_CAP, RING_HEAD, RING_TAIL};
-/// Bound attesa userdisk a boot/restart (~5 s, come `wait_ready` di init).
+/// Bound attesa block a boot/restart (~5 s, come `wait_ready` di init).
 const HELLO_BOUND_TICKS: i64 = 500;
 /// 24.2 — settori max per IPC DISK (bound del ring: 8 + 7*512 = 3592 nella
 /// request, 16 + 7*512 = 3600 nella response, entrambi < 4087).
@@ -62,7 +62,7 @@ pub struct IpcDiskInfo {
 pub struct IpcDisk {
     /// Handle nodo di mount codificato (disco<<16|sub): 0 = sda whole-disk.
     handle: u32,
-    /// Canale diretto verso userdisk (None = da riconnettere).
+    /// Canale diretto verso block (None = da riconnettere).
     chan: Cell<Option<u64>>,
     /// Nodo validato con DISK_OPEN sulla connessione corrente (Fase 21: prima
     /// si faceva OPEN a OGNI settore — 2 round-trip per settore invece di 1.
@@ -84,7 +84,7 @@ impl IpcDisk {
         self.open_ok.set(false);
     }
 
-    /// Segnala la morte di un peer (EXIT_NOTIFY): se e' userdisk, invalida il
+    /// Segnala la morte di un peer (EXIT_NOTIFY): se e' block, invalida il
     /// canale — il prossimo read/resolve riconnette. Ritorna true se eravamo
     /// connessi (cambio d'epoca: il chiamante userfs droppa le istanze FAT
     /// attive, gli handle possono cambiare — re-resolve per nome al prossimo
@@ -145,7 +145,7 @@ impl IpcDisk {
         }
         let t0 = libr::get_ticks();
         loop {
-            if let Ok(c) = libr::service_lookup(libr::Service::Disk) {
+            if let Ok(c) = libr::service_lookup(libr::Service::Block) {
                 let cu = c as u64;
                 let ok = match libr::send(cu, DISK_HELLO, 0, 0) {
                     Ok(rep) if rep.w0 != ERR => {
@@ -178,7 +178,7 @@ impl IpcDisk {
                     _ => false,
                 };
                 if ok {
-                    println!("[userfs] userdisk connesso (chan {})", cu);
+                    println!("[userfs] block connesso (chan {})", cu);
                     self.chan.set(Some(cu));
                     return Some(cu);
                 }
@@ -245,7 +245,7 @@ impl IpcDisk {
                 ok
             }
             Err(_) => {
-                // userdisk morto durante la send: invalida, il chiamante ritenta.
+                // block morto durante la send: invalida, il chiamante ritenta.
                 self.drop_conn();
                 false
             }
@@ -495,7 +495,7 @@ impl IpcDisk {
         Some(out)
     }
 
-    /// Risolve un nome nodo corto ("sda", "sda1") in handle presso userdisk
+    /// Risolve un nome nodo corto ("sda", "sda1") in handle presso block
     /// (Fase 16c: single source of truth nel driver). Bound, mai wedge.
     /// Solo se il canale e' caduto (non su nome sconosciuto): riconnetti e
     /// ritenta UNA volta. Usata dai mount (l'istanza e' usa-e-getta: l'handle

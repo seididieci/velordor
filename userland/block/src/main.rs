@@ -1,4 +1,4 @@
-//! userdisk — Driver disco ATA in userspace (Fase 16).
+//! block — Driver disco ATA in userspace (Fase 16).
 //!
 //! Possiede le porte ATA del canale primario (via `io_ranges`, TSS
 //! per-processo ADR-0006; il secondario e' probato da `detect.rs` ma non
@@ -7,19 +7,19 @@
 //! nodo come `/dev/sdX` (`FS_REGISTER` per nodo, solo i presenti) + servizio
 //! `Disk` per il data-plane verso userfs.
 //!
-//! REGOLA ANTI-DEADLOCK (lezione Fase 15 + ciclo userfs↔userdisk osservato in
-//! Fase 16.2): userdisk non fa MAI `send` sincrona verso userfs — nemmeno
+//! REGOLA ANTI-DEADLOCK (lezione Fase 15 + ciclo userfs↔block osservato in
+//! Fase 16.2): block non fa MAI `send` sincrona verso userfs — nemmeno
 //! l'handshake `fs_init` di libr (sincrono). E' client FS PURAMENTE async:
 //! ring propri allocati raw, `FS_BUF_REG` + `R_REGISTER` via `send_async` con
 //! collect per req_id nel loop (state machine come tty). userfs fa solo send
-//! sincrone verso userdisk, e userdisk drena sempre (mai bloccato su userfs):
+//! sincrone verso block, e block drena sempre (mai bloccato su userfs):
 //! nessun ciclo possibile, in nessuna direzione, a boot come a restart.
 //!
 //! Due protocolli serviti, entrambi con reply implicita (ADR-0008):
-//! - `DISK_*` (canale diretto userfs→userdisk, service_lookup(Disk)): HELLO
+//! - `DISK_*` (canale diretto userfs→block, service_lookup(Disk)): HELLO
 //!   (fisici nelle reply: w0 = req_phys del DISK_REQ ring, w1 = resp_phys),
 //!   OPEN/READ multi-settore (24.2, count≤7 per IPC), CLOSE, RESOLVE
-//!   chiave→handle (Fase 16c: userdisk e' l'unico proprietario della mappa;
+//!   chiave→handle (Fase 16c: block e' l'unico proprietario della mappa;
 //!   16d: chiave = nome (`sda`), UUID hex 8 char (seriale volume FAT) o label
 //!   (priorità in quest'ordine).
 //! - `DEV_*` (relay userfs per gli open raw `/dev/sdX`): OPEN(w0=handle
@@ -27,7 +27,7 @@
 //!   multipli di 512), WRITE sempre ERR (read-only), CLOSE, READDIR vuota.
 //!
 //! Boot: detection (solo HW) → ring FS+DISK → `service_register(Disk)` →
-//! SVC_READY al parent SUBITO (userdisk parte PRIMA di userfs: come console,
+//! SVC_READY al parent SUBITO (block parte PRIMA di userfs: come console,
 //! l'ACK non aspetta nulla) → loop (la registrazione FS avanza da sola via SM
 //! appena userfs esiste).
 
@@ -92,7 +92,7 @@ use libr::DISK_WRITE;
 //   +0x400000).
 
 /// Request/response ring FS propri (stesse VA di libr: page table per-processo,
-/// nessun conflitto — e userdisk non usa il machinery FS di libr).
+/// nessun conflitto — e block non usa il machinery FS di libr).
 const FS_REQ_VA: u64 = 0x0000_4000_0020_0000;
 const FS_RESP_VA: u64 = 0x0000_4000_0021_0000;
 const CLI_REQ: u64 = libr::CLI_REQ_VA;
@@ -110,6 +110,6 @@ use libr::R_REGISTER;
 
 #[panic_handler]
 fn panic(_info: &core::panic::PanicInfo) -> ! {
-    println!("[userdisk] panic");
+    println!("[block] panic");
     libr::exit(1)
 }

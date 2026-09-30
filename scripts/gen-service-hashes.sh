@@ -66,7 +66,7 @@ if not bins:
 # misura il kernel) e non controlla fs (embedded, TCB); userfs non pinna se
 # stesso (la regola same-image confronta due peer vivi, niente manifest).
 # Il manifest copre esattamente i servizi caricati da disco + disk (embedded
-# ma senza ciclo: userdisk non include il manifest) — per questi il fixpoint
+# ma senza ciclo: block non include il manifest) — per questi il fixpoint
 # e' raggiunto in UN passaggio (i loro binari non incorporano alcun hash).
 bins = [p for p in bins if os.path.basename(p) not in ("userinit.bin", "userfs.bin")]
 

@@ -1,5 +1,5 @@
 //! Port I/O x86 (`in`/`out`) eseguito dal ring 3 (A4: prima duplicato in
-//! `userdisk/src/io.rs` e `kbd/src/io.rs`, identici per `inb`/`outb`).
+//! `block/src/io.rs` e `kbd/src/io.rs`, identici per `inb`/`outb`).
 //!
 //! Ogni processo puo' usare queste istruzioni solo sulle porte abilitate dalla
 //! propria I/O bitmap nel TSS per-processo (ADR-0006); ogni altra porta genera

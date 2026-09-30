@@ -26,12 +26,12 @@ macro_rules! user_binary {
 // via `spawn_image` (syscall 38).
 mod init_bin { user_binary!(userinit_elf, "/../userland/build/userinit.bin"); }
 mod fs_bin { user_binary!(userfs_elf, "/../userland/build/userfs.bin"); }
-mod disk_bin { user_binary!(userdisk_elf, "/../userland/build/userdisk.bin"); }
+mod disk_bin { user_binary!(block_elf, "/../userland/build/block.bin"); }
 mod log_bin { user_binary!(userlog_elf, "/../userland/build/userlog.bin"); }
 
 use init_bin::userinit_elf;
 use fs_bin::userfs_elf;
-use disk_bin::userdisk_elf;
+use disk_bin::block_elf;
 use log_bin::userlog_elf;
 
 /// Spawna un processo user (gira in ring 3) dal binario ELF `elf`. `io_ranges`
@@ -102,18 +102,18 @@ struct NamedBinary {
     name: &'static str,
     elf: fn() -> &'static [u8],
     /// Porte I/O (inclusive) consentite a ring 3 per questo processo (TSS
-    /// per-processo). `&[]` = nessuna porta. Es. `userdisk` → ATA PIO.
+    /// per-processo). `&[]` = nessuna porta. Es. `block` → ATA PIO.
     io_ranges: &'static [(u16, u16)],
     /// Priorita' di scheduling del processo.
     priority: crate::ordo::sched::Priority,
 }
 
 /// Porte dei controller ATA PIO primario + secondario per il disk driver
-/// (Fase 16, `userdisk`: enumerazione master/slave su entrambi i canali).
+/// (Fase 16, `block`: enumerazione master/slave su entrambi i canali).
 /// `userfs` non tocca piu' porte (Fase 16.2): qualunque `in/out` li' e' #GP.
 /// Fase 38.0d (ATA DMA): + spazio di configurazione PCI (`0xCF8-0xCFF`, per
 /// trovare il PIIX3-IDE e programmarne la BAR4 — col boot diretto PVH nessun
-/// BIOS lo fa) + finestra Bus-Master `0xC000-0xC00F` scelta da userdisk
+/// BIOS lo fa) + finestra Bus-Master `0xC000-0xC00F` scelta da block
 /// (`libr::pci::BM_BASE`, QEMU-scoped: sopra il legacy nulla e' programmato).
 /// Il conf arriva a `0xCFF` (NON `0xCFC`): la CPU controlla TUTTE le porte
 /// della width e un DWORD a `0xCFC` tocca `CFD/CFE/CFF` — con fine `0xCFC`
@@ -144,7 +144,7 @@ use crate::ordo::sched::Priority;
 /// I processi di servizio (fs) sono `Normal`.
 const NAMED_BINARIES: &[NamedBinary] = &[
     NamedBinary { name: "userfs",      elf: userfs_elf,      io_ranges: &[], priority: Priority::Normal },
-    NamedBinary { name: "userdisk",    elf: userdisk_elf,    io_ranges: ATA_PIO_RANGES, priority: Priority::Normal },
+    NamedBinary { name: "block",       elf: block_elf,       io_ranges: ATA_PIO_RANGES, priority: Priority::Normal },
     NamedBinary { name: "userinit",    elf: userinit_elf,    io_ranges: &[], priority: Priority::Normal },
     NamedBinary { name: "userlog",     elf: userlog_elf,     io_ranges: &[], priority: Priority::Normal },
 ];

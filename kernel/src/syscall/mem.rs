@@ -243,7 +243,7 @@ pub(super) fn sys_sbrk(inc: u64) -> i64 {
 // ── Ring buffer SPSC per-processo (Fase 10.2) ─────────────────────
 //
 // Ogni processo alloca COPPIE fresche di pagine ring (request + response)
-// via `SYS_RING_ALLOC` (Fase 16: multi-coppia, es. userdisk FS+DISK),
+// via `SYS_RING_ALLOC` (Fase 16: multi-coppia, es. block FS+DISK),
 // mappate a `USER_FS_BUFFER` (request) e `USER_RESP_RING` (response).
 // Il chiamante registra entrambi gli indirizzi fisici presso userfs con
 // una IPC `FS_BUF_REG`. Le operazioni FS sono IPC dirette client→userfs
@@ -253,7 +253,7 @@ pub(super) fn sys_sbrk(inc: u64) -> i64 {
 /// corrente, le mappa a `USER_FS_BUFFER` e `USER_RESP_RING`, e ritorna gli
 /// indirizzi fisici via IpcResult (req_phys in rax, resp_phys in rdi). -1 su OOM o errore.
 /// Ogni chiamata da' pagine FRESCHE (Fase 16: un processo puo' allocare piu'
-/// coppie, es. userdisk FS+DISK). Il mapping e' NON-owned: il free avviene via
+/// coppie, es. block FS+DISK). Il mapping e' NON-owned: il free avviene via
 /// record a teardown (`free_ring_pages`), mai double-free col walk owned.
 pub(super) fn sys_ring_alloc() -> i64 {
     let cur = current_id() as usize;

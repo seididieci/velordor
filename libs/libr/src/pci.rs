@@ -1,7 +1,7 @@
 //! Spazio di configurazione PCI in ring 3 (Fase 38.0d, ATA DMA).
 //!
 //! Modulo condiviso e traslocabile (il servizio `userland/pci` nascerà solo al
-//! SECONDO consumer — audio — per YAGNI): oggi lo usa solo userdisk per trovare
+//! SECONDO consumer — audio — per YAGNI): oggi lo usa solo block per trovare
 //! il PIIX3-IDE di QEMU, programmarne la BAR4 Bus-Master e abilitarne il DMA.
 //!
 //! Contesto: col boot diretto PVH nessun BIOS programma le BAR — BAR4 all'avvio
@@ -85,7 +85,7 @@ pub fn find_piix3_ide() -> Option<PciDev> {
 /// nel command (offset 0x04, bit 0 e 2, resto preservato). Ritorna la BMIBA se
 /// la readback conferma, altrimenti `None` (PIO).
 ///
-/// Se la BAR vale gia' `BM_BASE` (restart userdisk senza reboot: la BAR
+/// Se la BAR vale gia' `BM_BASE` (restart block senza reboot: la BAR
 /// sopravvive) la si tiene; altrimenti la si riprogramma — QEMU di default la
 /// pre-programma a `0xC040`, fuori dal nostro grant statico. Col boot diretto
 /// nessun driver e' live sul Bus-Master (il PIO usa le porte legacy, non la

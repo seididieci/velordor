@@ -1,7 +1,7 @@
 use crate::*;
 
 /// Sorgente di settori da 512 byte (LBA assoluti nel nodo montato).
-/// Implementata dal client IPC verso userdisk (Fase 16, `ipc_disk.rs`):
+/// Implementata dal client IPC verso block (Fase 16, `ipc_disk.rs`):
 /// il parser non distingue (il driver ATA locale e' stato rimosso in Fase 16).
 pub trait BlockSource {
     fn read_sector(&self, lba: u64, buf: &mut [u8; 512]) -> bool;
@@ -91,7 +91,7 @@ pub struct Fat32<B: BlockSource> {
     /// Label volume BPB+71 (11 byte raw, padding spazi): identità `LABEL=`.
     pub(crate) vol_label: [u8; 11],
     // Nota: nessun memo settoriale qui (il 24.1 `fat_memo` e' stato rimosso in
-    // 25: la cache settoriale write-through vive in `userdisk`, unico
+    // 25: la cache settoriale write-through vive in `block`, unico
     // proprietario dei blocchi — un secondo strato cacherebbe gli stessi 512 B
     // due volte. Ogni `read_sector` attraversa IPC+PIO o la cache del driver).
 }

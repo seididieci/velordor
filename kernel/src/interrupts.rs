@@ -290,16 +290,16 @@ extern "x86-interrupt" fn disk_secondary_handler(_stack_frame: InterruptStackFra
 }
 
 /// Corpo comune IRQ14/15 (Fase 38, ATA DMA): routing puro + notify, come
-/// IRQ1→kbd. Il driver vive in userspace (`userdisk`, servizio `Disk`): al
+/// IRQ1→kbd. Il driver vive in userspace (`block`, servizio `Disk`): al
 /// risveglio chiude il DMA event-driven (38.2). `vector` e' il numero INT
 /// (0x2E/0x2F): `notify_end_of_interrupt` fa EOI slave+master per gli IRQ slave.
 /// 38.2d — EOI PRIMA della notify: `notify_irq` puo' cambiare contesto
 /// (wakeup-preemption) e il PIC va riarmato prima (come il timer). EOI in ogni
-/// caso (mai wedge). Senza driver registrato l'IRQ va perso finche' userdisk
+/// caso (mai wedge). Senza driver registrato l'IRQ va perso finche' block
 /// non parte (come i tasti senza kbd).
 fn disk_irq(vector: u8) {
     unsafe { crate::pic::end_of_interrupt(vector) };
-    if let Some(owner) = crate::relay::channels::lookup(syscall_numbers::Service::Disk) {
+    if let Some(owner) = crate::relay::channels::lookup(syscall_numbers::Service::Block) {
         crate::ordo::sched::notify_irq(owner, syscall_numbers::IRQ_NOTIFY_DISK);
     }
 }

@@ -34,7 +34,7 @@ if [ "${RUN_BENCH:-0}" = "1" ]; then
     echo "[build] userinit CON bench (RUN_BENCH=1)"
 fi
 
-build_one userland/disk    userland/disk/src/disk.ld       userdisk.bin    userdisk
+build_one userland/block   userland/block/src/block.ld     block.bin       block
 build_one userland/vela    userland/vela/src/vela.ld       vela.bin        vela
 build_one userland/gpu     userland/gpu/src/gpu.ld         gpu.bin         gpu
 build_one userland/kbd     userland/kbd/src/kbd.ld         kbd.bin         kbd

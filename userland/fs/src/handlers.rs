@@ -22,7 +22,7 @@ pub fn handle_open(
     let trunc = flags & libr::O_TRUNC != 0;
     let append = flags & libr::O_APPEND != 0;
 
-    // Cerca nei mount point registrati (vela, console, userdisk, futuri driver).
+    // Cerca nei mount point registrati (vela, console, block, futuri driver).
     if let Some((driver_chan, rel)) = mount_legacy::resolve_mount(path, mounts) {
         // (Ramo device invariato: gli errori dei driver restano opachi —
         // nessun dominio attribuibile senza interrogarli.)
@@ -182,7 +182,7 @@ pub fn handle_read(
             // misurata nei restart t27/t28/t32). L'handle e' copiato sullo
             // stack (FileInfo: Copy, niente heap per-op, regola Fase 24).
             let mid = mnt.ok_or(ERR)?;
-            // Il mount puo' essere caduto inattivo alla morte di userdisk
+            // Il mount puo' essere caduto inattivo alla morte di block
             // (drop d'epoca in `note_peer_death`): riattiva per id qui, come
             // `resolve_fsmount` fa per open/readdir (fail-loud, mai shadow).
             if !mount::reactivate_mount_by_id(mounts_fat, mid, fgen) {

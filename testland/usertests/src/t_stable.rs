@@ -164,33 +164,33 @@ pub fn t_disk() -> bool {
         println!("[usertests] t32: baseline /dev/sda FAILED");
         return false;
     }
-    // Bounce via init (Fase 35: userdisk e' figlio di init, kill diretto qui
+    // Bounce via init (Fase 35: block e' figlio di init, kill diretto qui
     // fallirebbe col kill parent-scoped).
-    let p1 = match libr::init_bounce(libr::Service::Disk) {
+    let p1 = match libr::init_bounce(libr::Service::Block) {
         Ok(p) => p,
         Err(_) => {
-            println!("[usertests] t32: bounce userdisk FAILED");
+            println!("[usertests] t32: bounce block FAILED");
             return false;
         }
     };
     // Fase A: sparizione dallo slot (morte osservata dal registry).
     if !libr::poll_wait(1000, libr::POLL_PERIOD_TICKS, || {
-        libr::service_pid(libr::Service::Disk).is_err()
+        libr::service_pid(libr::Service::Block).is_err()
     }) {
-        println!("[usertests] t32: userdisk mai sparito (timeout)");
+        println!("[usertests] t32: block mai sparito (timeout)");
         return false;
     }
     // Fase B: ricomparsa (init ha riavviato + registrato).
     let p2 = match libr::poll_value(1000, libr::POLL_PERIOD_TICKS, || {
-        libr::service_pid(libr::Service::Disk).ok()
+        libr::service_pid(libr::Service::Block).ok()
     }) {
         Some(p) => p,
         None => {
-            println!("[usertests] t32: userdisk mai riapparso (timeout)");
+            println!("[usertests] t32: block mai riapparso (timeout)");
             return false;
         }
     };
-    println!("[usertests] t32: userdisk riavviato (pid {} -> {})", p1, p2);
+    println!("[usertests] t32: block riavviato (pid {} -> {})", p1, p2);
     // Fase C: operativita' raw dopo il restart.
     if !libr::poll_wait(1000, libr::POLL_PERIOD_TICKS, helpers::disk_sector0_ok) {
         println!("[usertests] t32: /dev/sda mai tornato (timeout)");

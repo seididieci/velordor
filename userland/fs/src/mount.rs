@@ -132,7 +132,7 @@ pub fn normalize_target(target: &str) -> Option<String> {
 /// Normalizza una source. Tre forme (Fase 16d): `/dev/<nodo>` (nomi brevi
 /// `sda`, by-path `disk/by-uuid/<HEX>` / `disk/by-label/<NOME>`), `UUID=<hex8>`
 /// (seriale volume FAT, maiuscolo), `LABEL=<nome>` (match esatto, case
-/// sensibile). Solo controllo sintattico: la chiave la risolve userdisk via
+/// sensibile). Solo controllo sintattico: la chiave la risolve block via
 /// DISK_RESOLVE (`Source::parse` + `negotiate`). Ritorna None fuori grammatica.
 fn normalize_source(source: &str) -> Option<String> {
     let s = source.trim();
@@ -165,7 +165,7 @@ fn normalize_source(source: &str) -> Option<String> {
 /// `/dev/sda` → `sda`, `/dev/disk/by-uuid/<H>` → `<H>`,
 /// `/dev/disk/by-label/<N>` → `<N>`, `UUID=<H>` → `<H>`, `LABEL=<N>` → `<N>`.
 /// La semantica (`/dev` = namespace, driver = matching) resta una sola:
-/// userfs possiede il layout, userdisk il matching nome/UUID/label.
+/// userfs possiede il layout, block il matching nome/UUID/label.
 fn resolve_key(source: &str) -> Option<String> {
     if let Some(name) = source.strip_prefix("/dev/") {
         if let Some(tail) = name.strip_prefix("disk/by-uuid/") {
@@ -188,7 +188,7 @@ fn resolve_key(source: &str) -> Option<String> {
     None
 }
 
-/// Risolve una source in handle presso userdisk (Fase 16c/16d: single
+/// Risolve una source in handle presso block (Fase 16c/16d: single
 /// source of truth nel driver). Ritorna None a chiave sconosciuta o driver
 /// irraggiungibile (bound, mai wedge): il chiamante non cambia stato.
 /// Usata dagli open raw by-path (`handlers.rs`); i mount passano da
@@ -293,7 +293,7 @@ pub fn by_id_mut(mounts: &mut Vec<FsMount>, id: u64) -> Option<&mut FsMount> {
     mounts.iter_mut().find(|m| m.id == id)
 }
 
-/// Riattiva un mount inattivo (Fase 16c): re-resolve del nome presso userdisk
+/// Riattiva un mount inattivo (Fase 16c): re-resolve del nome presso block
 /// (gli handle possono cambiare dopo un restart del driver) + remount.
 /// Fast path: mount gia' attivo → true senza IPC. Ritorna true se attivo.
 /// A remount riuscito bumpa `gen` (l'istanza parser e' nuova: le cache

@@ -240,7 +240,7 @@ pub fn dev_type(name: &str) -> Option<u64> {
 
 /// Parsa un nome nodo disco Linux ("sda".."sdp", "sda1"..) in handle codificato
 /// (disco<<16|sub, 0 = whole-disk). SOLO per gli open raw `/dev/sdX` (rel
-/// vuota): il mount (Fase 16c) risolve l'handle presso userdisk via
+/// vuota): il mount (Fase 16c) risolve l'handle presso block via
 /// DISK_RESOLVE invece di indovinarlo qui. Ritorna None se non e' un nome disco.
 pub fn disk_handle(name: &str) -> Option<u32> {
     let rest = name.strip_prefix("sd")?;

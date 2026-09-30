@@ -1,7 +1,7 @@
 // Split from vmm_user.rs (byte-identical move; see facade).
 /// Ring buffer SPSC per processo (PID → fino a N coppie (req_phys, resp_phys)).
 /// Allocate dalla syscall `SYS_RING_ALLOC`, UNA COPPIA FRESCA A OGNI CHIAMATA
-/// (Fase 16: userdisk ne alloca due — FS + DISK — e la cache single-pair
+/// (Fase 16: block ne alloca due — FS + DISK — e la cache single-pair
 /// restituiva le stesse pagine due volte, con cross-talk totale tra i ring).
 /// Il teardown libera tutte le coppie registrate: il mapping della syscall
 /// (sempre a USER_FS_BUFFER/RESP_RING) e' NON-owned apposta, cosi' il free

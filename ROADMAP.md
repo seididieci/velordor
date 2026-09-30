@@ -122,7 +122,7 @@ Voci con scope e vittoria dichiarati (non date).
 Idee senza trigger (non date, solo su pressione reale).
 
 - [ ] audio AC97+CBS (primo client servizio PCI, chiude ADR-0007 davvero)
-- [ ] server-run async userdisk (quando l'overlap DMA lo richiede)
+- [ ] server-run async block (quando l'overlap DMA lo richiede)
 - [ ] Strato 3 credenziali
 - [ ] ext2/ATAPI/write-back/read-ahead/`DISK_STATS`/generazioni PID/thread
       (solo su pressione reale)

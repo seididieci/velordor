@@ -165,9 +165,9 @@ fn pop_msg(sched: &mut Scheduler, cur: usize) -> Option<IpcResult> {
         // `notify_irq`; mai un canale reale) e EXIT_NOTIFY (peer morto:
         // rispondere e' impossibile per disegno — tutti i server fanno
         // `continue` senza reply, verificato). Senza, un server in `recv` con
-        // reply in sospeso (userdisk in `wait_dma`) perde la reply al primo
+        // reply in sospeso (block in `wait_dma`) perde la reply al primo
         // EXIT altrui: osservato (morte usertests a fine suite durante una DMA
-        // di shell-load → reply persa → wedge userfs↔userdisk permanente,
+        // di shell-load → reply persa → wedge userfs↔block permanente,
         // tutto il Normal bloccato). `rdi` (canale) e tag restano visibili:
         // gli EXIT si riconoscono dal tag come prima.
         if m.channel != 0 && m.tag != syscall_numbers::EXIT_NOTIFY {

@@ -384,7 +384,7 @@ struct Supervised {
 /// supervisore. La notifica di morte e' consumata qui, il chiamante riprova.
 /// Le EXIT_NOTIFY di ALTRI figli (una morte durante un restart) NON si
 /// scartano: vanno nello stash e il chiamante le processa (sotto). Scartarle
-/// perde restart (osservato t32: userdisk morto durante il restart di vela
+/// perde restart (osservato t32: block morto durante il restart di vela
 /// → mai riavviato → cascata fino al panic di init).
 fn wait_ready(chan: i64) -> bool {
     let t0 = libr::get_ticks();
@@ -592,13 +592,13 @@ fn real_main(_sp: u64) -> ! {
     // time: backdate/re-key), gpu (prima di kbd), uptime, vela, kbd,
     // tty, posix. A boot ogni spawn mancato e' FAIL LOUD (exit → panic).
     // userlog PRIMA di userfs per disegno (ADR-0039): assorbe tutto in RAM e
-    // riversa alla FLUSH; userdisk fa READY subito dopo detection +
+    // riversa alla FLUSH; block fa READY subito dopo detection +
     // service_register (prima del mount dei nodi, che aspetta Fs).
     let Some(log_chan) = boot_svc_nowait(&SVC_LOG) else {
         println!("[init] boot FAILED (log spawn), panic");
         libr::exit(1);
     };
-    let Some(disk_chan) = spawn_child(b"userdisk") else {
+    let Some(disk_chan) = spawn_child(b"block") else {
         println!("[init] boot FAILED (disk), panic");
         libr::exit(1);
     };
@@ -678,11 +678,11 @@ fn real_main(_sp: u64) -> ! {
     //
     // Disk/fs embedded: manifest inline (path=None) con gli stessi nomi: il
     // restart riusa `spawn_child` come a boot.
-    const META_DISK: SvcMeta = SvcMeta { bin: b"userdisk", path: None, obj: None, prio: 16, io: &[] };
+    const META_DISK: SvcMeta = SvcMeta { bin: b"block", path: None, obj: None, prio: 16, io: &[] };
     const META_FS: SvcMeta = SvcMeta { bin: b"userfs", path: None, obj: None, prio: 16, io: &[] };
     let mut supervised = [
         Supervised { meta: &SVC_CONSOLE, svc: libr::Service::Gpu, chan: -1, pid: -1, restarts: 0, window_start: 0, held: false },
-        Supervised { meta: &META_DISK, svc: libr::Service::Disk, chan: -1, pid: -1, restarts: 0, window_start: 0, held: false },
+        Supervised { meta: &META_DISK, svc: libr::Service::Block, chan: -1, pid: -1, restarts: 0, window_start: 0, held: false },
         Supervised { meta: &META_FS, svc: libr::Service::Fs, chan: -1, pid: -1, restarts: 0, window_start: 0, held: false },
         Supervised { meta: &SVC_VELA, svc: libr::Service::Vela, chan: -1, pid: -1, restarts: 0, window_start: 0, held: false },
         Supervised { meta: &SVC_KBD, svc: libr::Service::Kbd, chan: -1, pid: -1, restarts: 0, window_start: 0, held: false },

@@ -507,7 +507,7 @@ pub fn t_diskboot() -> bool {
         libr::Service::Vela,
         libr::Service::Kbd,
         libr::Service::Tty,
-        libr::Service::Disk,
+        libr::Service::Block,
     ] {
         if libr::service_lookup(svc).is_err() {
             println!("[usertests] t39: servizio {:?} non registrato", svc as u64);

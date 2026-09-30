@@ -41,7 +41,7 @@ dd if=/dev/zero of="$OUT" bs=1M count=32 2>/dev/null
 #
 #    BUG STORICO (Fase 55): la tabella partiva a offset 440 invece di 0x1BE
 #    e il file MBR era di 506 byte (short write su dd bs=512): la signature
-#    finiva a offset 504 invece di 0x1FE e userdisk leggeva sig=[0x0,0x0]
+#    finiva a offset 504 invece di 0x1FE e block leggeva sig=[0x0,0x0]
 #    senza esporre sdc1. Ora offset e dimensione sono esatti e verificati
 #    sotto (fail-loud).
 

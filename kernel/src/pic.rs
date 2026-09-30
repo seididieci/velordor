@@ -23,7 +23,7 @@ pub fn init() {
     unsafe { PICS.lock().initialize() };
 
     // Maschera tutte le IRQ tranne IRQ 0 (timer), IRQ 1 (keyboard) e
-    // IRQ 14/15 (ATA primario/secondario, Fase 38: notify a userdisk; col PIO
+    // IRQ 14/15 (ATA primario/secondario, Fase 38: notify a block; col PIO
     // attuale sono spurie e tollerate, col DMA diventano il completamento).
     // Bit 0 = IRQ0, ... bit 7 = IRQ7; 1 = masked. Il bit 2 (IRQ2, cascade
     // verso lo slave) DEVE restare 0: mascherarlo rende lo slave sordo

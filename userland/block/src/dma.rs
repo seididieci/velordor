@@ -120,13 +120,13 @@ impl DmaEngine {
     pub fn init(bmiba: Option<u16>, modes: &[Option<u8>]) -> Option<DmaEngine> {
         let bmiba = bmiba?;
         if !modes.iter().any(|m| m.is_some()) {
-            println!("[userdisk] DMA: nessun disco con modo — resto in PIO");
+            println!("[block] DMA: nessun disco con modo — resto in PIO");
             return None;
         }
         let phys = match libr::dma_alloc(1) {
             Ok(p) => p,
             Err(_) => {
-                println!("[userdisk] DMA: staging alloc fallita — resto in PIO");
+                println!("[block] DMA: staging alloc fallita — resto in PIO");
                 return None;
             }
         };
@@ -138,7 +138,7 @@ impl DmaEngine {
             }
         }
         println!(
-            "[userdisk] DMA engine: bmiba={:#x} staging phys={:#x} (PRD+dati, 1 pagina)",
+            "[block] DMA engine: bmiba={:#x} staging phys={:#x} (PRD+dati, 1 pagina)",
             bmiba, phys
         );
         Some(DmaEngine {
@@ -156,7 +156,7 @@ impl DmaEngine {
     }
 
     /// Contatori (prova d'uso reale in 38.3: `dma_ok > 0`, `dma_fb == 0`).
-    /// `cpu` = tick CPU consumati da userdisk (via `ps_info` su se stesso,
+    /// `cpu` = tick CPU consumati da block (via `ps_info` su se stesso,
     /// 1 syscall ogni 512 xfers): la prova della CPU liberata dall'event-driven
     /// (38.2: poll bruciava ~1,2 ms/op a priorita' Normal, l'attesa dorme).
     fn note(&mut self, ok: bool) {
@@ -171,7 +171,7 @@ impl DmaEngine {
             let dcpu = cpu.saturating_sub(self.cpu_last);
             self.cpu_last = cpu;
             println!(
-                "[userdisk] DMA xfers: ok={} fb={} irq_drained={} ev_wait={} ev_fast={} ev_abort={} cpu={} (+{})",
+                "[block] DMA xfers: ok={} fb={} irq_drained={} ev_wait={} ev_fast={} ev_abort={} cpu={} (+{})",
                 self.dma_ok,
                 self.dma_fb,
                 self.irq_drained,
@@ -204,7 +204,7 @@ impl DmaEngine {
     /// Raro (morte userfs sotto carico): stampa subito, mai throttled.
     pub fn note_ev_abort(&mut self) {
         self.ev_abort += 1;
-        println!("[userdisk] DMA wait abort (richiedente morto): totale {}", self.ev_abort);
+        println!("[block] DMA wait abort (richiedente morto): totale {}", self.ev_abort);
     }
 
     fn bm_cmd(&self, chan: u16) -> u16 {

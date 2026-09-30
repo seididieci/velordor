@@ -344,7 +344,7 @@ test "$(rg -c 'FAIL|PANIC|#.* FAULT' /tmp/boot.log)" = "0"
    guardia (#PF user-mode). Regola: buffer grandi in `Box`, handler/seed e i
    livelli btree/volume `#[inline(never)]` (firewall). Vale per chi tocca
    `userland/fs` e `arcafs::btree`.
-7. **DMA e cache settoriale (userdisk)**: i path DMA di `DISK_READ`/`DISK_WRITE`
+7. **DMA e cache settoriale (block)**: i path DMA di `DISK_READ`/`DISK_WRITE`
    devono fare fill della cache dopo `finish_dma`, o le letture raw cached
    (`DEV_READ`→`node_read`) servono dati stale mentre le scritture su disco
    sono fresche (fix 56.2c). Il PIO (`node_read_multi`/`node_write_multi`) lo

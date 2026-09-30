@@ -139,7 +139,7 @@ fn read_mbr_gpt(disk_path: &str, buf: &mut [u8; 512]) -> bool {
 /// Ritorna `Some((start_lba, size))` della prima entry con type != 0.
 /// BUG STORICO (Fase 55): lo start era ricalcolato a mano su 3 byte stile
 /// CHS invece che u32 LE a off+8 — ora single source col guest
-/// (`parse_mbr` in userdisk/part.rs).
+/// (`parse_mbr` in block/part.rs).
 fn find_mbr_partition(buf: &[u8; 512]) -> Option<(u64, u64)> {
     // MBR partition table starts at offset 446 (0x1BE), 16 bytes per entry
     for i in 0..4 {

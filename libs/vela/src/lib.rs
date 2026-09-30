@@ -12,7 +12,7 @@
 /// pseudo-device (`null`, `zero`). Il mount resta in userfs/cardo.
 pub mod hub;
 
-/// Storage a blocchi (server `block`, ex-userdisk): geometria ring DISK_*
+/// Storage a blocchi (server `block`, ex-block): geometria ring DISK_*
 /// e convenzioni data-plane condivise coi client futuri.
 pub mod block;
 

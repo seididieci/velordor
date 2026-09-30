@@ -1,4 +1,4 @@
-//! Cache settoriale write-through in `userdisk` (Fase 25).
+//! Cache settoriale write-through in `block` (Fase 25).
 //!
 //! Un solo strato di cache, nel driver che possiede i blocchi — mai nel
 //! filesystem: due strati cacherebbero gli stessi 512 byte due volte (RAM
@@ -15,7 +15,7 @@
 //! configurabile, oggi inutilizzati.
 //!
 //! Vincoli rispettati (lezioni 24.2): **zero allocazioni heap nel percorso
-//! per-op** (array statico, niente `Vec`/`BTreeMap`), `userdisk` e'
+//! per-op** (array statico, niente `Vec`/`BTreeMap`), `block` e'
 //! single-threaded quindi `static mut` basta (stesso pattern dei ring,
 //! nessun lock). Gli accessi usano raw pointer (`addr_of!`) perche' l'edition
 //! 2024 rifiuta i riferimenti a `static mut`. Dimensione fissa `CACHE_SECTORS`
@@ -200,7 +200,7 @@ fn maybe_log() {
     unsafe {
         if h + m >= NEXT_LOG_AT {
             NEXT_LOG_AT += LOG_EVERY;
-            libr::println!("[userdisk] cache hits={} misses={} inserts={}", h, m, ins);
+            libr::println!("[block] cache hits={} misses={} inserts={}", h, m, ins);
         }
     }
 }

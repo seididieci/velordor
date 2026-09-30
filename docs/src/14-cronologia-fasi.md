@@ -1902,3 +1902,10 @@
           FAT nei test). Prefix `/dev` e nomi device invariati (namespace
           device ≠ nomi servizi); tag `DEV_*` invariati. Gate: 5/5 + 7/7 +
           40/40 + 58/58, zero FAIL/PANIC/FAULT. Docs ai nuovi nomi in R-final.
+    - [x] R6 (rename a fasi, ADR-0040): `userdisk`→`block` (dir, package, bin
+          embedded, display, `Service::Disk`→`Service::Block` guidata dal
+          compilatore, manifest `HASH_BLOCK`, tabella kernel, init, shell,
+          test t32 + log `t32`, regex `test-uuid-reorder.py`, prosa codice).
+          Nodi `/dev/sdX` e tag `DISK_*` invariati; nessun trasloco in
+          `vela::block` (le const ATA sono tuning interno). Gate: 5/5 + 7/7 +
+          40/40 + 58/58, zero FAIL/PANIC/FAULT. Docs ai nuovi nomi in R-final.

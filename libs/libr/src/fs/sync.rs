@@ -732,7 +732,7 @@ pub fn rights_get(buf: &mut [u8]) -> Result<u32, Error> {
 /// settore non e' un BPB FAT valido (stessi check minimi di mount: 55AA,
 /// bps 512, spc potenza di 2 non zero, almeno una FAT non vuota, root ≥ 2).
 /// Usato sia dal parser (`userfs/fat32.rs`) che dallo sniff per-nodo del
-/// driver (`userdisk`): un nodo annuncia UUID/label sse monta davvero.
+/// driver (`block`): un nodo annuncia UUID/label sse monta davvero.
 pub fn fat_bpb_identity(boot: &[u8; 512]) -> Option<(Option<u32>, [u8; 11])> {
     if boot[510] != 0x55 || boot[511] != 0xAA {
         return None;

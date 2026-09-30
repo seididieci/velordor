@@ -371,7 +371,7 @@ pub fn signal_ready(w0: u64) {
 }
 
 /// Alloca una coppia di pagine ring (request, response) SENZA handshake
-/// (Fase 16, data-plane `DISK_*` di userdisk): il server riporta i fisici al
+/// (Fase 16, data-plane `DISK_*` di block): il server riporta i fisici al
 /// client nel frame di `DISK_HELLO`, il client li mappa nelle proprie finestre
 /// con `map_physical`. Separata dalle pagine FS proprie: niente interleaving
 /// di protocolli diversi nello stesso ring (lezione CLI_* del fix kbd/tty).

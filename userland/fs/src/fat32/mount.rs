@@ -29,7 +29,7 @@ impl<B: BlockSource> Fat32<B> {
         let data_start = rsvd as u32 + num_fats as u32 * fat_size;
 
         // Identità stabile del volume (Fase 16d, helper condiviso in libr:
-        // stessi check di mount, usati anche dallo sniff per-nodo di userdisk).
+        // stessi check di mount, usati anche dallo sniff per-nodo di block).
         let (vol_serial, vol_label) = match libr::fat_bpb_identity(&boot) {
             Some((s, l)) => (s, l),
             None => (None, [b' '; 11]),
@@ -74,7 +74,7 @@ impl<B: BlockSource> Fat32<B> {
     }
 
     /// Settore della PRIMA copia FAT a `lba` (25: via cache del driver in
-    /// `userdisk`, niente memo locale — vedi campo `Fat32`).
+    /// `block`, niente memo locale — vedi campo `Fat32`).
     pub(crate) fn fat_sector(&self, lba: u32) -> Option<[u8; 512]> {
         let mut sec = [0u8; 512];
         if !self.disk.read_sector(lba as u64, &mut sec) {

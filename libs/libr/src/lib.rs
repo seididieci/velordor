@@ -39,8 +39,8 @@ pub use syscall_numbers::EXIT_NOTIFY;
 pub use syscall_numbers::JOB_CANCEL;
 /// Tag della notify kernel→kbd su IRQ1 (Fase 15, bridge interrupt→IPC).
 pub use syscall_numbers::IRQ_NOTIFY_KBD;
-/// Tag della notify kernel→userdisk su IRQ14/15 (Fase 38, ATA DMA: stesso
-/// bridge interrupt→IPC — userdisk drena lo status Bus-Master ad ogni giro).
+/// Tag della notify kernel→block su IRQ14/15 (Fase 38, ATA DMA: stesso
+/// bridge interrupt→IPC — block drena lo status Bus-Master ad ogni giro).
 pub use syscall_numbers::IRQ_NOTIFY_DISK;
 /// Bound di scansione PID per `ps` (Fase 19.1, = MAX_PIDS del kernel).
 pub use syscall_numbers::PS_SCAN_MAX;
@@ -48,17 +48,17 @@ pub use syscall_numbers::PS_SCAN_MAX;
 /// FNV-1a sui byte dell'ELF — stesso valore che il kernel misura allo spawn.
 /// init/userfs la ricalcolano sui byte caricati (manifest, policy FS_REGISTER).
 pub use syscall_numbers::image_hash;
-/// Protocollo DISK_* userfs→userdisk (Fase 16, single source in
+/// Protocollo DISK_* userfs→block (Fase 16, single source in
 /// `syscall-numbers`, Fase 16c): handshake/open/read/close + resolve
 /// nome→handle di proprieta' del driver.
 pub use syscall_numbers::{DISK_CLOSE, DISK_HELLO, DISK_OPEN, DISK_READ, DISK_RESOLVE, DISK_WRITE, DISK_FLUSH};
-/// Topologia disco (Fase 51, P2): LIST/INFO userfs→userdisk + relay R_*
+/// Topologia disco (Fase 51, P2): LIST/INFO userfs→block + relay R_*
 /// verso i client (riusato da `arca list` in P5).
 pub use syscall_numbers::{DISK_LIST, DISK_INFO, R_DISK_LIST, R_DISK_INFO};
 
 // ── Tag delle operazioni (nel frame del ring, non nell'IPC) ────────
 // Single source in `syscall-numbers` (Fase 17): prima duplicati qui, in
-// userfs e (R_REGISTER) userdisk.
+// userfs e (R_REGISTER) block.
 pub use syscall_numbers::{
     R_CLOSE, R_DELETE, R_MKDIR, R_MOUNT, R_OPEN, R_READ, R_READDIR, R_REGISTER, R_UMOUNT,
     R_WRITE, R_RIGHTS_DROP, R_RIGHTS_GET, R_STAT, R_LSEEK, R_DUP_GRANT, R_DUP_CLAIM,
@@ -113,7 +113,7 @@ pub use syscall_numbers::{
 pub use syscall_numbers::EXIT_SIGINT;
 
 /// Tag IPC FS/boot/kbd (DocsB): single source in `syscall-numbers` (prima
-/// duplicati qui, in userfs/userdisk/init/tty/kbd e come letterali nei test).
+/// duplicati qui, in userfs/block/init/tty/kbd e come letterali nei test).
 /// `libr` li riesporta: i server/test usano i path `libr::`, mai i valori.
 pub use syscall_numbers::{
     FS_BUF_REG, FS_NOTIFY, FS_REGISTER, INIT_BOUNCE, KBD_NOTIFY, SVC_READY, TEST_DONE,
@@ -175,7 +175,7 @@ pub mod scratch;
 /// Kernel invariato; vincoli Fase 13 invariati (vedi modulo).
 pub mod task;
 
-/// Port I/O x86 in ring 3 (A4: prima duplicato in userdisk/kbd).
+/// Port I/O x86 in ring 3 (A4: prima duplicato in block/kbd).
 pub mod pio;
 
 /// Spazio di configurazione PCI in ring 3 (Fase 38.0d, ATA DMA): modulo

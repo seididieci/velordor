@@ -39,7 +39,7 @@ impl FsReg {
     /// Reset dopo morte di userfs (EXIT_NOTIFY): mounts purgati di la', i ring
     /// resettati di qua', si ricomincia da handshake + primo nodo.
     pub(crate) fn reset(&mut self) {
-        libr::println!("[userdisk] reset registrazione FS (userfs morto)");
+        libr::println!("[block] reset registrazione FS (userfs morto)");
         self.chan = None;
         self.bufreg_done = false;
         self.pending = None;
@@ -123,7 +123,7 @@ impl FsReg {
         match rings::fs_resp_read() {
             Some(0) => {
                 self.pending = None;
-                libr::println!("[userdisk] registered {} with userfs", prefixes[self.idx]);
+                libr::println!("[block] registered {} with userfs", prefixes[self.idx]);
                 self.idx += 1;
             }
             _ => {

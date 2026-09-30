@@ -8,7 +8,7 @@ Due boot completi con suite (RUN_TESTS=1):
 In entrambi asserisce dal log seriale:
   - t36 PASS (mount UUID=/LABEL= + by-path + listing),
   - testfat PASS 7/7 (/fat montato per UUID=4F4C4556),
-  - la riga identita' di userdisk assegna uuid=C0FFEE01 alla lettera attesa
+  - la riga identita' di block assegna uuid=C0FFEE01 alla lettera attesa
     (sdb nel run 1, sda nel run 2: le lettere cambiano, le chiavi no).
 
 Uso: python3 scripts/test-uuid-reorder.py  (esce 0 se tutto PASS)
@@ -52,7 +52,7 @@ def check(name, log, letter):
     if not has(r"t36 UUID/LABEL \+ discovery stabile: PASS"):
         print(f"[{name}] MANCA t36 PASS")
         ok = False
-    m = re.search(r"\[userdisk\] (sd[a-z]): handle=0x[0-9a-f]+ uuid=" + U2, log)
+    m = re.search(r"\[block\] (sd[a-z]): handle=0x[0-9a-f]+ uuid=" + U2, log)
     if not m:
         print(f"[{name}] MANCA riga identita' uuid={U2}")
         ok = False
