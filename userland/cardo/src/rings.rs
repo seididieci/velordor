@@ -81,7 +81,7 @@ pub fn req_resync() {
         let (head, _) = ring_positions(REQ_RING_VA);
         core::ptr::write_volatile((REQ_RING_VA + RING_TAIL as u64) as *mut u32, head);
     }
-    println!("[userfs] resync request ring (frame impossibile, tail=head)");
+    println!("[cardo] resync request ring (frame impossibile, tail=head)");
 }
 
 /// Scrive un response frame nel response ring. Formato: [result:8][w1:8][payload].
@@ -101,7 +101,7 @@ pub fn resp_ring_write(result: u64, w1: u64, payload: &[u8]) {
     }
 }
 
-/// Mappa il request ring del client a REQ_RING_VA nello spazio di userfs.
+/// Mappa il request ring del client a REQ_RING_VA nello spazio di cardo.
 pub fn map_client_req_ring(rings: &BTreeMap<u64, (u64, u64)>, chan: u64) -> bool {
     if let Some(&(req_phys, _)) = rings.get(&chan) {
         if libr::map_physical(req_phys, REQ_RING_VA, 1).is_ok() {
@@ -111,7 +111,7 @@ pub fn map_client_req_ring(rings: &BTreeMap<u64, (u64, u64)>, chan: u64) -> bool
     false
 }
 
-/// Mappa il response ring del client a RESP_RING_VA nello spazio di userfs.
+/// Mappa il response ring del client a RESP_RING_VA nello spazio di cardo.
 pub fn map_client_resp_ring(rings: &BTreeMap<u64, (u64, u64)>, chan: u64) -> bool {
     if let Some(&(_, resp_phys)) = rings.get(&chan) {
         if libr::map_physical(resp_phys, RESP_RING_VA, 1).is_ok() {

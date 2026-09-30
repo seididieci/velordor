@@ -15,7 +15,7 @@ pub(crate) static FS_PENDING: AtomicI64 = AtomicI64::new(-1);
 pub(crate) static FS_CHAN: AtomicI64 = AtomicI64::new(-1);
 
 /// Fisici dei ring per-processo (Fase 14, t28): salvati al primo handshake per
-/// poterlo RIPETERE dopo un restart di userfs (le pagine persistono nel
+/// poterlo RIPETERE dopo un restart di cardo (le pagine persistono nel
 /// processo, ma il nuovo server non conosce la registrazione).
 pub(crate) static REQ_PHYS: AtomicU64 = AtomicU64::new(0);
 pub(crate) static RESP_PHYS: AtomicU64 = AtomicU64::new(0);
@@ -41,9 +41,9 @@ pub fn post_fork_child() {
 /// Azzera le cache COW-copiate (canale, fisici, guard) e rifa da zero:
 /// lookup per nome (canale NUOVO) + ring freschi + handshake. Le pagine ring
 /// del padre restano intatte (il remap sostituisce solo i mapping COW del
-/// figlio). Ritorna false se userfs irraggiungibile: il figlio deve fallire
+/// figlio). Ritorna false se cardo irraggiungibile: il figlio deve fallire
 /// loud (exit 1 con messaggio su seriale), mai usare l'FS a meta'.
-/// Limite: il lookup iniziale e' unbounded come `fs_chan` (userfs e'
+/// Limite: il lookup iniziale e' unbounded come `fs_chan` (cardo e'
 /// supervisionato e garantito a runtime; una sua morte qui appende il figlio
 /// come appenderebbe qualunque client al primo handshake).
 pub fn fs_child_reinit() -> bool {
@@ -68,14 +68,14 @@ pub(crate) fn fs_chan() -> i64 {
     if c >= 0 {
         return c;
     }
-    // Race di boot: userfs potrebbe non essersi ancora registrato come Fs. Con
-    // la vecchia send al PID 4 il mittente restava bloccato finche' userfs era
+    // Race di boot: cardo potrebbe non essersi ancora registrato come Fs. Con
+    // la vecchia send al PID 4 il mittente restava bloccato finche' cardo era
     // pronto; col lookup per nome il servizio potrebbe non esistere ancora.
     // Replica il comportamento bloccante: ritenta finche' Fs non si registra,
     // con lunghi spin puri tra i lookup (IF=1) per non affamare il timer e
-    // lasciare a userfs il tempo di partire. A boot userfs e' garantito.
+    // lasciare a cardo il tempo di partire. A boot cardo e' garantito.
     loop {
-        if let Ok(chan) = spawn::service_lookup(Service::Fs) {
+        if let Ok(chan) = spawn::service_lookup(Service::Cardo) {
             FS_CHAN.store(chan, Ordering::Relaxed);
             return chan;
         }
@@ -134,7 +134,7 @@ const FS_RELOOKUP_TICKS: i64 = 200;
 
 /// Periodo canonico di polling (Livello 1, buon vicinato): ~20 tick tra i
 /// tentativi di operativita'. Ogni tentativo e' un round-trip servito da
-/// userfs: martellarlo in busy-loop affama gli altri client (osservato
+/// cardo: martellarlo in busy-loop affama gli altri client (osservato
 /// t27/t28: mount di devfs ritardato da 10 s+ a ms col throttling).
 pub const POLL_PERIOD_TICKS: i64 = 20;
 
@@ -172,7 +172,7 @@ pub fn poll_value<T>(bound_ticks: i64, period_ticks: i64, mut f: impl FnMut() ->
 /// Apre `path` riprovando throttled fino a `bound_ticks` (vedi `poll_wait`).
 /// Ritorna l'fd o `Err(NotReady)` a timeout. Sostituisce i busy-loop di open
 /// nei test e negli helper: un device non ancora registrato non giustifica
-/// mai una tempesta di open verso userfs.
+/// mai una tempesta di open verso cardo.
 pub fn open_wait(path: &str, flags: u32, bound_ticks: i64, period_ticks: i64) -> Result<i64, Error> {
     poll_value(bound_ticks, period_ticks, || sync::open(path, flags).ok())
         .ok_or(Error::NotReady)
@@ -184,7 +184,7 @@ pub fn open_wait(path: &str, flags: u32, bound_ticks: i64, period_ticks: i64) ->
 pub(crate) fn fs_chan_rt() -> i64 {
     let t0 = sys::get_ticks();
     loop {
-        if let Ok(chan) = spawn::service_lookup(Service::Fs) {
+        if let Ok(chan) = spawn::service_lookup(Service::Cardo) {
             FS_CHAN.store(chan, Ordering::Relaxed);
             return chan;
         }
@@ -229,7 +229,7 @@ pub(crate) fn fs_send(tag: u64, w0: u64, w1: u64) -> Result<IpcReply, Error> {
 /// restano in `REQ_PHYS`/`RESP_PHYS`. Serve al client LOG (anelli condivisi
 /// col FS in sequenza, mai due coppie: il kernel mappa OGNI coppia sulle
 /// STESSE VA e una seconda allocazione rimapperebbe la prima, incrociando i
-/// frame — osservato: resync userfs + load falliti a boot parallelo).
+/// frame — osservato: resync cardo + load falliti a boot parallelo).
 /// Ritorna false se la syscall fallisce.
 pub(crate) fn fs_rings() -> bool {
     if REQ_PHYS.load(Ordering::Relaxed) != 0 {
@@ -248,7 +248,7 @@ pub(crate) fn fs_rings() -> bool {
 }
 
 /// Cancello leggero per il client LOG (Fase 57): come `fs_gate` ma SENZA
-/// handshake FS (il log funziona pre-FS e senza userfs: gli anelli bastano,
+/// handshake FS (il log funziona pre-FS e senza cardo: gli anelli bastano,
 /// la registrazione LOG viaggia su `LOG_REG` presso userlog). Rifiuta su
 /// fork (aliasing) e su async-FS in volo (un frame LOG interleavato
 /// corromperebbe il ring condiviso — il formato non ha lunghezze).
@@ -273,7 +273,7 @@ pub(crate) fn fs_init() -> bool {
     }
     let req_phys = REQ_PHYS.load(Ordering::Relaxed);
     let resp_phys = RESP_PHYS.load(Ordering::Relaxed);
-    // Registra entrambi gli indirizzi fisici presso userfs
+    // Registra entrambi gli indirizzi fisici presso cardo
     match fs_send(FS_BUF_REG, req_phys, resp_phys) {
         Ok(_) => {
             FS_INITED.store(true, Ordering::Relaxed);
@@ -283,7 +283,7 @@ pub(crate) fn fs_init() -> bool {
     }
 }
 
-/// Ripete l'handshake ring dopo un restart di userfs (Fase 14, t28): le pagine
+/// Ripete l'handshake ring dopo un restart di cardo (Fase 14, t28): le pagine
 /// persistono nel processo, si re-invia solo la coppia phys salvata. AZZERA
 /// anche entrambi i ring (head=tail=0): qualunque contenuto appartiene
 /// all'epoca morta (frame scritti ma mai notificati/consumati, risposte
@@ -309,7 +309,7 @@ pub(crate) fn fs_rehandshake() -> bool {
     }
 }
 
-/// Rimappa i PROPRI ring alle finestre fisse (Fase 14, t28): userfs inietta i
+/// Rimappa i PROPRI ring alle finestre fisse (Fase 14, t28): cardo inietta i
 /// ring dei client nei driver via `map_in` sulle STESSE VA condivise,
 /// sovrascrivendo il mapping dei ring propri del driver senza ripristinarlo.
 /// Prima di usare i propri ring (es. `ensure_mounted`), il driver deve
@@ -334,17 +334,17 @@ pub fn fs_remap_self() -> bool {
 
 /// Attende il servizio Fs via soli lookup (spin puri IF=1, mai `get_ticks`
 /// che maschera gli interrupt), poi UN tentativo via `register` (nessun frame
-/// scritto finche' userfs non c'e': niente spam nel ring che disallineerebbe
-/// gli altri client); se fallisce (race: userfs rimorto nel mentre) ricomincia
+/// scritto finche' cardo non c'e': niente spam nel ring che disallineerebbe
+/// gli altri client); se fallisce (race: cardo rimorto nel mentre) ricomincia
 /// dal lookup. Unbounded come `fs_chan`: senza Fs il driver e' comunque
-/// inutile. Idempotente grazie al replace-on-register in userfs.
+/// inutile. Idempotente grazie al replace-on-register in cardo.
 pub fn ensure_fs_mount(register: fn() -> Result<(), Error>) {
-    // Prima i PROPRI ring: le injection map_in di userfs li hanno sovrascritti
+    // Prima i PROPRI ring: le injection map_in di cardo li hanno sovrascritti
     // (stessa VA condivisa, mai ripristinata) — senza remap scriveremmo nelle
     // pagine di un altro client (t28). No-op se mai allocati.
     let _ = fs_remap_self();
     loop {
-        while spawn::service_lookup(Service::Fs).is_err() {
+        while spawn::service_lookup(Service::Cardo).is_err() {
             for _ in 0..1_000_000 {
                 core::hint::spin_loop();
             }
@@ -358,7 +358,7 @@ pub fn ensure_fs_mount(register: fn() -> Result<(), Error>) {
 /// Segnala SVC_READY al parent in fire-and-forget: a boot init potrebbe non
 /// essere ancora in recv (una send sync resterebbe bloccata per sempre), su
 /// restart nessuno aspetta. Retry bounded con spin puri, mai hang.
-/// `w0` = payload prontezza (1 = pronto; userfs passa `reg_ok`).
+/// `w0` = payload prontezza (1 = pronto; cardo passa `reg_ok`).
 pub fn signal_ready(w0: u64) {
     for _ in 0..100 {
         if ipc::send_async(ipc::CHANNEL_PARENT, SVC_READY, w0, 0).is_ok() {

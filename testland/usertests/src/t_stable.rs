@@ -155,7 +155,7 @@ pub fn t_stable_id() -> bool {
 /// t32 — disk driver in userspace (Fase 16).
 /// (A) Baseline: /dev/sda leggibile raw con firma boot. (B) Bounce via init
 /// (`init_bounce`, Fase 35) e attesa init-restart come t27/t28: sparizione dallo slot, ricomparsa, poi /dev/sda di nuovo
-/// operativo + smoke /fat/HELLO.TXT (riconnessione lazy di userfs al driver
+/// operativo + smoke /fat/HELLO.TXT (riconnessione lazy di cardo al driver
 /// rinato, senza rimontare: il mount sopravvive). Bound generosi (1000 tick
 /// ~ 10 s contro restart atteso ~50), mai hang; poll throttled Livello 1.
 pub fn t_disk() -> bool {
@@ -393,8 +393,8 @@ pub fn t_hardening() -> bool {
 /// t51 — identita' misurata (Fase 36, Strato 2 di ADR-0026).
 /// (A) `peer_info` sui servizi caricati da disco (Console, Devfs) == manifest
 /// generato: il kernel misura gli stessi byte che init ha verificato al boot.
-/// (Su userfs embedded non c'e' pinning da manifest: `HASH_USERFS` non esiste
-/// per costruzione — userfs incorpora il manifest e il suo hash sarebbe un
+/// (Su cardo embedded non c'e' pinning da manifest: `HASH_CARDO` non esiste
+/// per costruzione — cardo incorpora il manifest e il suo hash sarebbe un
 /// ciclo instabile, vedi gen-service-hashes.sh.)
 /// (B) stabilita': due istanze dello stesso helper hanno lo stesso hash.
 /// (C) same-image positivo: due istanze NON-figlie-di-init dello stesso
@@ -560,7 +560,7 @@ pub fn t_identity() -> bool {
 
 /// t58 — bucket `sys` nativo + content-hash BLAKE2s (Fase 55, N0; 56.2b su
 /// blocchi). Il test lega il motore in proprio (open + USEDISK: load o init
-/// + seed `sys` server-side), cosi' sopravvive a qualunque restart di userfs
+/// + seed `sys` server-side), cosi' sopravvive a qualunque restart di cardo
 /// precedente (es. t28): senza volume (ARCA_IMG=0) skip adattivo, mai FAIL.
 /// Prova: (1) l'oggetto nativo e' byte-identico al file FAT; (2) il suo
 /// blake2s e' il manifest BLAKE (stesso predicato di `verify_image` in

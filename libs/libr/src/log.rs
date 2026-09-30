@@ -9,7 +9,7 @@
 //! solo `R_OBJ_*`/`R_SNAP_*` via questo protocollo + `TIME_NOW` per il giorno).
 //! Il client condivide gli anelli col FS in SEQUENZA (entrambi sync, mai
 //! interleave: una sola coppia per processo — il kernel mappa ogni coppia
-//! sulle stesse VA). `log()` funziona pre-FS e senza userfs (solo allocazione,
+//! sulle stesse VA). `log()` funziona pre-FS e senza cardo (solo allocazione,
 //! mai handshake FS nel suo percorso); rifiuta su async-FS in volo (Pending)
 //! invece di corrompere il ring condiviso.
 //!

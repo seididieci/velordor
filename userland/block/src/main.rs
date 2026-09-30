@@ -5,31 +5,31 @@
 //! concesso: toccarlo e' #GP — su QEMU non esiste), rileva i dischi presenti
 //! (`detect.rs`), parsa le partizioni MBR primarie (`part.rs`) ed espone ogni
 //! nodo come `/dev/sdX` (`FS_REGISTER` per nodo, solo i presenti) + servizio
-//! `Disk` per il data-plane verso userfs.
+//! `Disk` per il data-plane verso cardo.
 //!
-//! REGOLA ANTI-DEADLOCK (lezione Fase 15 + ciclo userfs↔block osservato in
-//! Fase 16.2): block non fa MAI `send` sincrona verso userfs — nemmeno
+//! REGOLA ANTI-DEADLOCK (lezione Fase 15 + ciclo cardo↔block osservato in
+//! Fase 16.2): block non fa MAI `send` sincrona verso cardo — nemmeno
 //! l'handshake `fs_init` di libr (sincrono). E' client FS PURAMENTE async:
 //! ring propri allocati raw, `FS_BUF_REG` + `R_REGISTER` via `send_async` con
-//! collect per req_id nel loop (state machine come tty). userfs fa solo send
-//! sincrone verso block, e block drena sempre (mai bloccato su userfs):
+//! collect per req_id nel loop (state machine come tty). cardo fa solo send
+//! sincrone verso block, e block drena sempre (mai bloccato su cardo):
 //! nessun ciclo possibile, in nessuna direzione, a boot come a restart.
 //!
 //! Due protocolli serviti, entrambi con reply implicita (ADR-0008):
-//! - `DISK_*` (canale diretto userfs→block, service_lookup(Disk)): HELLO
+//! - `DISK_*` (canale diretto cardo→block, service_lookup(Disk)): HELLO
 //!   (fisici nelle reply: w0 = req_phys del DISK_REQ ring, w1 = resp_phys),
 //!   OPEN/READ multi-settore (24.2, count≤7 per IPC), CLOSE, RESOLVE
 //!   chiave→handle (Fase 16c: block e' l'unico proprietario della mappa;
 //!   16d: chiave = nome (`sda`), UUID hex 8 char (seriale volume FAT) o label
 //!   (priorità in quest'ordine).
-//! - `DEV_*` (relay userfs per gli open raw `/dev/sdX`): OPEN(w0=handle
+//! - `DEV_*` (relay cardo per gli open raw `/dev/sdX`): OPEN(w0=handle
 //!   codificato disco<<16|sub), READ sequenziale con posizione per-fd (solo
 //!   multipli di 512), WRITE sempre ERR (read-only), CLOSE, READDIR vuota.
 //!
 //! Boot: detection (solo HW) → ring FS+DISK → `service_register(Disk)` →
-//! SVC_READY al parent SUBITO (block parte PRIMA di userfs: come console,
+//! SVC_READY al parent SUBITO (block parte PRIMA di cardo: come console,
 //! l'ACK non aspetta nulla) → loop (la registrazione FS avanza da sola via SM
-//! appena userfs esiste).
+//! appena cardo esiste).
 
 #![no_std]
 #![no_main]
@@ -54,9 +54,9 @@ use libr::println;
 // ── IPC tags (DocsD: single source in `syscall-numbers`, via `libr`) ──
 use libr::{DEV_CLOSE, DEV_OPEN, DEV_READ, DEV_READDIR, DEV_WRITE};
 
-/// Handshake data-plane: userfs chiede i fisici dei ring DISK.
+/// Handshake data-plane: cardo chiede i fisici dei ring DISK.
 /// Reply: w0 = req_phys (anello delle richieste di resolve, Fase 16c),
-/// w1 = resp_phys (mappato da userfs per leggere i frame). Niente frame:
+/// w1 = resp_phys (mappato da cardo per leggere i frame). Niente frame:
 /// i fisici stanno nei registri.
 use libr::DISK_HELLO;
 /// Valida un nodo (w0 = handle codificato). Reply OK/ERR, niente frame.
@@ -86,9 +86,9 @@ use libr::DISK_WRITE;
 // nello stesso ring):
 // - FS_REQ_VA/FS_RESP_VA (propri): traffico FS (FS_BUF_REG + FS_REGISTER).
 //   Mai iniettati da nessuno: niente remap, mai sovrascritti. Per i relay DEV
-//   in ingresso userfs mappa i ring del client nelle finestre CLI_* dedicate.
-// - DISK_REQ_VA/DISK_RESP_VA: data-plane DISK_* con userfs (fisso, noto a
-//   userfs via HELLO). Libere nella mappa user (CLI fino a +0x23..., heap da
+//   in ingresso cardo mappa i ring del client nelle finestre CLI_* dedicate.
+// - DISK_REQ_VA/DISK_RESP_VA: data-plane DISK_* con cardo (fisso, noto a
+//   cardo via HELLO). Libere nella mappa user (CLI fino a +0x23..., heap da
 //   +0x400000).
 
 /// Request/response ring FS propri (stesse VA di libr: page table per-processo,

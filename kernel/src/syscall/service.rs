@@ -72,7 +72,7 @@ pub(super) fn sys_service_pid(service_disc: u64) -> i64 {
 /// Fase 35 (hardening) — `peer_pid(chan)`: pid del peer del canale `chan`
 /// (0 = canale di nascita, come `send`/`recv`), o -1. I server lo usano per
 /// attribuire una richiesta a un processo (es. la policy `FS_REGISTER` di
-/// userfs: replace di un prefix solo da figli di init). Non rivela nulla in
+/// cardo: replace di un prefix solo da figli di init). Non rivela nulla in
 /// piu' di `ps_info` (gia' pubblico).
 pub(super) fn sys_peer_pid(chan: usize) -> i64 {
     let me = current_id() as usize;
@@ -94,7 +94,7 @@ pub(super) fn sys_peer_pid(chan: usize) -> i64 {
 /// hash dell'immagine del peer del canale `chan` (0 = canale di nascita, come
 /// `peer_pid`), o -1 se il canale non esiste/il peer e' morto. Multi-registro
 /// (pattern `ps_info`): rax = 0 + rdi = hash. I server lo usano per la policy
-/// su identita' (manifest init, `FS_REGISTER` in userfs); non rivela nulla
+/// su identita' (manifest init, `FS_REGISTER` in cardo); non rivela nulla
 /// oltre l'identita' del binario (nomi/pid gia' pubblici via `ps`).
 pub(super) fn sys_peer_info(chan: usize) -> i64 {
     let me = current_id() as usize;
@@ -132,7 +132,7 @@ fn service_from_disc(disc: u64) -> Option<syscall_numbers::Service> {
     use syscall_numbers::Service::*;
     match disc {
         0 => Some(Gpu),
-        1 => Some(Fs),
+        1 => Some(Cardo),
         2 => Some(Vela),
         3 => Some(Init),
         4 => Some(Test),
@@ -150,7 +150,7 @@ fn service_from_disc(disc: u64) -> Option<syscall_numbers::Service> {
 fn service_name(s: syscall_numbers::Service) -> &'static str {
     match s {
         syscall_numbers::Service::Gpu => "gpu",
-        syscall_numbers::Service::Fs => "fs",
+        syscall_numbers::Service::Cardo => "cardo",
         syscall_numbers::Service::Vela => "vela",
         syscall_numbers::Service::Init => "init",
         syscall_numbers::Service::Test => "test",

@@ -1,5 +1,5 @@
 [package]
-name = "userfs"
+name = "cardo"
 version = "0.1.0"
 edition = "2024"
 
@@ -17,6 +17,6 @@ panic = "abort"
 panic = "abort"
 opt-level = "z"
 # 56.2b/c: LTO per il margine sotto SPAWN_IMAGE_MAX (motore B+tree + GC in
-# userfs). Solo userfs (profilo del crate top-level): altri binari intoccati.
+# cardo). Solo cardo (profilo del crate top-level): altri binari intoccati.
 # thin in 56.2b, fat in 56.2c (misurato: il margine per GC+meta non basta).
 lto = "fat"

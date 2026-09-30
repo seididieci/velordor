@@ -118,7 +118,7 @@ velordor/
 └── AGENTS.md           # Questo file
 ```
 
-**Layout moduli (Cleanup)**: ogni crate ha `main.rs`/`lib.rs` sottile (solo attr, `mod`, import, `_start`/panic o re-export) + moduli tematici (`userfs`: mount/ramfs/ftable/rights/rings/handlers/server; `libr`: ipc/spawn/sys/print/tsc/fs/* + facade che riesporta tutti i path `libr::X`; kernel: `sched_rt/`, `syscall/`, `vmm_user/` con facade e `main.rs` intoccato); i figli usano `use super::*;` (+`use crate::*;` se annidati) e i cross-riferimenti sono path espliciti (`handlers::handle_open`), mai glob dai parent. Costanti/tag condivisi stanno in `syscall-numbers` via `libr`, mai duplicati nei crate.
+**Layout moduli (Cleanup)**: ogni crate ha `main.rs`/`lib.rs` sottile (solo attr, `mod`, import, `_start`/panic o re-export) + moduli tematici (`cardo`: mount/ramfs/ftable/rights/rings/handlers/server; `libr`: ipc/spawn/sys/print/tsc/fs/* + facade che riesporta tutti i path `libr::X`; kernel: `sched_rt/`, `syscall/`, `vmm_user/` con facade e `main.rs` intoccato); i figli usano `use super::*;` (+`use crate::*;` se annidati) e i cross-riferimenti sono path espliciti (`handlers::handle_open`), mai glob dai parent. Costanti/tag condivisi stanno in `syscall-numbers` via `libr`, mai duplicati nei crate.
 
 ## Stato corrente
 
@@ -172,7 +172,7 @@ Gate: `[testfs] PASS 5/5` + `[testfat] PASS 7/7` + `[testsarca] PASS 40/40` + `[
   attribuire, `SYS_PEER_INFO` 47 per l'identita'). Strato 2 (Fase 36): hash
   FNV-1a nel PCB misurato allo spawn, manifest generato a build-time verificato
   da init pre-spawn; il kernel resta neutro (ADR-0025: POSIX e' personalità, non
-  struttura). Il manifest esclude i binari che lo incorporano (userinit/userfs:
+  struttura). Il manifest esclude i binari che lo incorporano (userinit/cardo:
   hash di sé = ciclo instabile, mai fixpoint).
 - **IPC reply implicita**: la reply del server va al peer del canale del
   messaggio correntemente elaborato (fissato da `recv` in `reply_chan`), non
@@ -186,7 +186,7 @@ Gate: `[testfs] PASS 5/5` + `[testfat] PASS 7/7` + `[testsarca] PASS 40/40` + `[
   `-req_id`), assegnato dal mittente via `req_next`. La reply del server resta
   implicita: il kernel alla `reply` guarda il target — `BlockedOnReply` →
   `reply_slot` (sync); altrimenti accoda una risposta con `req_id = -reply_req`
-  (async). Trasparente a userfs/console/devfs. Vincoli primo passo: no mix
+  (async). Trasparente a cardo/console/devfs. Vincoli primo passo: no mix
   sync/async in volo per processo; risposte FIFO (`wait_reply` non riordina);
   FS async = 1 op in volo (guard `FS_PENDING`: il formato frame del ring non ha
   lunghezza payload esplicita); reply async persa se la msg_queue del target
@@ -205,7 +205,7 @@ Gate: `[testfs] PASS 5/5` + `[testfat] PASS 7/7` + `[testsarca] PASS 40/40` + `[
    SRVDIE/SYNCWAIT/MNTDIE/OPENDIE/MAPHAMMER/FLOOD; suite 21/21 → 31/31 (t22 churn riuso+leak, t23
    kill+notifica, t24 notifica unificata async+sync, t25 morte driver +
    re-registrazione, t26 morte client senza close + smoke, t27 init-restart devfs,
-   t28 restart userfs end-to-end, t29 map-flap isolation, t30 fairness sotto flood).
+   t28 restart cardo end-to-end, t29 map-flap isolation, t30 fairness sotto flood).
   **Notifica unificata (14.10)**: DOPO il
   teardown il kernel notifica TUTTI i peer (non solo il parent), ciascuno sul
   canale che li collegava (`die_peers` nel PCB, max 31); `wait_reply` ritorna
@@ -222,11 +222,11 @@ Gate: `[testfs] PASS 5/5` + `[testfat] PASS 7/7` + `[testsarca] PASS 40/40` + `[
 - **Ring SPSC per-processo, niente piu' buffer FS** (Fase 10.2, sostituisce
   9.6): ogni processo alloca DUE pagine ring (syscall **`sys_ring_alloc` (26)**,
   che riusa il numero del vecchio `fs_buf_alloc`) mappate a `USER_FS_BUFFER`
-  (request) e `USER_RESP_RING` (response), e le registra presso userfs con una
+  (request) e `USER_RESP_RING` (response), e le registra presso cardo con una
   IPC register-only (`FS_BUF_REG`). Ogni operazione FS = 1 frame nel request
-  ring `[tag:4][w0:8][w1:8][payload]` + `send(FS_NOTIFY)`; userfs consuma
+  ring `[tag:4][w0:8][w1:8][payload]` + `send(FS_NOTIFY)`; cardo consuma
   SEMPRE l'intero frame (header + payload) e scrive 1 response frame
-  `[result:8][w1:8][payload]` — **ECCEZIONE: per i WRITE remoti userfs NON
+  `[result:8][w1:8][payload]` — **ECCEZIONE: per i WRITE remoti cardo NON
   consuma il frame** (dedicato `handle_write_remote`): il payload resta nel
   request ring e il driver (console/devfs) lo legge direttamente (mappato con
   `map_in` (27), mapper generico cross-process) avanzando la tail lui stesso.
@@ -238,7 +238,7 @@ Gate: `[testfs] PASS 5/5` + `[testfat] PASS 7/7` + `[testsarca] PASS 40/40` + `[
   kernel-side (3-7, 23, 24) rimossi.
 - **Registrazione driver via ring**: devfs/console si registrano con
   `FS_REGISTER` (0x30) scrivendo un frame `R_REGISTER` nel proprio request
-  ring (NON il tag FS_NOTIFY); userfs legge il prefix dalla request ring del
+  ring (NON il tag FS_NOTIFY); cardo legge il prefix dalla request ring del
   driver (primo elemento della coppia `(req, resp)` registrata — attenzione a
   non confonderlo col response ring).
 - **Reattivita' shell**: a valle del boot i soli processi `Normal` sono i
@@ -249,7 +249,7 @@ Gate: `[testfs] PASS 5/5` + `[testfat] PASS 7/7` + `[testsarca] PASS 40/40` + `[
   devfs, quindi i test in SEQUENZA (ognuno atteso
   fino a `TEST_DONE` sul canale di nascita), usershell per ultimo (interattivo).
 - **I test girano in sequenza, la shell e' ultima**: usertestfs/usertestfat/
-  usertests condividono la ramfs di userfs (path e file di lavoro) e l'output
+  usertests condividono la ramfs di cardo (path e file di lavoro) e l'output
   seriale; la sequenza rende PID e risultati deterministici. Con il buffer
   per-processo (9.6) la race della vecchia shared buffer e' eliminata (la suite
   t15 churn devfs concorrente gira davvero in parallelo). init spawa i test uno
@@ -280,7 +280,7 @@ Gate: `[testfs] PASS 5/5` + `[testfat] PASS 7/7` + `[testsarca] PASS 40/40` + `[
   `USER_HEAP_BASE` (= `USER_STACK_TOP`) e cresce via la syscall **`sbrk` (25)**,
   che riserva solo VA (`heap_brk`): le pagine vengono materializzate **lazy** dal
   page-fault handler (demand-zero, come brk/mmap di Linux). Binari
-  sensibilmente piu' piccoli (es. userfs 132→66 KiB).
+  sensibilmente piu' piccoli (es. cardo 132→66 KiB).
 - **Kernel heap riservato nel frame allocator**: la regione di 4 MiB del kernel
   heap deve essere marcata `used` nel bitmap fisico (`phys_mem::reserve` in
   `main.rs`). Senza questa riserva i frame della regione finivano ai processi e
@@ -339,7 +339,7 @@ test "$(rg -c 'FAIL|PANIC|#.* FAULT' /tmp/boot.log)" = "0"
 3. **Dimenticare volatile**: gli accessi MMIO devono essere volatile
 4. **Stack alignment**: x86_64 richiede 16-byte alignment per SSE
 5. **Busy waiting**: usare `hlt` invece di `loop {}` negli idle loop
-6. **Stack userfs 16 KiB + LTO**: con `lto` (userfs) l'inlining fonde i frame
+6. **Stack cardo 16 KiB + LTO**: con `lto` (cardo) l'inlining fonde i frame
    del loop con le catene chiamate (btree/volume/seed/FAT) e sfonda la
    guardia (#PF user-mode). Regola: buffer grandi in `Box`, handler/seed e i
    livelli btree/volume `#[inline(never)]` (firewall). Vale per chi tocca

@@ -2,7 +2,7 @@
 //!
 //! Trasferimenti `READ/WRITE DMA EXT` su staging contigua (1 pagina da
 //! `SYS_DMA_ALLOC`: PRD a offset 0, dati a offset 64). Protocollo `DISK_*`
-//! INVARIATO e userfs intoccato: il motore e' un'alternativa interna al PIO
+//! INVARIATO e cardo intoccato: il motore e' un'alternativa interna al PIO
 //! per le stesse `(handle, lba, n)` — ogni errore degrada a PIO per-op.
 //!
 //! Attesa completamento = **event-driven** (38.2): `start_dma` arma il comando
@@ -14,7 +14,7 @@
 //! (`req_id < 0`) non la toccavano gia'.
 //! Drain delle notify a testa-loop invariato: i re-fire level-triggered (EOI
 //! prima del clear) lasciano stale in coda, e senza drain riempiono la coda
-//! facendo scartare le send sync di userfs in silenzio (hang, provato in 38.1c).
+//! facendo scartare le send sync di cardo in silenzio (hang, provato in 38.1c).
 //!
 //! RISCHIO RESIDUO (accettato e documentato, 38.2): il `recv` non ha timeout —
 //! un device che accetta il comando e non alza MAI intr appenderebbe (il poll
@@ -201,7 +201,7 @@ impl DmaEngine {
     }
 
     /// Abort: richiedente morto durante l'attesa (STOP/clear fatti, mai reply).
-    /// Raro (morte userfs sotto carico): stampa subito, mai throttled.
+    /// Raro (morte cardo sotto carico): stampa subito, mai throttled.
     pub fn note_ev_abort(&mut self) {
         self.ev_abort += 1;
         println!("[block] DMA wait abort (richiedente morto): totale {}", self.ev_abort);

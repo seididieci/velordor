@@ -26,7 +26,7 @@ fn read_cr3() -> u64 {
 }
 
 /// Invalida la TLB per la pagina virtuale `vaddr` (necessario dopo aver
-/// sovrascritto una PTE gia' presente: es. la finestra FS che userfs rimappa
+/// sovrascritto una PTE gia' presente: es. la finestra FS che cardo rimappa
 /// a ogni client). Single-core: nessun shootdown, basta `invlpg` locale.
 pub fn flush_page(vaddr: u64) {
     unsafe {

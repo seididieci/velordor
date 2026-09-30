@@ -23,7 +23,7 @@ pub(crate) unsafe fn disk_resp_write(result: u64, w1: u64, payload: &[u8]) {
 }
 
 /// Legge un frame di resolve `[namelen:8][name]` dal DISK_REQ ring e lo
-/// consuma (SPSC: si legge a `tail`, il producer userfs avanza `head`).
+/// consuma (SPSC: si legge a `tail`, il producer cardo avanza `head`).
 /// Ritorna il nome o None a ring vuoto/frame malformato (resync tail=head:
 /// il mittente scrive il frame intero prima di notificare, quindi un frame
 /// incompleto appartiene a un'epoca morta — stessa invariante dei ring FS).
@@ -175,7 +175,7 @@ pub(crate) fn fs_resp_read() -> Option<u64> {
         Some(result)
     }
 }
-/// Azzera entrambi i ring FS propri (epoca morta dopo EXIT_NOTIFY di userfs).
+/// Azzera entrambi i ring FS propri (epoca morta dopo EXIT_NOTIFY di cardo).
 pub(crate) fn fs_rings_reset() {
     unsafe {
         core::ptr::write_volatile((FS_REQ_VA + RING_HEAD as u64) as *mut u32, 0);

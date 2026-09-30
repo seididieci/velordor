@@ -9,16 +9,16 @@
 //! nome→handle. `resolve(name)` scrive un frame `[namelen:8][name]` nel
 //! DISK_REQ ring (mappato a `DISK_REQ_VA`, stessa VA di block: page table
 //! per-processo, nessun conflitto) e manda `DISK_RESOLVE`; l'handle torna in
-//! w0 di reply (ERR = sconosciuto). userfs non indovina piu' nulla dal nome.
+//! w0 di reply (ERR = sconosciuto). cardo non indovina piu' nulla dal nome.
 //!
 //! Riconnessione (init-restart): il canale e' invalidato alla morte di
 //! block (`note_peer_death` su EXIT_NOTIFY, o send fallita) e il prossimo
 //! read/resolve rifa' lookup + HELLO + remap (bound, mai wedge). Il remap
 //! riallinea entrambi i ring: il contenuto appartiene all'epoca morta e l'op
-//! e' ritentata dal chiamante. `block` non richiama mai `userfs`: le send
+//! e' ritentata dal chiamante. `block` non richiama mai `cardo`: le send
 //! sincrone non creano cicli (stesso argomento dei relay verso devfs/console).
 //!
-//! Single-threaded per costruzione (userfs e' monolitico): `Cell` basta, mai
+//! Single-threaded per costruzione (cardo e' monolitico): `Cell` basta, mai
 //! rientranza (la send blocca senza eseguire altro codice).
 
 use core::cell::Cell;
@@ -33,7 +33,7 @@ use libr::{DISK_HELLO, DISK_OPEN, DISK_READ, DISK_RESOLVE, DISK_WRITE};
 use libr::{DISK_INFO, DISK_LIST, DISK_FLUSH};
 
 /// Finestra del request ring di block (stessa VA del server: ogni processo
-/// ha le proprie page table, nessun conflitto). userfs e' l'unico writer.
+/// ha le proprie page table, nessun conflitto). cardo e' l'unico writer.
 const DISK_REQ_VA: u64 = 0x0000_4000_0024_0000;
 /// Finestra del response ring di block (stessa VA del server: ogni processo
 /// ha le proprie page table, nessun conflitto).
@@ -86,7 +86,7 @@ impl IpcDisk {
 
     /// Segnala la morte di un peer (EXIT_NOTIFY): se e' block, invalida il
     /// canale — il prossimo read/resolve riconnette. Ritorna true se eravamo
-    /// connessi (cambio d'epoca: il chiamante userfs droppa le istanze FAT
+    /// connessi (cambio d'epoca: il chiamante cardo droppa le istanze FAT
     /// attive, gli handle possono cambiare — re-resolve per nome al prossimo
     /// accesso, Fase 16c).
     pub fn note_peer_death(&self, dead_chan: u64) -> bool {
@@ -178,7 +178,7 @@ impl IpcDisk {
                     _ => false,
                 };
                 if ok {
-                    println!("[userfs] block connesso (chan {})", cu);
+                    println!("[cardo] block connesso (chan {})", cu);
                     self.chan.set(Some(cu));
                     return Some(cu);
                 }

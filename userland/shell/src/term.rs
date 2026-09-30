@@ -42,7 +42,7 @@ pub(crate) fn term_init() -> bool {
     }
     false
 }
-/// Scrive byte sul terminale: userfs li inoltra al console server che li
+/// Scrive byte sul terminale: cardo li inoltra al console server che li
 /// disegna sulla VGA (DEV_WRITE). Echo dei tasti gestito dal console.
 /// Mirror su seriale per debugging e per test automatici.
 /// Hook B1 (Fase 40.4b): con stdout redirectato (`set_stdio`) i builtin

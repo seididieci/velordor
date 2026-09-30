@@ -89,7 +89,7 @@ unsafe fn peek_header(va: u64) -> Option<(u32, u64, u64, usize)> {
     }
 }
 
-/// Resync fail-closed del ring client (tail=head, stampo userfs): il frame in
+/// Resync fail-closed del ring client (tail=head, stampo cardo): il frame in
 /// testa e' impossibile e qualunque consumo parziale disallineerebbe per
 /// sempre. Il mittente vede ERR e ritenta/riporta.
 unsafe fn resync(va: u64) {
@@ -301,7 +301,7 @@ fn handle_read(st: &mut State, chan: u64, expect: u64) -> (u64, u64) {
 }
 
 /// FLUSH (solo parent/init): lega il volume (primo contatto FS di sempre —
-/// userfs e' su per costruzione dell'ordine di boot), retro-data e ri-chiavia
+/// cardo e' su per costruzione dell'ordine di boot), retro-data e ri-chiavia
 /// in RAM i record pre-Time (il giorno-0 non raggiunge mai il disco) e avvia
 /// il riversamento incrementale (il loop drena 4/giro: mai bloccare gli
 /// APPEND). Idempotente.
@@ -508,7 +508,7 @@ pub fn run() -> ! {
     // registrato (lookup singolo, mai attesa) si rilega il volume, senno'
     // si resta RAM-only (primo boot: Fs non esiste ancora, niente hang).
     let mut st = State::new();
-    if libr::service_lookup(libr::Service::Fs).is_ok() {
+    if libr::service_lookup(libr::Service::Cardo).is_ok() {
         st.want_volume = true;
     }
 

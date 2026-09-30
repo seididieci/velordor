@@ -276,7 +276,7 @@ pub fn t_driver_death_mount() -> bool {
 }
 
 /// t26 — purge rings/ftable alla morte di client (Fase 14). N helper OPENDIE
-/// aprono /dev/null + /dev/zero + hello.txt e muoiono SENZA close: userfs deve
+/// aprono /dev/null + /dev/zero + hello.txt e muoiono SENZA close: cardo deve
 /// purgare rings/ftable (con DEV_CLOSE inoltrato ai driver) senza corrompere
 /// lo stato vivo. Poi smoke FS completo (null/zero/hello/write/mkdir/readdir).
 pub fn t_client_death_purge() -> bool {
@@ -378,7 +378,7 @@ pub fn t_client_death_purge() -> bool {
 /// del binario (Fase 21: ~8 read FS × ~15 round-trip DISK l'uno, ognuno dei
 /// quali puo' attendere un quanto sotto carico — misurato ~730 tick con
 /// usertests che polla) → bound 2000, o PASS o FAIL rumoroso, mai hang.
-/// userfs non viene mai toccato (il canale FS del test resta vivo).
+/// cardo non viene mai toccato (il canale FS del test resta vivo).
 /// NOTA: non confronta pid vecchio/nuovo (il riuso PID puo' ridare lo stesso
 /// numero); osserva sparizione → ricomparsa.
 pub fn t_vela_restart() -> bool {
@@ -436,7 +436,7 @@ pub fn t_vela_restart() -> bool {
         println!("[usertests] t27: write/read post-restart FAILED");
         return false;
     }
-    // Smoke ramfs: userfs mai toccato dal restart.
+    // Smoke ramfs: cardo mai toccato dal restart.
     let Ok(fdh) = libr::open("hello.txt", 0) else {
         println!("[usertests] t27: smoke hello.txt FAILED");
         return false;
@@ -447,13 +447,13 @@ pub fn t_vela_restart() -> bool {
     n >= helpers::HELLO.len() && hb[..helpers::HELLO.len()] == *helpers::HELLO
 }
 
-/// t28 — restart di userfs end-to-end (Fase 14). Uccide userfs (pid via
+/// t28 — restart di cardo end-to-end (Fase 14). Uccide cardo (pid via
 /// `service_pid`) e attende che init lo riavvii. Poi verifica: fixture fresh
 /// funzionanti (mkdir/write/read), hello.txt ricreato, probe ramfs sparito
 /// (wipe: la ramfs e' volatile, contratto codificato qui), /fat leggibile
 /// (persistente su disco: contrasto), /dev/null operativo (driver
 /// re-registrati via ensure_mounted). Bound generosi, mai hang.
-pub fn t_userfs_restart() -> bool {
+pub fn t_cardo_restart() -> bool {
     helpers::drain_stray();
     // Baseline: hello + /dev/null.
     let Ok(fdh) = libr::open("hello.txt", 0) else {
@@ -477,36 +477,36 @@ pub fn t_userfs_restart() -> bool {
         return false;
     }
     let _ = libr::close(fp);
-    // Bounce via init (Fase 35: userfs e' figlio di init, kill diretto qui
+    // Bounce via init (Fase 35: cardo e' figlio di init, kill diretto qui
     // fallirebbe col kill parent-scoped).
-    let p1 = match libr::init_bounce(libr::Service::Fs) {
+    let p1 = match libr::init_bounce(libr::Service::Cardo) {
         Ok(p) => p,
         Err(_) => {
-            println!("[usertests] t28: bounce userfs FAILED");
+            println!("[usertests] t28: bounce cardo FAILED");
             return false;
         }
     };
     // Kill + sparizione + ricomparsa (come t27, poll throttled Livello 1).
     if !libr::poll_wait(1000, libr::POLL_PERIOD_TICKS, || {
-        libr::service_pid(libr::Service::Fs).is_err()
+        libr::service_pid(libr::Service::Cardo).is_err()
     }) {
-        println!("[usertests] t28: userfs mai sparito (timeout)");
+        println!("[usertests] t28: cardo mai sparito (timeout)");
         return false;
     }
     let p2 = match libr::poll_value(1000, libr::POLL_PERIOD_TICKS, || {
-        libr::service_pid(libr::Service::Fs).ok()
+        libr::service_pid(libr::Service::Cardo).ok()
     }) {
         Some(p) => p,
         None => {
-            println!("[usertests] t28: userfs mai riapparso (timeout)");
+            println!("[usertests] t28: cardo mai riapparso (timeout)");
             return false;
         }
     };
-    println!("[usertests] t28: userfs riavviato (pid {} -> {})", p1, p2);
+    println!("[usertests] t28: cardo riavviato (pid {} -> {})", p1, p2);
     // Fixture fresh (re-handshake trasparente via NOHANDSHAKE se serve).
-    // Throttled (lezione t27/t28): martellare userfs in busy-loop affama la
+    // Throttled (lezione t27/t28): martellare cardo in busy-loop affama la
     // re-registrazione dei driver (vela/console ricreano il mount proprio
-    // su questo userfs).
+    // su questo cardo).
     if !libr::poll_wait(1000, libr::POLL_PERIOD_TICKS, || {
         libr::mkdir("/td28").is_ok()
     }) {
@@ -539,7 +539,7 @@ pub fn t_userfs_restart() -> bool {
         println!("[usertests] t28: verify mismatch i={} val={:#x}", i, x);
         return false;
     }
-    // hello.txt ricreato dal fresh userfs.
+    // hello.txt ricreato dal fresh cardo.
     let Ok(fh) = libr::open("hello.txt", 0) else {
         println!("[usertests] t28: hello.txt ricreato mancante");
         return false;
@@ -571,7 +571,7 @@ pub fn t_userfs_restart() -> bool {
     }
     // Driver re-registrati: /dev/null operativo. Retry con bound (throttled):
     // vela ricrea il mount in modo asincrono su EXIT_NOTIFY e puo' laggare
-    // dietro il fresh userfs; un singolo tentativo darebbe falsi FAIL.
+    // dietro il fresh cardo; un singolo tentativo darebbe falsi FAIL.
     let Ok(fd2) = libr::open_wait("/dev/null", 0, 1000, libr::POLL_PERIOD_TICKS) else {
         println!("[usertests] t28: /dev/null post-restart FAILED");
         return false;

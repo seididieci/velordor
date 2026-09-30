@@ -43,17 +43,17 @@ build_one testland/bench testland/bench/src/bench.ld userbench.bin userbench
 build_one testland/foreign testland/foreign/src/foreign.ld userforeign.bin userforeign
 
 # Tabella policy test (Fase 45, sandbox build): hash testland -> ALL, inclusa
-# SOLO da userfs (niente ciclo: i test non la includono). Segue il rebuild di
-# userfs (unico consumatore): userfs.bin in userland/build viene rigenerato
+# SOLO da cardo (niente ciclo: i test non la includono). Segue il rebuild di
+# cardo (unico consumatore): cardo.bin in userland/build viene rigenerato
 # QUI (prima del kernel che lo embedda e di inject-bins.sh che lo copia su
-# /fat per i restart da disco). Fixpoint in un passaggio (userfs e' fuori da
+# /fat per i restart da disco). Fixpoint in un passaggio (cardo e' fuori da
 # entrambe le tabelle, i test non dipendono da questa).
 bash scripts/gen-test-policy.sh
 export VELORDOR_SERVICE_POLICY="$(pwd)/build-meta/service_policy.rs"
 export VELORDOR_TEST_POLICY="$(pwd)/build-meta/test_policy.rs"
 # Rebuild mirato in userland/build (BUILD override: build_one scrive in
 # $BUILD/$out e qui $BUILD e' testland/build — il kernel embedda e inject
-# copiano userland/build). Rimuove anche l'eventuale userfs.bin stale in
+# copiano userland/build). Rimuove anche l'eventuale cardo.bin stale in
 # testland/build (artefatto di run precedenti: NON deve finire in tabella).
-rm -f testland/build/userfs.bin
-BUILD="userland/build" build_one userland/fs userland/fs/src/fs.ld userfs.bin userfs
+rm -f testland/build/cardo.bin
+BUILD="userland/build" build_one userland/cardo userland/cardo/src/cardo.ld cardo.bin cardo

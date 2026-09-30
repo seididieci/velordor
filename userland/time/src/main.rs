@@ -3,7 +3,7 @@
 //! Legge il CMOS/RTC (`0x70/0x71`, porte concesse da init) una volta
 //! all'avvio e serve `TIME_NOW` (secondi epoch UTC + centesimi) sul servizio
 //! `Time`. Il tempo poi avanza sul monotono PIT, mai piu' sull'hardware.
-//! Clienti: userfs (mtime), log futuri, qualunque servizio (via `libr::time`).
+//! Clienti: cardo (mtime), log futuri, qualunque servizio (via `libr::time`).
 
 #![no_std]
 #![no_main]

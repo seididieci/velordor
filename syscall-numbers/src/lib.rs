@@ -52,7 +52,7 @@ pub const SYS_SBRK: u64 = 25;
 /// IPC `FS_BUF_REG`. Ogni chiamata da' pagine fresche (multi-coppia, Fase 16).
 pub const SYS_RING_ALLOC: u64 = 26;
 /// Mappa `count` pagine fisiche a partire da `phys` all'indirizzo virtuale
-/// `virt` nello spazio del processo `pid` (usato da userfs per mappare la
+/// `virt` nello spazio del processo `pid` (usato da cardo per mappare la
 /// pagina del client in un driver remoto (hub `vela`, `gpu`, ...) a `USER_FS_BUFFER`).
 pub const SYS_MAP_IN: u64 = 27;
 /// Crea un server CBS (budget, period) → id o -1 (admission control).
@@ -111,7 +111,7 @@ pub const SYS_FORK: u64 = 45;
 /// `peer_pid(chan)`: pid del peer del canale `chan` (0 = canale di nascita,
 /// come `send`/`recv`), o -1 se il canale non esiste/`chan` non ne fa parte
 /// (Fase 35, hardening: i server possono attribuire una richiesta a un
-/// processo — es. la policy `FS_REGISTER` di userfs distingue i figli di
+/// processo — es. la policy `FS_REGISTER` di cardo distingue i figli di
 /// init). Non rivela nulla che `ps_info` non mostri gia'.
 pub const SYS_PEER_PID: u64 = 46;
 /// `peer_info(chan)`: hash dell'immagine (`image_hash`, FNV-1a sull'ELF) del
@@ -119,7 +119,7 @@ pub const SYS_PEER_PID: u64 = 46;
 /// esiste/il peer e' morto (Fase 36, identita' misurata, Strato 2 di ADR-0026).
 /// Multi-registro (pattern `PS_INFO`): rax = 0 + rdi = hash; -1 = errore.
 /// I server lo usano per la policy su identita' (manifest init, `FS_REGISTER`
-/// in userfs). Non rivela nulla oltre l'identita' del binario (nomi e pid sono
+/// in cardo). Non rivela nulla oltre l'identita' del binario (nomi e pid sono
 /// gia' visibili via `ps_info`/`peer_pid`).
 pub const SYS_PEER_INFO: u64 = 47;
 /// Sostituisce l'immagine del chiamante (Fase 37, `exec` in-place):
@@ -220,11 +220,11 @@ pub const PS_SCAN_MAX: u32 = 32;
 /// IPC tag: il client ha scritto nel request ring e notifica il server.
 pub const FS_NOTIFY: u64 = 0x32;
 // ── Tag IPC userland, single source (centralizzazione DocsB: prima duplicati
-// in `libr`, userfs/block/init/tty/kbd e come letterali nei test) ────────
+// in `libr`, cardo/block/init/tty/kbd e come letterali nei test) ────────
 // - FS_REGISTER (0x30): un driver registra il prefix di mount (frame
-//   R_REGISTER nel request ring, letto da userfs).
+//   R_REGISTER nel request ring, letto da cardo).
 // - FS_BUF_REG (0x31): handshake register-only "i miei ring sono req=w0,
-//   resp=w1" (client e driver verso userfs).
+//   resp=w1" (client e driver verso cardo).
 // - KBD_NOTIFY (0x40): kbd → usertty, scancode in coda (w0 = count).
 // - JOB_CANCEL (0x43): parent → figlio, cancel cooperativo job control
 //   (Fase 44b: Ctrl-C della shell; w0 = 2/SIGINT, informativo). Il figlio
@@ -243,9 +243,9 @@ pub const JOB_CANCEL: u64 = 0x43;
 pub const SVC_READY: u64 = 0x7D;
 pub const TEST_DONE: u64 = 0x7E;
 pub const INIT_BOUNCE: u64 = 0x7F;
-// ── Protocollo DEV_* (userfs→driver: vela/gpu/kbd/tty/block, DocsD) ───
+// ── Protocollo DEV_* (cardo→driver: vela/gpu/kbd/tty/block, DocsD) ───
 // Single source of truth dei tag e dei device type (w0 di DEV_OPEN): prima
-// duplicati in userfs/block/vela/gpu/kbd/tty. userfs instrada per
+// duplicati in cardo/block/vela/gpu/kbd/tty. cardo instrada per
 // prefix al server e inoltra l'op; il driver risponde sul relay.
 // - OPEN/READ/WRITE/CLOSE/READDIR: op sui nodi device (raw o sintetizzati).
 // - Type: NULL/ZERO (vela), KEYBOARD (tty, `/dev/input`), CONSOLE (gpu,
@@ -277,7 +277,7 @@ pub const TIME_NOW: u64 = 0x60;
 //   (livello+formato in `libr::log`; il tag e' solo hint leggibile, il bucket
 //   e' DERIVATO dal server dall'identita' del chiamante) nel proprio ring LOG
 //   e notifica con w0 = payload-len (expect, come R_OBJ_GET); il server mappa
-//   il ring via `map_physical` (stampo `map_client_req_ring` di userfs), timbra
+//   il ring via `map_physical` (stampo `map_client_req_ring` di cardo), timbra
 //   tick+epoch e accoda in RAM (+ volume dopo la FLUSH). Reply (seq, durable).
 // - READ (0x63): payload `[giorno:8][seq:8]` sul bucket PROPRIO del chiamante
 //   (seq=0 → latest); risposta nel response ring del client (stampo DEV) +
@@ -309,12 +309,12 @@ pub const LOG_RAM_TAIL: usize = 128;
 /// (Fase 14, ADR-0010). Non e' una richiesta: il parent non deve rispondere.
 pub const EXIT_NOTIFY: u64 = 0x7C;
 
-// ── Protocollo DISK_* (data-plane userfs→block, Fase 16) ───────────────
+// ── Protocollo DISK_* (data-plane cardo→block, Fase 16) ───────────────
 // Single source of truth dei tag (Fase 16c): prima duplicati in
 // `userland/fs/src/ipc_disk.rs` e `userland/disk/src/main.rs`. I tag viaggiano
 // nei registri IPC; i payload (nomi, settori) nei ring dedicati.
 //
-// Canale diretto userfs→block (service_lookup(Disk)):
+// Canale diretto cardo→block (service_lookup(Disk)):
 // - HELLO/OPEN/CLOSE: solo registri, niente frame.
 // - READ: un settore per chiamata, frame `[512:8][0:8][settore]` nel ring DISK_RESP.
 // - WRITE (20): un settore per chiamata, frame `[512:8][settore]` nel ring
@@ -323,7 +323,7 @@ pub const EXIT_NOTIFY: u64 = 0x7C;
 // - RESOLVE (16c): il nome nodo ("sda", "sda1") viaggia in un frame
 //   `[namelen:8][name]` nel ring DISK_REQ; la reply porta l'handle in w0
 //   (o ERR). block e' l'unico proprietario della mappa nome→handle:
-//   userfs non indovina piu' nulla dal nome.
+//   cardo non indovina piu' nulla dal nome.
 pub const DISK_HELLO: u64 = 0x50;
 pub const DISK_OPEN: u64 = 0x51;
 pub const DISK_READ: u64 = 0x52;
@@ -358,7 +358,7 @@ pub const DISK_FLUSH: u64 = 0x58;
 // sta qui: wiring in A2.
 
 // ── Tag delle operazioni FS (nel frame del ring, non nell'IPC) ────────────
-// Single source of truth (Fase 17): prima duplicati in `libr`, `userfs` e
+// Single source of truth (Fase 17): prima duplicati in `libr`, `cardo` e
 // (R_REGISTER) `block`. Il formato frame e' `[tag:4][w0:8][w1:8][payload]`.
 pub const R_OPEN: u32 = 0x10;
 pub const R_READ: u32 = 0x11;
@@ -400,12 +400,12 @@ pub const R_DUP_CANCEL: u32 = 0x1F;
 /// Crea una pipe (Fase 42): nessun payload (expect 0), w0 = hint di capacita'
 /// in byte (clampato server-side a [4096, 16384], default 8192 a hint 0).
 /// Ritorna l'fd di LETTURA nel result e quello di SCRITTURA in w1 (il frame
-/// di risposta porta entrambi: `[result:8][w1:8]`). Buffer in userfs, semantica
+/// di risposta porta entrambi: `[result:8][w1:8]`). Buffer in cardo, semantica
 /// non-bloccante: read a vuota con writer aperti → ERR_EMPTY (riprova
 /// throttled), a writer chiusi → 0 (EOF); write a piena → parziale, a lettori
 /// chiusi → ERR_CLOSED. Mai blocco del server single-threaded.
 pub const R_PIPE_CREATE: u32 = 0x20;
-// ── Topologia disco via userfs (Fase 51, P2: relay verso DISK_*, riusato da
+// ── Topologia disco via cardo (Fase 51, P2: relay verso DISK_*, riusato da
 // `arca list` in P5) ───────────────────────────────────────────────────
 // - R_DISK_LIST (0x21): nessun payload (expect 0); risposta self-written
 //   `[count:8][0:8][entry...]` con entry fisse 16 B `[sectors:8][flags:8]`
@@ -476,9 +476,9 @@ pub const R_RIGHTS_DROP: u32 = 0x18;
 /// `[ops:8][sublen:8][subtree]` (subtree normalizzato, "" = root).
 pub const R_RIGHTS_GET: u32 = 0x19;
 
-// ── Bit dei diritti per-canale lato userfs (Fase 17, 18.2) ───────────────
+// ── Bit dei diritti per-canale lato cardo (Fase 17, 18.2) ───────────────
 // Solo riduzione (DROP fa AND), default ALL. CLOSE sempre consentito (rilascia
-// stato, mai escalation: nessun bit). Diritti effimeri: restart userfs =
+// stato, mai escalation: nessun bit). Diritti effimeri: restart cardo =
 // re-handshake full; niente policy per-identita' (serve il kernel).
 pub const RIGHTS_OPEN: u32 = 0x01;
 pub const RIGHTS_READ: u32 = 0x02;
@@ -506,7 +506,7 @@ pub const RIGHTS_SYNC: u32 = 0x800;
 pub const RIGHTS_ALL: u32 = 0xFFF;
 
 // ── Sentinelle di errore FS (Fase 40, P1) ─────────────────────────────
-// userfs distingue i rifiuti invece del generico ERR: il client li mappa
+// cardo distingue i rifiuti invece del generico ERR: il client li mappa
 // nelle varianti di dominio di `libr::posix::Error` (ADR-0030: i numeri POSIX
 // restano solo in `to_errno`, mai nel kernel/wire). Valori ALTI da `!0` a
 // scendere, MAI `-errno`: `-2` colliderebbe con ERR_NOHANDSHAKE (retry
@@ -544,7 +544,7 @@ pub const MAP_TEST_FRAMES: u64 = 2;
 /// Identita' misurata di un'immagine ELF (Fase 36, Strato 2 di ADR-0026):
 /// FNV-1a a 64 bit sui byte dell'ELF. Single source kernel+user: il kernel la
 /// misura allo spawn (`image_hash` nel PCB) e la espone via `SYS_PEER_INFO`;
-/// init/userfs la ricalcolano sui byte caricati per la policy (manifest,
+/// init/cardo la ricalcolano sui byte caricati per la policy (manifest,
 /// `FS_REGISTER`). Stesso algoritmo dello sharing text (Fase 32, che ora usa
 /// questa funzione): sui `.bin` di build i due valori coincidono bit-per-bit.
 pub fn image_hash(bytes: &[u8]) -> u64 {
@@ -569,8 +569,8 @@ pub fn image_hash(bytes: &[u8]) -> u64 {
 pub enum Service {
     /// Terminale video (VGA). Usato da kbd_process e dai client.
     Gpu = 0,
-    /// File system server (userfs): tutti i client FS lo risolvono per nome.
-    Fs = 1,
+    /// Perno file (cardo): tutti i client FS lo risolvono per nome.
+    Cardo = 1,
     /// Hub `/dev` (vela, prefix `/dev`; pseudo-device null/zero).
     Vela = 2,
     /// Processo init (root della process tree). Non registra attivamente, ma
@@ -591,13 +591,13 @@ pub enum Service {
     /// init (restart); nessun altro lo risolve per nome (i client usano il FS).
     Tty = 6,
     /// Driver ATA a blocchi in userspace (Fase 16, `block`, R6): rileva i dischi,
-    /// espone `/dev/sdX` (+`/dev/sdXn` per le partizioni MBR). userfs lo
+    /// espone `/dev/sdX` (+`/dev/sdXn` per le partizioni MBR). cardo lo
     /// risolve per nome per il data-plane `DISK_*`; init lo supervisiona.
     Block = 7,
     /// Server di personalita' POSIX in userspace (Fase 39, P0 della roadmap
     /// 39-45, ADR-0030): tabelle fd virtuali, pipe, job control. Solo
     /// controllo e stato globale POSIX; il kernel resta neutro (ADR-0025) e
-    /// il data plane resta diretto client→userfs.
+    /// il data plane resta diretto client→cardo.
     Posix = 8,
     /// Fornitore di data/ora in userspace (Fase 50, P1 orologio, `usertime`):
     /// legge il CMOS all'avvio (epoch) e serve `TIME_NOW` (epoch + monotono

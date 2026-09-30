@@ -4,7 +4,7 @@
 //! topologia dei dischi (via `libr::disk_list/disk_info`, relay R_DISK_*);
 //! `stat <nodo>` legge il LBA0 del nodo (`/dev/<nodo>`) e riconosce il
 //! superblock ArcaFS (magic + versione + block-size + checksum FNV — stessi
-//! offset del tool host e di userfs, single source in `syscall-numbers`).
+//! offset del tool host e di cardo, single source in `syscall-numbers`).
 //!
 //! Il mount nativo e `get`/`put`/`rm` arrivano in A1/A7; qui solo lettura e
 //! diagnostica. Output su seriale (come gli altri programmi da disco).

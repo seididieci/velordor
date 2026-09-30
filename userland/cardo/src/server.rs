@@ -4,8 +4,8 @@ use super::*;
 
 /// Nome del driver dietro il canale `chan` dal suo `image_hash` (Fase 36,
 /// identita' misurata): confronto col manifest generato a build-time; `"?"`
-/// se il canale e' morto o l'hash e' ignoto (test/helper, userfs stesso:
-/// `HASH_USERFS` non esiste — userfs incorpora il manifest e il suo hash
+/// se il canale e' morto o l'hash e' ignoto (test/helper, cardo stesso:
+/// `HASH_CARDO` non esiste — cardo incorpora il manifest e il suo hash
 /// sarebbe un ciclo). Solo diagnostica nei log, mai decisioni (la policy
 /// confronta gli hash, non i nomi).
 fn driver_name_of(chan: u64) -> &'static str {
@@ -118,37 +118,37 @@ fn seed_sys_disk(
         }
         let mut data = Vec::new();
         if !seed_read(mounts, fgen, path, &mut data) {
-            println!("[userfs] sys: {} non seedato (init ripiega su FAT)", path);
+            println!("[cardo] sys: {} non seedato (init ripiega su FAT)", path);
             continue;
         }
         match btree_drv::seed_put(disk, b"sys", key, &data) {
             Some(n) => {
-                println!("[userfs] sys: {}B seeded", n);
+                println!("[cardo] sys: {}B seeded", n);
                 seeded = true;
             }
-            None => println!("[userfs] sys: {} oltre bound (init ripiega su FAT)", path),
+            None => println!("[cardo] sys: {} oltre bound (init ripiega su FAT)", path),
         }
     }
     if seeded && !btree_drv::commit(disk) {
-        println!("[userfs] sys: commit seed fallito (init ripiega su FAT)");
+        println!("[cardo] sys: commit seed fallito (init ripiega su FAT)");
     }
 }
 
 libr::entry!(real_main);
 #[inline(never)]
 fn real_main(_sp: u64) -> ! {
-    println!("[userfs] starting");
+    println!("[cardo] starting");
 
     // Registra il servizio Fs SUBITO (ADR-0008): il mount FAT32 e' lento, e i
     // client (vela, testfs) risolvono Fs per nome appena partono. Registrarsi
     // prima del mount evita che chi spawa dopo aspetti inutilmente.
     // (L'ACK READY a init parte invece DOPO il populate, prima del loop:
     // READY significa "davvero pronto".)
-    let reg_ok = libr::service_register(libr::Service::Fs).is_ok();
+    let reg_ok = libr::service_register(libr::Service::Cardo).is_ok();
     if reg_ok {
-        println!("[userfs] registered as service Fs");
+        println!("[cardo] registered as service Fs");
     } else {
-        println!("[userfs] FAILED to register service Fs");
+        println!("[cardo] FAILED to register service Fs");
     }
 
     // Mount FAT32 dalle spec statiche (Fase 16b: stesso codice dei mount
@@ -160,13 +160,13 @@ fn real_main(_sp: u64) -> ! {
     let mut next_mount_id: u64 = 1;
     for (src, tgt) in mount::STATIC_MOUNTS {
         if mount::apply_mount_spec(&mut fat_mounts, src, tgt, "", &mut next_mount_id) {
-            println!("[userfs] FAT32 montato a /{} (via block)", tgt);
+            println!("[cardo] FAT32 montato a /{} (via block)", tgt);
         } else {
-            println!("[userfs] mount {} -> {} inattivo (disco assente?)", src, tgt);
+            println!("[cardo] mount {} -> {} inattivo (disco assente?)", src, tgt);
         }
     }
     if fat_mounts.iter().all(|m| !m.is_active()) {
-        println!("[userfs] nessun FAT attivo: ramfs only");
+        println!("[cardo] nessun FAT attivo: ramfs only");
     }
 
     let mut fs = ramfs::RamFs::new();
@@ -179,7 +179,7 @@ fn real_main(_sp: u64) -> ! {
 
     // Volume on-disk (scaffold RAW + motore): legato da R_ARCA_DEBUG/OPEN
     // come `VolumeStore` (un solo handle: USEDISK lo muove nel motore, mai
-    // duplicato). Vive finche' userfs vive (al restart si rilega dal disco).
+    // duplicato). Vive finche' cardo vive (al restart si rilega dal disco).
     let mut dbgvol: Option<btree_drv::VolumeStore> = None;
 
     // Motore B+tree su disco (backend UNICO): legato all'AVVIO se un volume
@@ -195,7 +195,7 @@ fn real_main(_sp: u64) -> ! {
     // l'ACK e li deve trovare gia' serviti (N0 end-to-end nel gate).
     // Senza volume: silenzio, nessun motore (produzione/ARCA_IMG=0 invariati).
     if let Some(store) = btree_drv::scan_and_open() {
-        println!("[userfs] arca-disk: auto-bind all'avvio");
+        println!("[cardo] arca-disk: auto-bind all'avvio");
         dbgvol = Some(store);
         if btree_drv::set_backend(&mut dbgvol, &mut disk).is_some() {
             if let Some(d) = disk.as_mut() {
@@ -238,7 +238,7 @@ fn real_main(_sp: u64) -> ! {
     if let Some(data) = fs.create_file("test.txt") {
         data.extend_from_slice(b"Line 1\nLine 2\nLine 3\n");
     }
-    println!("[userfs] ramfs popolata, entro in loop");
+    println!("[cardo] ramfs popolata, entro in loop");
 
     // Notifica a init (canale di nascita) che il servizio Fs e' pronto: init
     // aspetta questo ACK prima di spawnare chi usa il filesystem (boot
@@ -264,7 +264,7 @@ fn real_main(_sp: u64) -> ! {
         // (ADR-0008): ogni client ha il proprio canale verso Fs. La reply e'
         // implicita al messaggio corrente: se il client era bloccato in `send`
         // (sync) il kernel la consegna nel reply_slot; se era async (Fase 13)
-        // il kernel accoda la risposta con req_id negativo. userfs non cambia.
+        // il kernel accoda la risposta con req_id negativo. cardo non cambia.
         let chan = msg.channel;
         let tag = msg.tag;
 
@@ -276,7 +276,7 @@ fn real_main(_sp: u64) -> ! {
             // nega op, mai la registrazione (libr ritenta comunque).
             let ceil = policy::ceiling_for(chan);
             policy.insert(chan, ceil);
-            println!("[userfs] client chan {} registered rings req={:#x} resp={:#x} ceiling={:#x}", chan, msg.w0, msg.w1, ceil);
+            println!("[cardo] client chan {} registered rings req={:#x} resp={:#x} ceiling={:#x}", chan, msg.w0, msg.w1, ceil);
             let _ = libr::reply(0, 0, 0);
             continue;
         }
@@ -326,7 +326,7 @@ fn real_main(_sp: u64) -> ! {
                         Err(_) => continue,
                     };
                     if !prefix.starts_with("/dev/") {
-                        println!("[userfs] FS_REGISTER rifiutato: '{}' fuori /dev/", prefix);
+                        println!("[cardo] FS_REGISTER rifiutato: '{}' fuori /dev/", prefix);
                         continue;
                     }
                     // Idempotente sul prefix (init-restart): se il prefix era
@@ -356,7 +356,7 @@ fn real_main(_sp: u64) -> ! {
                     };
                     if existing.is_some() && !init_child && !stale && !same_image {
                         println!(
-                            "[userfs] FS_REGISTER replace '{}' rifiutato (pid {} {}, driver vivo {})",
+                            "[cardo] FS_REGISTER replace '{}' rifiutato (pid {} {}, driver vivo {})",
                             prefix, caller, driver_name_of(chan), driver_name_of(existing.unwrap()),
                         );
                         continue;
@@ -366,7 +366,7 @@ fn real_main(_sp: u64) -> ! {
                         prefix: String::from(prefix),
                         driver_chan: chan,
                     });
-                    println!("[userfs] registered mount '{}' → driver_chan={} ({})", prefix, chan, driver_name_of(chan));
+                    println!("[cardo] registered mount '{}' → driver_chan={} ({})", prefix, chan, driver_name_of(chan));
                 }
             } else {
                 rings::req_ring_consume(20 + payload_len);
@@ -443,7 +443,7 @@ fn real_main(_sp: u64) -> ! {
             let _ = libr::reply(0, ERR_NOHANDSHAKE, 0);
             continue;
         }
-        // Mappa i ring del client nello spazio di userfs.
+        // Mappa i ring del client nello spazio di cardo.
         if !rings::map_client_req_ring(&rings, chan) || !rings::map_client_resp_ring(&rings, chan) {
             let _ = libr::reply(0, ERR, 0);
             continue;

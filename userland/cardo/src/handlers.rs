@@ -125,7 +125,7 @@ pub fn handle_read(
         return Err(ERR_INVALID);
     }
 
-    // File remoto: inoltro al driver. userfs inietta entrambi i ring del
+    // File remoto: inoltro al driver. cardo inietta entrambi i ring del
     // client nel driver (`map_in`): il driver legge dalla request ring e
     // scrive nella response ring → zero copie (Fase 10.2).
     if let Some((driver_chan, remote_fd)) = ftable.get_remote(chan, fd) {
@@ -154,7 +154,7 @@ pub fn handle_read(
 
     // 24.2 — buffer di risposta sullo stack (count ≤ 4096 per il check in
     // testa): niente `to_vec()`/`Vec` temporanei per-op (la free-list
-    // dell'heap di userfs cresceva di ~1 blocco a op FAT → scansioni O(n)
+    // dell'heap di cardo cresceva di ~1 blocco a op FAT → scansioni O(n)
     // su tutte le op successive; vedi read_dir in fat32.rs).
     let mut buf_stack = [0u8; 4096];
     let data: &[u8] = match kind {
@@ -267,7 +267,7 @@ pub fn handle_pipe_create(
 }
 
 /// File remoto: inoltro al driver. Il payload del WRITE RESTA nel request ring
-/// del client (zero copy): userfs inietta entrambi i ring del client nel driver
+/// del client (zero copy): cardo inietta entrambi i ring del client nel driver
 /// (`map_in`), il driver legge i dati direttamente dal request ring e avanza la
 /// tail (SPSC). La chiamata NON deve consumare il frame nel request ring.
 /// Ritorna i byte accettati dal driver (reply.w0).
@@ -622,7 +622,7 @@ pub fn handle_stat(
 
 /// R_DISK_LIST (Fase 51, P2): topologia dischi via `IpcDisk::list`.
 /// Self-written come R_STAT (`[count:8][0:8][entry...]`, entry 16 B):
-/// il dispatch non riscrive. `topo` e' la connessione topologia di userfs
+/// il dispatch non riscrive. `topo` e' la connessione topologia di cardo
 /// (riconnessione automatica a morte driver, come i mount).
 #[inline(never)]
 pub fn handle_disk_list(
@@ -967,7 +967,7 @@ pub fn handle_umount(
 
 /// Sposta l'offset di un fd LOCALE (Fase 40, R_LSEEK): `off` con segno,
 /// `whence` = SEEK_SET/CUR/END. Solo Local (Remote → ERR_INVALID: l'offset
-/// vive in userfs, i driver non lo conoscono). Ritorna il nuovo offset.
+/// vive in cardo, i driver non lo conoscono). Ritorna il nuovo offset.
 /// Two-phase: valida tutto PRIMA di `set_offset` (a rifiuto l'offset resta
 /// quello di prima, mai stato intermedio).
 #[inline(never)]
@@ -982,7 +982,7 @@ pub fn handle_lseek(
     fgen: &mut u64,
 ) -> Result<u64, u64> {
     // `get` ritorna Some solo per i Local (Remote e fd ignoti → Invalid:
-    // niente EBADF nel nativo; l'offset vive in userfs, i driver non lo
+    // niente EBADF nel nativo; l'offset vive in cardo, i driver non lo
     // conoscono).
     let (path, kind, cur, mnt) = ftable.get(chan, fd).ok_or(ERR_INVALID)?;
     let base: i64 = match whence {

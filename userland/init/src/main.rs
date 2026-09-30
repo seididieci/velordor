@@ -287,7 +287,7 @@ fn spawn_entry(meta: &SvcMeta) -> Option<i64> {
 
 /// Spawna un binario di test da disco (Fase 21: `/test/*.bin`) e aspetta che
 /// segnali la fine (IPC TEST_DONE sul canale di nascita). I test girano in
-/// SEQUENZA: condividono la ramfs di userfs (path e file di lavoro) e la
+/// SEQUENZA: condividono la ramfs di cardo (path e file di lavoro) e la
 /// sequenza rende output e PID deterministici.
 /// Gestisce anche le morti dei servizi supervisionati (es. t27 uccide vela a
 /// suite in corso): senza, il restart arriverebbe solo dopo la suite.
@@ -591,7 +591,7 @@ fn real_main(_sp: u64) -> ! {
     // fs (serve Disk registrato), time (serve /fat), FLUSH a userlog (dopo
     // time: backdate/re-key), gpu (prima di kbd), uptime, vela, kbd,
     // tty, posix. A boot ogni spawn mancato e' FAIL LOUD (exit → panic).
-    // userlog PRIMA di userfs per disegno (ADR-0039): assorbe tutto in RAM e
+    // userlog PRIMA di cardo per disegno (ADR-0039): assorbe tutto in RAM e
     // riversa alla FLUSH; block fa READY subito dopo detection +
     // service_register (prima del mount dei nodi, che aspetta Fs).
     let Some(log_chan) = boot_svc_nowait(&SVC_LOG) else {
@@ -606,17 +606,17 @@ fn real_main(_sp: u64) -> ! {
     let _ = libr::log::log(b"init", b"log ready");
     let _ = libr::log::log(b"init", b"disk ready");
 
-    // userfs SUBITO DOPO disk (serve Disk registrato: resta dopo per non
+    // cardo SUBITO DOPO disk (serve Disk registrato: resta dopo per non
     // spendere il bound HELLO — il mount aspetterebbe comunque il disco).
-    // Chi usa il FS parte solo dopo che userfs e' pronto (READY = pronto).
-    let Some(fs_chan) = spawn_child(b"userfs") else {
+    // Chi usa il FS parte solo dopo che cardo e' pronto (READY = pronto).
+    let Some(fs_chan) = spawn_child(b"cardo") else {
         println!("[init] boot FAILED (fs), panic");
         libr::exit(1);
     };
     wait_msg(fs_chan, SVC_READY);
     let _ = libr::log::log(b"init", b"fs ready");
     // Time da disco (Fase 50, P1 orologio): registra Time + ack; chi serve
-    // data/ora (userfs per mtime, userlog per i timbri) lo risolve per nome.
+    // data/ora (cardo per mtime, userlog per i timbri) lo risolve per nome.
     if boot_svc(&SVC_TIME, true).is_none() {
         println!("[init] boot FAILED (time), panic");
         libr::exit(1);
@@ -630,7 +630,7 @@ fn real_main(_sp: u64) -> ! {
         libr::exit(1);
     }
     // Console da disco (Fase 21): registra Console + ack subito dopo la
-    // registrazione (prima del mount /dev/input che richiede userfs, gia'
+    // registrazione (prima del mount /dev/input che richiede cardo, gia'
     // pronto qui). kbd la risolve per nome al passo 4.
     let Some(console_chan) = boot_svc(&SVC_CONSOLE, true) else {
         println!("[init] boot FAILED (console), panic");
@@ -672,18 +672,18 @@ fn real_main(_sp: u64) -> ! {
     // disk/posix/time/log vengono riavviati alla morte (dalla loro sorgente: embedded per
     // disk/fs, disco per gli altri — Fase 21); gli altri figli solo loggati.
     // Costruita prima dei test cosi' anche run_test supervisiona (t27 uccide
-    // vela a suite in corso). NOTA: un restart di userfs wipa la ramfs
+    // vela a suite in corso). NOTA: un restart di cardo wipa la ramfs
     // (fixture dei test) — in suite solo t28 lo uccide (Fase 14.12) e
     // ricostruisce la fixture al restart.
     //
     // Disk/fs embedded: manifest inline (path=None) con gli stessi nomi: il
     // restart riusa `spawn_child` come a boot.
     const META_DISK: SvcMeta = SvcMeta { bin: b"block", path: None, obj: None, prio: 16, io: &[] };
-    const META_FS: SvcMeta = SvcMeta { bin: b"userfs", path: None, obj: None, prio: 16, io: &[] };
+    const META_FS: SvcMeta = SvcMeta { bin: b"cardo", path: None, obj: None, prio: 16, io: &[] };
     let mut supervised = [
         Supervised { meta: &SVC_CONSOLE, svc: libr::Service::Gpu, chan: -1, pid: -1, restarts: 0, window_start: 0, held: false },
         Supervised { meta: &META_DISK, svc: libr::Service::Block, chan: -1, pid: -1, restarts: 0, window_start: 0, held: false },
-        Supervised { meta: &META_FS, svc: libr::Service::Fs, chan: -1, pid: -1, restarts: 0, window_start: 0, held: false },
+        Supervised { meta: &META_FS, svc: libr::Service::Cardo, chan: -1, pid: -1, restarts: 0, window_start: 0, held: false },
         Supervised { meta: &SVC_VELA, svc: libr::Service::Vela, chan: -1, pid: -1, restarts: 0, window_start: 0, held: false },
         Supervised { meta: &SVC_KBD, svc: libr::Service::Kbd, chan: -1, pid: -1, restarts: 0, window_start: 0, held: false },
         Supervised { meta: &SVC_TTY, svc: libr::Service::Tty, chan: -1, pid: -1, restarts: 0, window_start: 0, held: false },

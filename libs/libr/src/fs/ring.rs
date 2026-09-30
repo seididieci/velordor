@@ -1,10 +1,10 @@
-// ── FS wrappers (Fase 10.2): ring buffer SPSC + IPC diretta a userfs ──
+// ── FS wrappers (Fase 10.2): ring buffer SPSC + IPC diretta a cardo ──
 //
 // Ogni processo ha DUE pagine ring (request + response) allocate dalla
 // syscall 26 (`SYS_RING_ALLOC`) e mappate a `REQ_RING_VA` e `RESP_RING_VA`.
-// Le pagine vengono registrate presso userfs con una IPC `FS_BUF_REG`.
+// Le pagine vengono registrate presso cardo con una IPC `FS_BUF_REG`.
 // Le operazioni FS scrivono un request frame nel request ring, notificano
-// userfs con `FS_NOTIFY`, e leggono il response frame dalla response ring
+// cardo con `FS_NOTIFY`, e leggono il response frame dalla response ring
 // dopo la reply IPC.
 
 // ── Ring buffer constants ─────────────────────────────────────────
@@ -13,18 +13,18 @@
 pub(crate) const REQ_RING_VA: u64 = 0x0000_4000_0020_0000;
 /// Response ring virtuale (USER_FS_BUFFER + 0x1000).
 pub(crate) const RESP_RING_VA: u64 = 0x0000_4000_0021_0000;
-/// Finestre DEDICATE per i relay userfs→driver (zero-copy senza clobber):
-/// userfs inietta qui (via `map_in`) i ring del client quando inoltra una DEV_*.
+/// Finestre DEDICATE per i relay cardo→driver (zero-copy senza clobber):
+/// cardo inietta qui (via `map_in`) i ring del client quando inoltra una DEV_*.
 /// Separate dalle finestre proprie (REQ/RESP): i ring propri di un driver-server
 /// non vengono mai rimappati da nessuno, quindi niente `remap` dance, niente
 /// race di preemption tra remap e uso (osservato: letture congelate/wedge).
 /// Libere nella mappa user (heap da +0x400000, stack sotto, VGA +0x100000).
 pub const CLI_REQ_VA: u64 = 0x0000_4000_0022_0000;
-/// Finestra response per i relay userfs→driver (vedi sopra).
+/// Finestra response per i relay cardo→driver (vedi sopra).
 pub const CLI_RESP_VA: u64 = 0x0000_4000_0023_0000;
 /// Capacita' dati per ring (4088 byte; gli ultimi 8 byte della pagina
 /// 4KiB = head + tail a 0xFF8/0xFFC, fuori dall'area dati).
-/// Single source (A1): prima duplicata in userfs/block/vela/gpu/tty/kbd.
+/// Single source (A1): prima duplicata in cardo/block/vela/gpu/tty/kbd.
 pub const RING_DATA_CAP: usize = 4088;
 /// Dimensione massima di un payload dati in un singolo frame del ring.
 /// Il response frame occupa 16 B di header: il payload utile massimo e'
@@ -84,9 +84,9 @@ pub(crate) unsafe fn ring_read_at(ring_va: u64, tail: u32, dst: &mut [u8], count
 
 // ── Frame helpers lato server (A2) ─────────────────────────────────
 // Prima identici in vela/gpu/tty/kbd/block: operano sulla response/
-// request ring DEL CLIENT (VA parametrica, mappata da userfs via `map_in`).
+// request ring DEL CLIENT (VA parametrica, mappata da cardo via `map_in`).
 // Formato response `[len:8][0:8][payload]`, request `[tag:4][w0:8][w1:8]
-// [payload]` (header 20 B). Diversi dai frame FS di userfs (`[result:8]
+// [payload]` (header 20 B). Diversi dai frame FS di cardo (`[result:8]
 // [w1:8]`), che restano locali al server.
 
 /// Scrive un response frame `[len:8][0:8][payload]` nel ring a `resp_va`.

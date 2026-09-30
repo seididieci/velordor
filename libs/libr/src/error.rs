@@ -38,7 +38,7 @@ pub enum Error {
     /// Argomenti o validazione rifiutati (exec oltre bound, meta invalide,
     /// munmap/mprotect parziali, frame malformati, messaggi fuori ordine).
     Invalid,
-    /// Rifiuto del server senza dettaglio (Fase 39: userfs risponde solo `ERR`;
+    /// Rifiuto del server senza dettaglio (Fase 39: cardo risponde solo `ERR`;
     /// la Fase 40 tipizzera' questi casi producendo le varianti di dominio).
     Failed,
     // ── Dominio FS: mapping fissato qui, produttori in Fase 40 ──

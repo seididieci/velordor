@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 # Casa del sottosistema ArcaFS (Fase 56.2a): protocollo wire, tag, bound e
-# formato blocchi on-disk condivisi tra guest (userfs/test), libr (wrapper)
+# formato blocchi on-disk condivisi tra guest (cardo/test), libr (wrapper)
 # e tool host. no_std+alloc come `blake2s` (solo `core`+`alloc` qui dentro;
 # l'I/O vive nei crate che usano questa lib).
 # Crate fuori dal workspace del kernel: build freestanding separata.

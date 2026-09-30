@@ -1,6 +1,6 @@
 //! B+tree COW per ArcaFS 56.2b (puro, `no_std`+`alloc`, niente I/O).
 //!
-//! Logica di indice condivisa tra guest (userfs) e test host: il codec dei
+//! Logica di indice condivisa tra guest (cardo) e test host: il codec dei
 //! nodi e gli algoritmi split/merge vivono UNA volta sola qui; lo storage
 //! (blocchi 3584 B con checksum in `format`) e' iniettato via [`BlockStore`].
 //! `userland/fs` implementa il trait sopra `ArcaVolume` (+ cache LRU);
@@ -1316,7 +1316,7 @@ impl<S: BlockStore> BTree<S> {
 
     /// PUT chunk a `offset` (0 = nuova versione da zero, >0 = patch della
     /// head): crea SEMPRE una versione nuova. Ritorna i byte accettati.
-    /// `now` = wall-clock dal chiamante (userfs `wall::wall_secs`).
+    /// `now` = wall-clock dal chiamante (cardo `wall::wall_secs`).
     #[inline(never)]
     pub fn put_chunk(
         &mut self,

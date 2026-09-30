@@ -218,7 +218,7 @@ pub struct Process {
     /// FNV-1a (`syscall_numbers::image_hash`) sui byte caricati allo spawn.
     /// 0 = nessuna immagine (processi kernel). Ereditato dal fork (stessi
     /// byte). Meccanismo neutro: il kernel misura ed espone (36.2), la policy
-    /// vive fuori (init manifest, `FS_REGISTER` in userfs).
+    /// vive fuori (init manifest, `FS_REGISTER` in cardo).
     pub image_hash: u64,
 }
 

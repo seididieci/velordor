@@ -165,7 +165,7 @@ fn normalize_source(source: &str) -> Option<String> {
 /// `/dev/sda` → `sda`, `/dev/disk/by-uuid/<H>` → `<H>`,
 /// `/dev/disk/by-label/<N>` → `<N>`, `UUID=<H>` → `<H>`, `LABEL=<N>` → `<N>`.
 /// La semantica (`/dev` = namespace, driver = matching) resta una sola:
-/// userfs possiede il layout, block il matching nome/UUID/label.
+/// cardo possiede il layout, block il matching nome/UUID/label.
 fn resolve_key(source: &str) -> Option<String> {
     if let Some(name) = source.strip_prefix("/dev/") {
         if let Some(tail) = name.strip_prefix("disk/by-uuid/") {

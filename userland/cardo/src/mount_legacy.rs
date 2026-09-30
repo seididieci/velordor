@@ -15,7 +15,7 @@ pub enum FsKind {
 /// Un mount point registrato da un driver via FS_REGISTER.
 pub struct Mount {
     pub prefix: alloc::string::String,
-    /// Canale del driver verso userfs (ADR-0008): userfs inoltra le DEV_* su
+    /// Canale del driver verso cardo (ADR-0008): cardo inoltra le DEV_* su
     /// QUESTO canale (il driver lo ha aperto con service_lookup(Fs)).
     pub driver_chan: u64,
 }

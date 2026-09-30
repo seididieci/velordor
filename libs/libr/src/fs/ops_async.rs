@@ -12,7 +12,7 @@ use crate::*;
 // spezza le richieste piu' grandi.
 
 /// `read_async(fd, count)`: come `read_fs` (un solo chunk) ma non blocca: scrive
-/// il frame `R_READ` nel request ring, notifica userfs con `send_async` e
+/// il frame `R_READ` nel request ring, notifica cardo con `send_async` e
 /// ritorna il `req_id` (>= 1) da passare a `fs_collect`/`fs_collect_msg`
 /// (Fase 39: errore nativo invece di -1).
 pub fn read_async(fd: i64, count: usize) -> Result<i64, Error> {
@@ -39,15 +39,15 @@ pub fn open_async(path: &str, flags: u32) -> Result<i64, Error> {
 /// frame `R_REGISTER` e notifica con `send_async` (Fase 39: `Result`).
 /// Da raccogliere con `fs_collect_msg(..., is_read=false)`: `Ok` = registrato.
 /// NOTA: a differenza delle altre op FS, la registrazione viaggia sul tag IPC
-/// `FS_REGISTER` (non `FS_NOTIFY`): userfs la serve in un handler dedicato.
+/// `FS_REGISTER` (non `FS_NOTIFY`): cardo la serve in un handler dedicato.
 pub fn fs_register_async(prefix: &[u8]) -> Result<i64, Error> {
     fs_op_async(FS_REGISTER, R_REGISTER, prefix.len() as u64, 0, prefix)
 }
 
 /// `fs_buf_reg_async()`: (re)invia gli indirizzi dei ring (handshake
 /// `FS_BUF_REG`) con `send_async`, senza frame e senza bloccare. Serve ai
-/// driver-server dopo un restart di userfs o un cambio canale: la tabella
-/// `rings` di userfs e' indicizzata per canale, quindi sotto un NUOVO canale
+/// driver-server dopo un restart di cardo o un cambio canale: la tabella
+/// `rings` di cardo e' indicizzata per canale, quindi sotto un NUOVO canale
 /// serve un NUOVO handshake (altrimenti ogni op prende `ERR_NOHANDSHAKE`).
 /// Ritorna il `req_id` o -1 (ring mai allocati / op in volo / send fallita).
 /// Collect: messaggio con req_id matchato e w0==0 (nessun frame nel ring:
@@ -78,7 +78,7 @@ pub fn fs_buf_reg_async() -> Result<i64, Error> {
 }
 
 /// Op FS async a basso livello (Fase 15, driver-server): scrive un frame
-/// (frame_tag,w0,w1,payload) nel request ring e notifica userfs con
+/// (frame_tag,w0,w1,payload) nel request ring e notifica cardo con
 /// `send_async` sul tag IPC `ipc_tag` (`FS_NOTIFY` per le op, `FS_REGISTER`
 /// per la registrazione driver).
 /// Ritorna il `req_id` (>= 1); errori nativi invece di -1 (Fase 39: `Pending`
@@ -163,7 +163,7 @@ pub fn fs_collect(req: i64, dst: &mut [u8], cap: usize) -> Result<usize, Error> 
 /// payload in `dst`) o come `write_fs` (write/result-only: consume + result),
 /// resetta il guard 1-in-volo e ritorna byte/result; errori nativi (Fase 39).
 /// Per un driver-server (tty) che non puo' mai bloccarsi: serve le relay DEV
-/// nel mentre invece di attendere in `wait_reply` (ciclo userfs<->driver).
+/// nel mentre invece di attendere in `wait_reply` (ciclo cardo<->driver).
 pub fn fs_collect_msg(m: &IpcMsg, dst: &mut [u8], cap: usize, is_read: bool) -> Result<i64, Error> {
     session::FS_PENDING.store(-1, Ordering::Relaxed);
     if is_read {

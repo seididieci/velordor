@@ -19,7 +19,7 @@ impl<B: BlockSource> Fat32<B> {
     /// 0x00 (fine), 0xE5 (cancellata), 0x0F (LFN) e i volumi.
     /// 24.2 — parse incrementale settore per settore, SENZA accumulare lo
     /// stream in un Vec (ogni Vec temporaneo per-op frammentava la free-list
-    /// dell'heap di userfs: +1 blocco non coalescibile per op → scansioni
+    /// dell'heap di cardo: +1 blocco non coalescibile per op → scansioni
     /// O(n)/O(n²) su tutte le op successive). Gli `entry_off` sono identici
     /// a prima (offset aritmetici nello stesso stream).
     fn read_dir(&self, cluster: u32) -> Vec<DirEntry> {

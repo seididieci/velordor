@@ -7,10 +7,10 @@
 //! char-by-char, `Enter→\n`, `Backspace→0x08`, frecce→`ESC[A/B/C/D`,
 //! `Home/End→ESC[H/F`, `Delete→ESC[3~`, `Esc→ESC`, resto filtrato.
 //!
-//! REGOLA ANTI-DEADLOCK (Fase 15, ciclo userfs<->tty): un driver che SERVE
-//! richieste sincrone non deve MAI emettere IPC FS sincrone. userfs gli
+//! REGOLA ANTI-DEADLOCK (Fase 15, ciclo cardo<->tty): un driver che SERVE
+//! richieste sincrone non deve MAI emettere IPC FS sincrone. cardo gli
 //! inoltra relay DEV e resta bloccato finche' non risponde; se nel mentre il
-//! driver resta bloccato su userfs (pump read, echo write), nessuno dei due
+//! driver resta bloccato su cardo (pump read, echo write), nessuno dei due
 //! avanza piu' (osservato: wedge t30/t31). Per questo tty e' un client FS
 //! PURAMENTE async (`read_async`/`write_async`/`open_async`/
 //! `fs_register_async` + collect via poll): non si blocca mai, risponde alle
@@ -157,7 +157,7 @@ impl Tty {
         }
     }
 
-    /// Torna allo stato pre-boot (morte userfs o streak di errori): scarta
+    /// Torna allo stato pre-boot (morte cardo o streak di errori): scarta
     /// l'op in volo e i fd; il loop riparte dal lookup Fs. Idempotente.
     /// Stampa SEMPRE: un reset inatteso deve essere visibile (lo stallo
     /// silenzioso di Fase 15 e' costato un giorno di diagnosi).
@@ -198,7 +198,7 @@ impl Tty {
         loop {
             match self.phase {
                 Phase::LookupFs => {
-                    if libr::service_lookup(libr::Service::Fs).is_ok() {
+                    if libr::service_lookup(libr::Service::Cardo).is_ok() {
                         self.phase = Phase::BufReg;
                         continue;
                     } else {
@@ -208,8 +208,8 @@ impl Tty {
                         return;
                     }
                 }
-            // SEMPRE handshake prima di aprire: i ring di userfs sono
-            // indicizzati per canale — sotto un nuovo canale (restart userfs,
+            // SEMPRE handshake prima di aprire: i ring di cardo sono
+            // indicizzati per canale — sotto un nuovo canale (restart cardo,
             // re-lookup dopo stale) serve un nuovo BUF_REG o ogni op prende
             // NOHANDSHAKE per sempre (osservato Fase 15). Idempotente.
             Phase::BufReg => {
@@ -326,7 +326,7 @@ impl Tty {
                     Ok(0) => {
                         self.err_streak = 0;
                         self.phase = Phase::Steady;
-                        println!("[usertty] registered /dev/input with userfs");
+                        println!("[usertty] registered /dev/input with cardo");
                     }
                     _ => {
                         self.note_error();
@@ -341,7 +341,7 @@ impl Tty {
                         self.decode_bytes(&tmp[..n as usize]);
                     }
                     Err(_) => {
-                    // Errore (es. resync userfs che ha scartato il frame):
+                    // Errore (es. resync cardo che ha scartato il frame):
                     // riprova al prossimo giro invece di aspettare una nuova
                     // notify (che potrebbe non arrivare mai: la notify e' andata
                     // persa col frame scartato e kbd dorme). Il relay DEV_READ
@@ -544,7 +544,7 @@ impl Tty {
             return;
         }
         if m.tag == libr::EXIT_NOTIFY {
-            // userfs morto e rinato (o altro peer): riparte il boot async
+            // cardo morto e rinato (o altro peer): riparte il boot async
             // (riapre i peer, ri-registra). Mai reply.
             println!("[usertty] peer morto, riparto dal lookup");
             self.reset_to_lookup();
@@ -585,8 +585,8 @@ impl Tty {
             }
             DEV_WRITE => {
                 // Accoda per il flush async e rispondi OK SUBITO: aspettare il
-                // completamento qui ricreerebbe il ciclo (userfs aspetta noi,
-                // noi userfs).
+                // completamento qui ricreerebbe il ciclo (cardo aspetta noi,
+                // noi cardo).
                 let count = m.w1 as usize;
                 if count > 0 {
                     let mut data = alloc::vec::Vec::with_capacity(count);

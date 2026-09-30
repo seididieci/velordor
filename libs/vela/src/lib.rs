@@ -9,7 +9,7 @@
 #![no_std]
 
 /// Hub `/dev` (server `vela`): registry dei prefix driver +
-/// pseudo-device (`null`, `zero`). Il mount resta in userfs/cardo.
+/// pseudo-device (`null`, `zero`). Il mount resta in cardo/cardo.
 pub mod hub;
 
 /// Storage a blocchi (server `block`, ex-block): geometria ring DISK_*

@@ -25,12 +25,12 @@ macro_rules! user_binary {
 // disegno ADR-0039); tutto il resto vive in `/bin` e `/test` su /fat e parte
 // via `spawn_image` (syscall 38).
 mod init_bin { user_binary!(userinit_elf, "/../userland/build/userinit.bin"); }
-mod fs_bin { user_binary!(userfs_elf, "/../userland/build/userfs.bin"); }
+mod fs_bin { user_binary!(cardo_elf, "/../userland/build/cardo.bin"); }
 mod disk_bin { user_binary!(block_elf, "/../userland/build/block.bin"); }
 mod log_bin { user_binary!(userlog_elf, "/../userland/build/userlog.bin"); }
 
 use init_bin::userinit_elf;
-use fs_bin::userfs_elf;
+use fs_bin::cardo_elf;
 use disk_bin::block_elf;
 use log_bin::userlog_elf;
 
@@ -110,7 +110,7 @@ struct NamedBinary {
 
 /// Porte dei controller ATA PIO primario + secondario per il disk driver
 /// (Fase 16, `block`: enumerazione master/slave su entrambi i canali).
-/// `userfs` non tocca piu' porte (Fase 16.2): qualunque `in/out` li' e' #GP.
+/// `cardo` non tocca piu' porte (Fase 16.2): qualunque `in/out` li' e' #GP.
 /// Fase 38.0d (ATA DMA): + spazio di configurazione PCI (`0xCF8-0xCFF`, per
 /// trovare il PIIX3-IDE e programmarne la BAR4 — col boot diretto PVH nessun
 /// BIOS lo fa) + finestra Bus-Master `0xC000-0xC00F` scelta da block
@@ -143,7 +143,7 @@ use crate::ordo::sched::Priority;
 /// che il FS esista, ADR-0039). Il resto parte da disco via `spawn_image`.
 /// I processi di servizio (fs) sono `Normal`.
 const NAMED_BINARIES: &[NamedBinary] = &[
-    NamedBinary { name: "userfs",      elf: userfs_elf,      io_ranges: &[], priority: Priority::Normal },
+    NamedBinary { name: "cardo",       elf: cardo_elf,       io_ranges: &[], priority: Priority::Normal },
     NamedBinary { name: "block",       elf: block_elf,       io_ranges: ATA_PIO_RANGES, priority: Priority::Normal },
     NamedBinary { name: "userinit",    elf: userinit_elf,    io_ranges: &[], priority: Priority::Normal },
     NamedBinary { name: "userlog",     elf: userlog_elf,     io_ranges: &[], priority: Priority::Normal },

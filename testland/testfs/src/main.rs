@@ -18,7 +18,7 @@ fn real_main(_sp: u64) -> ! {
     println!("[testfs] starting, pid={}", pid);
     let mut all_ok = true;
 
-    // Test 1: Open and read "hello.txt" (pre-populated by userfs)
+    // Test 1: Open and read "hello.txt" (pre-populated by cardo)
     println!("[testfs] Test 1: read hello.txt");
     let fd = libr::open("hello.txt", 0);
     match fd {

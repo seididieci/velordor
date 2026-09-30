@@ -289,7 +289,7 @@ pub fn service_pid(service: Service) -> Result<i64, Error> {
 /// Fase 35 (hardening) — `peer_pid(chan)`: pid del peer del canale `chan`
 /// (0 = canale di nascita, come `send`/`recv`); `ServerDied` se il canale non
 /// esiste o il peer e' morto (Fase 39). I server lo usano per attribuire una
-/// richiesta a un processo (es. la policy `FS_REGISTER` di userfs distingue
+/// richiesta a un processo (es. la policy `FS_REGISTER` di cardo distingue
 /// i figli di init).
 #[inline]
 pub fn peer_pid(chan: u64) -> Result<i64, Error> {
@@ -300,7 +300,7 @@ pub fn peer_pid(chan: u64) -> Result<i64, Error> {
 /// Fase 36 (identita' misurata, Strato 2 di ADR-0026) — `peer_info(chan)`:
 /// hash dell'immagine del peer del canale `chan` (0 = canale di nascita);
 /// `ServerDied` se il canale non esiste o il peer e' morto (Fase 39). I server
-/// lo usano per la policy su identita' (es. userfs accetta il replace di un
+/// lo usano per la policy su identita' (es. cardo accetta il replace di un
 /// prefix solo dallo stesso binario; init verifica il manifest pre-spawn).
 #[inline]
 pub fn peer_info(chan: u64) -> Result<u64, Error> {

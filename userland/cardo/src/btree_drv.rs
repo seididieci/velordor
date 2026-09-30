@@ -104,7 +104,7 @@ pub fn bind(mut store: VolumeStore) -> Option<DiskEngine> {
     }
     let (generation, _uuid, primary, secondary_sb, refcount) = format::superblock_roots(&sec0)?;
     if store.vol().xh_flags() & ARCA_XH_DIRTY != 0 {
-        println!("[userfs] arca-disk: DIRTY acceso, orphan-GC rimandata (56.2c)");
+        println!("[cardo] arca-disk: DIRTY acceso, orphan-GC rimandata (56.2c)");
     }
     // Freschezza: i volumi `arca create`/56.2a hanno ROOT=1 su un nodo RAW
     // vuoto (legacy) — NON sono inizializzati 56.2b. Solo radici
@@ -161,7 +161,7 @@ pub fn bind(mut store: VolumeStore) -> Option<DiskEngine> {
         if !commit(&mut eng) {
             return None;
         }
-        println!("[userfs] arca-disk: init ok");
+        println!("[cardo] arca-disk: init ok");
         Some(eng)
     } else {
         // Load: valida tipo + tag delle tre radici PERSISTITE prima di
@@ -195,7 +195,7 @@ pub fn bind(mut store: VolumeStore) -> Option<DiskEngine> {
         // next_snap oltre il max persistito (mai riuso sid, F2).
         eng.meta_root = format::superblock_meta(&sec0);
         if eng.meta_root != 0 && eng.meta_load().is_none() {
-            println!("[userfs] arca-disk: tabella snapshot illeggibile, monto senza snapshot");
+            println!("[cardo] arca-disk: tabella snapshot illeggibile, monto senza snapshot");
             eng.meta_root = 0;
             eng.snaps.clear();
         }
@@ -218,9 +218,9 @@ pub fn bind(mut store: VolumeStore) -> Option<DiskEngine> {
             return None;
         }
         if n_orph > 0 {
-            println!("[userfs] arca-disk: load ok, orfani recuperati");
+            println!("[cardo] arca-disk: load ok, orfani recuperati");
         } else {
-            println!("[userfs] arca-disk: load ok");
+            println!("[cardo] arca-disk: load ok");
         }
         Some(eng)
     }

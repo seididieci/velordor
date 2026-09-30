@@ -336,7 +336,7 @@ pub fn t_ps() -> bool {
     true
 }
 
-/// t38 — `stat` lato userfs (Fase 19.2): metadati senza aprire.
+/// t38 — `stat` lato cardo (Fase 19.2): metadati senza aprire.
 pub fn t_stat() -> bool {
     let mut st = libr::Stat { size: 0, kind: 0, readonly: false, mtime: 0 };
     // File ramfs: size esatta, non readonly.
@@ -503,7 +503,7 @@ pub fn t_diskboot() -> bool {
     }
     for svc in [
         libr::Service::Gpu,
-        libr::Service::Fs,
+        libr::Service::Cardo,
         libr::Service::Vela,
         libr::Service::Kbd,
         libr::Service::Tty,

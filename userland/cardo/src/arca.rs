@@ -4,7 +4,7 @@
 //! commit), non piu' in RAM: il backend mem 56.1 era transitorio per
 //! dichiarazione (`arcafs.md` §17) e l'oracolo di confronto e' nei test
 //! host `arcafs` (`MemStore`, 9 test), non in un doppio backend guest che
-//! costerebbe ~19 KiB di `userfs.bin` oltre `SPAWN_IMAGE_MAX`.
+//! costerebbe ~19 KiB di `cardo.bin` oltre `SPAWN_IMAGE_MAX`.
 //! Qui resta solo il tipo per `negotiate()`/vista POSIX (stub: `open`
 //! rifiuta; la dir persistente arriva in 56.3). Senza volume legato gli op
 //! nativi danno errore loud e init ripiega su FAT (dual-mode N0 invariato).

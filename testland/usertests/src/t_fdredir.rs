@@ -244,7 +244,7 @@ fn t_lseek() -> bool {
         }
     }
     let _ = libr::close(fd);
-    // Remoto (offset vive in userfs): Invalid.
+    // Remoto (offset vive in cardo): Invalid.
     let rfd = match libr::open("/dev/null", 0) {
         Ok(f) => f,
         Err(e) => {

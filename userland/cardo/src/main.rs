@@ -1,4 +1,4 @@
-//! userfs — File system server (Fase 9.1 + 9.2 + 9.3 + 10.2 + 16.2).
+//! cardo — File system server (Fase 9.1 + 9.2 + 9.3 + 10.2 + 16.2).
 //!
 //! Riceve IPC dai processi client (open/read/write/close/readdir/mkdir) e
 //! gestisce:
@@ -11,9 +11,9 @@
 //!
 //! Trasferimento dati (Fase 10.2): ogni client ha DUE pagine ring SPSC
 //! (request + response) allocate dalla syscall 26 (`SYS_RING_ALLOC`). Il client
-//! scrive un request frame nel request ring, notifica con `FS_NOTIFY`, e userfs
+//! scrive un request frame nel request ring, notifica con `FS_NOTIFY`, e cardo
 //! legge il frame, processa, e scrive il response frame nel response ring del
-//! client. Per i device remoti userfs inietta la response ring del client nel
+//! client. Per i device remoti cardo inietta la response ring del client nel
 //! processo driver (`libr::map_in`) cosi' il driver scrive i dati direttamente
 //! nella response ring del client — zero copie.
 
@@ -83,7 +83,7 @@ use libr::{FS_BUF_REG, FS_NOTIFY, FS_REGISTER};
 
 /// Manifest degli hash dei servizi (Fase 36, identita' misurata, Strato 2 di
 /// ADR-0026): generato a build-time da scripts/gen-service-hashes.sh, incluso
-/// via `VELORDOR_SERVICE_HASHES` (esportata da build-userland.sh — userfs e'
+/// via `VELORDOR_SERVICE_HASHES` (esportata da build-userland.sh — cardo e'
 /// compilato DOPO la generazione, vedi ordine di build).
 include!(env!("VELORDOR_SERVICE_HASHES"));
 /// Tetto ops per hash noto (Fase 45, sandbox build): `SERVICE_POLICY`,
@@ -102,6 +102,6 @@ const MAX_PATH: usize = 256;
 
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo) -> ! {
-    println!("[userfs] panic: {}", info.message());
+    println!("[cardo] panic: {}", info.message());
     libr::exit(1)
 }

@@ -235,7 +235,7 @@ pub fn remove(path: &str) -> Result<(), Error> {
     }
 }
 
-/// Fase 19.2 — metadati di un path (zero kernel: frame R_STAT a userfs, nessun
+/// Fase 19.2 — metadati di un path (zero kernel: frame R_STAT a cardo, nessun
 /// fd coinvolto). `size` = byte del file (0 per dir/device); `kind` = tipo
 /// (STAT_FILE/DIR/DEVICE); `readonly` = bit 7 (FAT sempre, ramfs mai, device
 /// mai affermato senza interrogare il driver). Fase 50: `mtime` = secondi
@@ -289,7 +289,7 @@ pub fn stat(path: &str, out: &mut Stat) -> Result<(), Error> {
 }
 
 /// Fase 51 (P2 vocabolario disco) — descrittore disco da `R_DISK_INFO`
-/// (relay userfs verso DISK_*). `flags` con layout single-source in
+/// (relay cardo verso DISK_*). `flags` con layout single-source in
 /// `syscall-numbers`; stringhe IDENTIFY a lunghezza esplicita (max 40+20).
 #[derive(Clone, Copy, Debug)]
 pub struct DiskDesc {
@@ -464,7 +464,7 @@ pub fn statvfs(path: &str, out: &mut StatVfs) -> Result<(), Error> {
 }
 
 /// Fase 54 (P5 integrita') — `get_hash(path, out)`: BLAKE2s-256 del contenuto
-/// via `R_GET_HASH` (compute-on-query: userfs rilegge e hasha, nessuno stato).
+/// via `R_GET_HASH` (compute-on-query: cardo rilegge e hasha, nessuno stato).
 /// `out` = 32 byte. `Err` per device/path senza contenuto o mount inattivi.
 #[inline]
 pub fn get_hash(path: &str, out: &mut [u8; 32]) -> Result<(), Error> {
@@ -539,7 +539,7 @@ pub fn umount(target: &str) -> Result<(), Error> {
 /// `lseek(fd, off, whence)`: sposta l'offset di un fd LOCALE (Fase 40, P1).
 /// `whence` = `SEEK_SET`/`SEEK_CUR`/`SEEK_END`; `off` con segno (negativo
 /// lecito verso SEEK_END/CUR, mai sotto zero). Solo Local: su device remoti
-/// il server risponde `Invalid` (l'offset vive in userfs). Ritorna il nuovo
+/// il server risponde `Invalid` (l'offset vive in cardo). Ritorna il nuovo
 /// offset. A rifiuto l'offset resta quello di prima (two-phase server-side).
 #[inline]
 pub fn lseek(fd: i64, off: i64, whence: u64) -> Result<u64, Error> {
@@ -652,7 +652,7 @@ pub fn pipe() -> Result<(i64, i64), Error> {
 }
 
 /// `rights_drop(keep_mask, subtree)`: riduce i propri diritti sul canale
-/// verso userfs (Fase 17, self-restriction only). Solo shrink: il server fa
+/// verso cardo (Fase 17, self-restriction only). Solo shrink: il server fa
 /// AND con la mask corrente; il subtree puo' solo restringersi (widen =
 /// `Err`, nessun cambio). `subtree=None` = solo-ops (Fase 39).
 /// Irrevocabile per disegno (nessun GRANT: i canali non sono trasferibili).
@@ -731,7 +731,7 @@ pub fn rights_get(buf: &mut [u8]) -> Result<u32, Error> {
 /// label sempre (11 byte raw, trim a carico del chiamante). `None` se il
 /// settore non e' un BPB FAT valido (stessi check minimi di mount: 55AA,
 /// bps 512, spc potenza di 2 non zero, almeno una FAT non vuota, root ≥ 2).
-/// Usato sia dal parser (`userfs/fat32.rs`) che dallo sniff per-nodo del
+/// Usato sia dal parser (`cardo/fat32.rs`) che dallo sniff per-nodo del
 /// driver (`block`): un nodo annuncia UUID/label sse monta davvero.
 pub fn fat_bpb_identity(boot: &[u8; 512]) -> Option<(Option<u32>, [u8; 11])> {
     if boot[510] != 0x55 || boot[511] != 0xAA {
@@ -761,8 +761,8 @@ pub fn fat_bpb_identity(boot: &[u8; 512]) -> Option<(Option<u32>, [u8; 11])> {
 }
 
 /// `fs_register(prefix)`: un driver (devfs/console) registra il proprio prefix
-/// di mount presso userfs (Fase 39: errore nativo; il chiamante puo' ritentare
-/// se userfs non e' ancora pronto).
+/// di mount presso cardo (Fase 39: errore nativo; il chiamante puo' ritentare
+/// se cardo non e' ancora pronto).
 #[inline]
 pub fn fs_register(prefix: &[u8]) -> Result<(), Error> {
     fs_register_multi(&[prefix])
@@ -771,9 +771,9 @@ pub fn fs_register(prefix: &[u8]) -> Result<(), Error> {
 /// `fs_register_multi(prefixes)`: registra PIU' prefix con UNA SOLA IPC
 /// sincrona (Fase 16d). Serve ai driver multi-nodo (devfs: `/dev/null` +
 /// `/dev/zero`): due register sincroni consecutivi creerebbero un mount
-/// forwardable dopo il primo, e se userfs in quel momento sta inoltrando una
+/// forwardable dopo il primo, e se cardo in quel momento sta inoltrando una
 /// richiesta al driver (single-threaded, `send` bloccante) si crea un
-/// deadlock incrociato (driver→userfs register, userfs→driver forward).
+/// deadlock incrociato (driver→cardo register, cardo→driver forward).
 /// Payload = prefix separati da NUL. `Ok` se TUTTI registrati (Fase 39).
 pub fn fs_register_multi(prefixes: &[&[u8]]) -> Result<(), Error> {
     session::fs_gate()?;

@@ -20,7 +20,7 @@
 use core::mem;
 
 /// Dimensione iniziale del backing (2 pagine; copre il payload massimo
-/// userfs di 4096 B + split/list temporanei della stessa richiesta).
+/// cardo di 4096 B + split/list temporanei della stessa richiesta).
 const INITIAL: usize = 8192;
 
 /// Chunk massimi (con raddoppio: 8K→16K→…→1M circa; oltre = OOM loud).

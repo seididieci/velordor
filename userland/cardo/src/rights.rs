@@ -2,13 +2,13 @@ use super::*;
 
 // ── Diritti per-canale (Fase 17, self-restriction only) ─────────────
 // Un `Channel` e' tutto-o-niente: chi ha l'id manda qualunque cosa. Primo
-// passo verso IPC a capability, senza kernel (userfs conosce gia' ogni peer
+// passo verso IPC a capability, senza kernel (cardo conosce gia' ogni peer
 // dal canale): tabella `chan → {ops bitmask, subtree prefix}`, SOLO in
 // riduzione (DROP fa AND, mai widen, nessuna auth: nessuno puo' darsi
 // diritti, solo toglierseli — nessun GRANT, i canali non sono trasferibili).
 // Default (entry assente): {tetto policy, root} — ALL per i canali noti/TCB
 // (suite invariata), restrittivo per gli ignoti (Fase 45). Zero alloc.
-// Purge su EXIT_NOTIFY come rings/ftable. Effimeri: restart userfs =
+// Purge su EXIT_NOTIFY come rings/ftable. Effimeri: restart cardo =
 // re-handshake full (limite dichiarato).
 //
 // Check su DUE livelli nel dispatch FS_NOTIFY:

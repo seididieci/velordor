@@ -4,7 +4,7 @@ use super::*;
 /// di P1 su VA_X verificando marker, prima da solo (3000 iter) poi con un
 /// helper che fa lo stesso su P2 (stessa VA, altre tabelle, altri frame).
 /// Qualunque mismatch = cross-talk di mapping/TLB/aliasing. Non tocca il FS:
-/// robusto a qualunque stato userfs. VA_X in zona libera, P1/P2 nello scratch
+/// robusto a qualunque stato cardo. VA_X in zona libera, P1/P2 nello scratch
 /// kernel riservato (MAP_TEST_PHYS).
 pub fn t_mapflap() -> bool {
     helpers::drain_stray();
@@ -86,7 +86,7 @@ pub fn t_mapflap() -> bool {
 /// Il flood crea transizioni runnable/blocked continue tra N processi: se la
 /// rotazione dello scheduler si rompe (es. il bug di parita' del round-robin,
 /// che affamava meta' dei pronti PER SEMPRE), la latenza di mount esplode da
-/// ~1 a infinito tick e t30 lo becca. NON e' un test di saturazione di userfs:
+/// ~1 a infinito tick e t30 lo becca. NON e' un test di saturazione di cardo:
 /// con client FS sincroni (<=1 richiesta in volo ciascuno) la coda da 8 slot
 /// non si riempie mai e il serving resta in ~1 tick anche sotto tempesta
 /// (misurato); la saturazione vera richiederebbe client async N-in-volo
@@ -202,7 +202,7 @@ pub fn t_neighbor() -> bool {
     println!("[usertests] t30: /dev operativo dopo {} tick sotto flood", elapsed);
     if elapsed > NEIGHBOR_TICKS {
         println!(
-            "[usertests] t30: FAIL vicinato ({} > {} tick: un client satura userfs)",
+            "[usertests] t30: FAIL vicinato ({} > {} tick: un client satura cardo)",
             elapsed, NEIGHBOR_TICKS
         );
         return false;

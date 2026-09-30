@@ -538,7 +538,7 @@ fn real_main(_sp: u64) -> ! {
                     Err(_) => false,
                 };
             c.ok("refcount pin sopravvive a delete", v31);
-            // 32. crash a meta' serie di PUT pesanti: kill userfs (bounce via
+            // 32. crash a meta' serie di PUT pesanti: kill cardo (bounce via
             // init, come t27/t28) → re-handshake trasparente → re-bind LOAD
             // (radici da superblock, id da header-ext, by_id ricostruito) →
             // dati committati intatti, generazione monotona, R/W riparte.
@@ -558,15 +558,15 @@ fn real_main(_sp: u64) -> ! {
                     }
                     last = v;
                 }
-                ok = ok && libr::init_bounce(libr::Service::Fs).is_ok();
+                ok = ok && libr::init_bounce(libr::Service::Cardo).is_ok();
                 ok = ok && libr::poll_wait(1000, libr::POLL_PERIOD_TICKS, || {
-                    libr::service_pid(libr::Service::Fs).is_err()
+                    libr::service_pid(libr::Service::Cardo).is_err()
                 });
                 ok = ok && libr::poll_value(1000, libr::POLL_PERIOD_TICKS, || {
-                    libr::service_pid(libr::Service::Fs).ok()
+                    libr::service_pid(libr::Service::Cardo).ok()
                 })
                 .is_some();
-                // Re-bind sul userfs fresco (prima op: re-handshake
+                // Re-bind sul cardo fresco (prima op: re-handshake
                 // trasparente via NOHANDSHAKE). Con auto-bind all'avvio
                 // (56.2c) l'open prende il rifiuto re-open: tollerato,
                 // USEDISK idempotente con retry throttled (come t28), mai
@@ -623,12 +623,12 @@ fn real_main(_sp: u64) -> ! {
                     }
                 };
                 let gen_pre = read_gen();
-                ok = ok && libr::init_bounce(libr::Service::Fs).is_ok();
+                ok = ok && libr::init_bounce(libr::Service::Cardo).is_ok();
                 ok = ok && libr::poll_wait(1000, libr::POLL_PERIOD_TICKS, || {
-                    libr::service_pid(libr::Service::Fs).is_err()
+                    libr::service_pid(libr::Service::Cardo).is_err()
                 });
                 ok = ok && libr::poll_value(1000, libr::POLL_PERIOD_TICKS, || {
-                    libr::service_pid(libr::Service::Fs).ok()
+                    libr::service_pid(libr::Service::Cardo).ok()
                 })
                 .is_some();
                 // Re-bind tollerante (startup auto-lega gia': open puo'
@@ -669,10 +669,10 @@ fn real_main(_sp: u64) -> ! {
             };
             c.ok("gc orfani + snapshot sopravvissuto", v33);
             // 34-40. Logging L1 (Fase 57, ADR-0039): gateway `Log` RAM-first
-            // con flush via userfs nativo. Bucket per IDENTITA' (hash del
+            // con flush via cardo nativo. Bucket per IDENTITA' (hash del
             // chiamante, mai dichiarato): ogni client legge solo il proprio
             // (latest o per-seq). Dopo crash/GC per scelta: il restart di
-            // userfs non deve rompere il client log.
+            // cardo non deve rompere il client log.
             // 34. servizio registrato e raggiungibile per nome.
             let v34 = libr::service_lookup(libr::Service::Log).is_ok();
             c.ok("log registrato", v34);

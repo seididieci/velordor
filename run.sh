@@ -53,7 +53,7 @@ DISPLAY="${RUN_DISPLAY:-none}"   # RUN_DISPLAY=gtk per vedere la VGA in locale
 # Boot diretto via protocollo PVH (ELF64 + nota XEN_ELFNOTE_PHYS32_ENTRY):
 # QEMU carica il kernel e trasferisce il controllo in protected mode 32-bit.
 # Due drive IDE (Fase 16d): block li enumera sda,sdb in ordine di probe
-# e userfs monta a /fat per UUID (mai per lettera).
+# e cardo monta a /fat per UUID (mai per lettera).
 if [ "${SWAP_DRIVES:-0}" = "1" ]; then
     DRIVES="-drive file=userland/fs/fat2.img,format=raw,if=ide -drive file=userland/fs/fat.img,format=raw,if=ide"
 else

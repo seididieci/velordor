@@ -28,13 +28,13 @@
 //!                 server, attende l'EXIT_NOTIFY unificata, poi attende il
 //!                 via-libera T_GO del parent e riporta T_DONE(w0=1, w1=code).
 //!   - 8 MNTDIE:   (Fase 14, t25) driver sacrificale: registra il prefix
-//!                 "/dev/tdie" presso userfs e serve il minimo (DEV_OPEN → fake
+//!                 "/dev/tdie" presso cardo e serve il minimo (DEV_OPEN → fake
 //!                 fd, DEV_CLOSE → ok). T_READY(w0=1) a registrazione avvenuta.
-//!                 Il parent lo killa: userfs deve purgare il mount (altrimenti
+//!                 Il parent lo killa: cardo deve purgare il mount (altrimenti
 //!                 lo stale avvelena resolve_mount anche dopo re-registrazione).
 //!   - 9 OPENDIE:  (Fase 14, t26) client sacrificale: apre /dev/null +
 //!                 /dev/zero + hello.txt e poi esce SENZA close e SENZA T_DONE.
-//!                 Il parent osserva via wait_exit; userfs deve purgare
+//!                 Il parent osserva via wait_exit; cardo deve purgare
 //!                 rings/ftable (con DEV_CLOSE inoltrato ai driver).
 //!   - 10 MAPHAMMER: (Fase 14, t29) martella map_physical di due pagine scratch
 //!                 sulla stessa VA (0x4000003E0000) in loop, verificando sempre

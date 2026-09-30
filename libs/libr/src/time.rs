@@ -3,7 +3,7 @@
 //! `usertime` legge il CMOS all'avvio (epoch) e serve `TIME_NOW` (epoch +
 //! monotono PIT a 100 Hz). Questo modulo e' il client sincrono: una `send`
 //! per chiamata, niente cache locale (la politica di cache — es. baseline
-//! + `get_ticks` in userfs — sta nel chiamante, non qui).
+//! + `get_ticks` in cardo — sta nel chiamante, non qui).
 
 use super::*;
 
@@ -26,7 +26,7 @@ pub fn wall_secs() -> Result<u64, Error> {
 }
 
 // ── Aritmetica civile pura (Fase 50): condivisa tra `usertime` (CMOS →
-// epoch) e userfs (timestamp DOS FAT ↔ epoch). Nessun I/O, nessun alloc,
+// epoch) e cardo (timestamp DOS FAT ↔ epoch). Nessun I/O, nessun alloc,
 // solo interi (algoritmi days-from-civil / civil-from-days, Hinnant). ──
 
 /// Giorni civili da epoch (1970-01-01) per data Gregoriana. Dominio valido

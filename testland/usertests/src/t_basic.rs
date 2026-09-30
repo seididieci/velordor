@@ -147,7 +147,7 @@ pub fn t_fs_errors() -> bool {
 
 pub fn t_dev_null() -> bool {
     // Throttled (Livello 1): un device non ancora registrato non giustifica
-    // mai una tempesta di open verso userfs.
+    // mai una tempesta di open verso cardo.
     let Ok(fd) = libr::open_wait("/dev/null", 0, 1000, libr::POLL_PERIOD_TICKS) else {
         return false;
     };

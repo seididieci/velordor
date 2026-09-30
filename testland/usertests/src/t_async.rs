@@ -18,7 +18,7 @@ pub fn t_fs_async() -> bool {
             return false;
         }
     };
-    // Lavoro utile mentre userfs risponde: batch di spin puro (IF=1, nessuna
+    // Lavoro utile mentre cardo risponde: batch di spin puro (IF=1, nessuna
     // syscall nel mezzo) per non affamare il timer.
     for _ in 0..200_000 {
         core::hint::spin_loop();

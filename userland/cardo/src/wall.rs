@@ -1,4 +1,4 @@
-//! Wall-clock lazy per userfs (Fase 50, P1 orologio).
+//! Wall-clock lazy per cardo (Fase 50, P1 orologio).
 //!
 //! I provider (`ramfs`, `Fat32`) producono `Meta.mtime` da qui: UNA query al
 //! servizio `Time` al primo bisogno, poi solo aritmetica sul monotono PIT

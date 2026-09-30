@@ -182,7 +182,7 @@ unsafe fn vga_write_char(vga: *mut Buffer, byte: u8, cursor: &mut usize) {
 }
 
 // ── Ring I/O (Fase 10.2) ─────────────────────────────────────────
-// Le finestre CLI_* sono mappate da userfs (map_in) con i ring del client
+// Le finestre CLI_* sono mappate da cardo (map_in) con i ring del client
 // a ogni relay DEV (zero-copy); i ring propri del server non cambiano mai.
 
 const REQ_RING_VA: u64 = libr::CLI_REQ_VA;
@@ -192,10 +192,10 @@ use libr::{req_frame_read, resp_frame_write};
 
 // ── Entry point ──────────────────────────────────────────────────────
 
-/// Assicura il mount "/dev/console" presso userfs (Fase 14, t28 + Fase 15):
+/// Assicura il mount "/dev/console" presso cardo (Fase 14, t28 + Fase 15):
 /// attende Fs via soli lookup, poi UN tentativo (vedi corpo). Stessa funzione
 /// a boot e su EXIT_NOTIFY. Unbounded come `fs_chan`. Idempotente grazie al
-/// replace-on-register in userfs.
+/// replace-on-register in cardo.
 fn ensure_mounted() {
     libr::ensure_fs_mount(|| libr::fs_register(b"/dev/console"));
 }
@@ -229,16 +229,16 @@ fn real_main(_sp: u64) -> ! {
 
     // 4c. Avvisa il parent (init) di essere pronto (SVC_READY fire-and-forget):
     // serve al supervisore init-restart (Fase 14). SUBITO dopo la registrazione
-    // del servizio (non dopo /dev/console, che richiede userfs non ancora nato:
+    // del servizio (non dopo /dev/console, che richiede cardo non ancora nato:
     // init aspetta questo ack a boot e attendere dopo sarebbe deadlock).
     // Fire-and-forget in `libr` (A3): retry bounded, mai hang.
     libr::signal_ready(1);
 
-    // 5. Registra /dev/console con userfs (IPC FS_REGISTER via libr::fs_register,
+    // 5. Registra /dev/console con cardo (IPC FS_REGISTER via libr::fs_register,
     //    che prima alloca e registra la pagina FS per-processo).
     //    ensure_mounted: stessa funzione a boot e su EXIT_NOTIFY (t28).
     ensure_mounted();
-    let _ = libr::print_string(b"[gpu] registered /dev/console with userfs\n");
+    let _ = libr::print_string(b"[gpu] registered /dev/console with cardo\n");
 
     // 6. Loop IPC: solo richieste DEV sul device di output (+ EXIT_NOTIFY).
     //    Niente piu' tastiera qui (Fase 15: kbd + usertty).
@@ -265,7 +265,7 @@ fn real_main(_sp: u64) -> ! {
 
                     DEV_WRITE => {
                         // msg.w0 = fd, msg.w1 = count. I byte da disegnare sono
-                        // nella request ring del client (mappata da userfs via map_in).
+                        // nella request ring del client (mappata da cardo via map_in).
                         let count = msg.w1 as usize;
                         if count > 0 {
                             let mut data = alloc::vec::Vec::with_capacity(count);
@@ -283,7 +283,7 @@ fn real_main(_sp: u64) -> ! {
                     }
 
                     libr::EXIT_NOTIFY => {
-                        // userfs morto e rinato (t28): re-mount. Nessuno stato
+                        // cardo morto e rinato (t28): re-mount. Nessuno stato
                         // per-client da purgare; mai rispondere alle notifiche.
                         ensure_mounted();
                     }

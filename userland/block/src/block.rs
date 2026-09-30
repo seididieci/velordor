@@ -1,4 +1,4 @@
-//! Driver ATA PIO in userspace (Fase 16, da `userfs/block.rs`; scrittura in
+//! Driver ATA PIO in userspace (Fase 16, da `cardo/block.rs`; scrittura in
 //! Fase 20: `WRITE SECTORS EXT` + LBA28, stesso polling con timeout).
 //!
 //! Generalizzato a qualunque canale/drive (primario + secondario, master +

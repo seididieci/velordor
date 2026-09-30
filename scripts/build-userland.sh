@@ -59,15 +59,15 @@ build_one userland/arca    userland/arca/src/arca.ld         userarca.bin    use
 
 # Manifest degli hash dei servizi (Fase 36, Strato 2): FNV-1a sui `.bin`
 # appena prodotti. fs e init vengono DOPO perche' lo includono a compile time
-# (userfs: policy FS_REGISTER su identita'; init: manifest pre-spawn) via
+# (cardo: policy FS_REGISTER su identita'; init: manifest pre-spawn) via
 # `include!(env!("VELORDOR_SERVICE_HASHES"))` — senza la variabile la loro
 # compilazione fallisce loud (mai manifest stale silenzioso).
 bash scripts/gen-service-hashes.sh
 export VELORDOR_SERVICE_HASHES="$(pwd)/build-meta/service_hashes.rs"
 # Tabella policy servizi (Fase 45, sandbox build): emessa dallo stesso script.
 # TEST_POLICY ancora assente qui (i .bin test non esistono): placeholder
-# vuoto per la prima build di userfs, SOSTITUITO dal rebuild in coda a
-# build-tests.sh (unico userfs.bin che conta: kernel+inject vengono dopo).
+# vuoto per la prima build di cardo, SOSTITUITO dal rebuild in coda a
+# build-tests.sh (unico cardo.bin che conta: kernel+inject vengono dopo).
 # Placeholder MAI usato a runtime: ogni binario in tabella servizi o ignoto
 # ha comunque un tetto (il lookup cade sul default a tabella vuota).
 if [ ! -f "build-meta/test_policy.rs" ]; then
@@ -76,5 +76,5 @@ fi
 export VELORDOR_SERVICE_POLICY="$(pwd)/build-meta/service_policy.rs"
 export VELORDOR_TEST_POLICY="$(pwd)/build-meta/test_policy.rs"
 
-build_one userland/fs      userland/fs/src/fs.ld           userfs.bin      userfs
+build_one userland/cardo   userland/cardo/src/cardo.ld     cardo.bin       cardo
 build_one userland/init    userland/init/src/init.ld       userinit.bin    userinit $INIT_FEATURES

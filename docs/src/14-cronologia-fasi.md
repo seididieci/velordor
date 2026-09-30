@@ -1909,3 +1909,9 @@
           Nodi `/dev/sdX` e tag `DISK_*` invariati; nessun trasloco in
           `vela::block` (le const ATA sono tuning interno). Gate: 5/5 + 7/7 +
           40/40 + 58/58, zero FAIL/PANIC/FAULT. Docs ai nuovi nomi in R-final.
+    - [x] R7 (rename a fasi, ADR-0040): `userfs`→`cardo` (dir, package, bin
+          embedded, display, `Service::Fs`→`Service::Cardo`, tabella kernel,
+          init, shell `"cardo"`, build/test scripts, prosa in 64 file).
+          Modulo client `libr::fs` invariato (API, non server). Gate: 5/5 +
+          7/7 + 40/40 + 58/58, zero FAIL/PANIC/FAULT. Docs ai nuovi nomi in
+          R-final.

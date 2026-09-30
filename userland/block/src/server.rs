@@ -24,7 +24,7 @@ enum DmaWait {
 /// guardia `pop_msg` non tocca la reply implicita per gli EXIT — rispondere a
 /// un morto e' impossibile per disegno, nessun server lo fa).
 /// Altra richiesta sincrona durante il pending = impossibile (l'unico
-/// richiedente DISK/DEV e' userfs, bloccato sulla reply): si ignora.
+/// richiedente DISK/DEV e' cardo, bloccato sulla reply): si ignora.
 fn wait_dma(
     eng: &mut dma::DmaEngine,
     chan: u16,
@@ -165,7 +165,7 @@ fn real_main(_sp: u64) -> ! {
 
     // 2. Nodi: whole-disk + partizioni (MBR/GPT, Fase 16 + Fase 55).
     // Handle = disco<<16|sub, allocato QUI (Fase 16c): la tabella `nodes' e'
-    // la single source of truth nome→handle; userfs lo chiede con DISK_RESOLVE.
+    // la single source of truth nome→handle; cardo lo chiede con DISK_RESOLVE.
     let mut nodes: Vec<nodes::Node> = Vec::new();
     let mut disk_sectors: Vec<u64> = Vec::new();
     let mut parts: Vec<Vec<nodes::PartLoc>> = Vec::new();
@@ -231,9 +231,9 @@ fn real_main(_sp: u64) -> ! {
         parts.push(disk_parts);
     }
 
-    // Prefix da registrare presso userfs (Fase 16d): il nodo + gli alias
+    // Prefix da registrare presso cardo (Fase 16d): il nodo + gli alias
     // stabili che ha (`/dev/disk/by-uuid/<HEX8>`, `/dev/disk/by-label/<NOME>`).
-    // La FsReg li consuma in ordine; userfs li tratta come prefix qualunque
+    // La FsReg li consuma in ordine; cardo li tratta come prefix qualunque
     // (open esatto + listing sintetizzato dalla Mount table, B4).
     let mut reg_prefixes: Vec<String> = Vec::new();
     for n in nodes.iter() {
@@ -258,7 +258,7 @@ fn real_main(_sp: u64) -> ! {
 
     // 3. Ring FS + DISK dedicati (allocazione raw, MAI via libr::fs_init che e'
     // sincrono): FS per BUF_REG/REGISTER async, DISK per il data-plane con
-    // userfs. Retry throttled: senza, niente registrazione ne' data-plane.
+    // cardo. Retry throttled: senza, niente registrazione ne' data-plane.
     // Reset head=tail: le pagine devono partire allineate.
     let (fs_req_phys, fs_resp_phys) = loop {
         if let Some(pair) = libr::ring_alloc_raw() {
@@ -292,20 +292,20 @@ fn real_main(_sp: u64) -> ! {
         core::ptr::write_volatile((DISK_RESP_VA + RING_TAIL as u64) as *mut u32, 0);
     }
 
-    // 4. Servizio Disk per nome (ADR-0008): userfs lo risolve per il
+    // 4. Servizio Disk per nome (ADR-0008): cardo lo risolve per il
     // data-plane, init per la supervisione, il kernel non instrada IRQ.
     // (La BMIBA negoziata sopra e' in `bmiba`, il motore DMA in `dma` sotto.)
     if libr::service_register(libr::Service::Block).is_ok() {
         println!("[block] registered as service Disk");
     }
 
-    // 5. READY al parent SUBITO (come console): block parte PRIMA di userfs
+    // 5. READY al parent SUBITO (come console): block parte PRIMA di cardo
     // (16.3) e l'ACK non puo' aspettare il mount (deadlock: il mount aspetta
     // Fs che parte dopo). Fire-and-forget in `libr` (A3), retry bounded, mai hang.
     libr::signal_ready(1);
 
     // 6. Registrazione FS via SM async (mai sync: vedi doc in testa). DISK e
-    // DEV funzionano anche a registrazione incompleta: userfs monta appena
+    // DEV funzionano anche a registrazione incompleta: cardo monta appena
     // HELLO risponde, senza aspettare i prefix.
     let mut fsreg = fs_reg::FsReg::new(fs_req_phys, fs_resp_phys);
 
@@ -328,8 +328,8 @@ fn real_main(_sp: u64) -> ! {
             continue;
         }
 
-        // userfs morto e rinato: reset SM (re-handshake + re-register). I ring
-        // DISK persistono (pagine proprie): userfs rifa' HELLO da solo. Niente
+        // cardo morto e rinato: reset SM (re-handshake + re-register). I ring
+        // DISK persistono (pagine proprie): cardo rifa' HELLO da solo. Niente
         // send sincrone qui: solo reset di stato. Mai reply (peer morto).
         if msg.tag == libr::EXIT_NOTIFY {
             fsreg.reset();
@@ -342,7 +342,7 @@ fn real_main(_sp: u64) -> ! {
         // coda tra un'op e l'altra — si scartano QUI, prima di qualunque reply
         // (sicuro: `reply_chan` e' None e il prossimo `recv` lo riscrive; e dal
         // 38.2a le notify non lo toccano comunque). Senza drain si accumulano
-        // e la coda piena fa scartare le send sync di userfs in silenzio (hang
+        // e la coda piena fa scartare le send sync di cardo in silenzio (hang
         // permanente, provato in 38.1c). MAI reply — non c'e' nessuno ad
         // aspettarla.
         if msg.tag == libr::IRQ_NOTIFY_DISK {
@@ -352,7 +352,7 @@ fn real_main(_sp: u64) -> ! {
             continue;
         }
 
-        // ── Data-plane DISK_* (canale diretto userfs) ──
+        // ── Data-plane DISK_* (canale diretto cardo) ──
         if msg.tag == DISK_HELLO {
             // Fisici nei registri di reply (tag 0, mai !0 = ERR): niente frame.
             let _ = libr::reply(0, disk_req_phys, disk_resp_phys);
@@ -627,9 +627,9 @@ fn real_main(_sp: u64) -> ! {
             continue;
         }
 
-        // ── Relay DEV_* (open raw /dev/sdX dai client via userfs) ──
+        // ── Relay DEV_* (open raw /dev/sdX dai client via cardo) ──
         // w0 di DEV_OPEN = handle codificato (disco<<16|sub, 0 = whole):
-        // userfs-16.2 lo ricava parsando il nome Linux ("sda"→0, "sda1"→1),
+        // cardo-16.2 lo ricava parsando il nome Linux ("sda"→0, "sda1"→1),
         // senza bisogno della lista nodi. La posizione avanza a ogni READ.
         let result: Option<u64> = match msg.tag {
             DEV_OPEN => {
@@ -703,7 +703,7 @@ fn real_main(_sp: u64) -> ! {
             }
             DEV_READDIR => {
                 // Nomi delle partizioni figlie del nodo (o vuoto). Il chiamante
-                // e' userfs su relay del prefix stesso: rel non disponibile qui,
+                // e' cardo su relay del prefix stesso: rel non disponibile qui,
                 // quindi si elencano i figli di TUTTI i dischi? No: senza rel,
                 // risposta vuota conservativa (t32 usa open/read diretti).
                 unsafe { resp_frame_write(CLI_RESP, &[]) };

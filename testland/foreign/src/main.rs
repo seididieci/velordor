@@ -1,7 +1,7 @@
 //! foreign — attore IGNOTO della suite t57 (Fase 45): prova il default
 //! restrittivo fail-closed della policy su identita' (hash fuori manifest).
 //!
-//! Il suo binario NON compare in `SERVICE_POLICY` ne' in `TEST_POLICY`: userfs
+//! Il suo binario NON compare in `SERVICE_POLICY` ne' in `TEST_POLICY`: cardo
 //! lo classifica con `DEFAULT_UNKNOWN_OPS` (0x19F = ALL senza MOUNT/UMOUNT/
 //! GRANT/PIPE). Questo processo verifica che il tetto sia applicato davvero:
 //!
@@ -20,7 +20,7 @@ use libr::println;
 
 const T_DONE: u64 = 103;
 
-/// Tetto ops per hash ignoto (identico a `userfs::policy::DEFAULT_UNKNOWN_OPS`).
+/// Tetto ops per hash ignoto (identico a `cardo::policy::DEFAULT_UNKNOWN_OPS`).
 const DEFAULT_UNKNOWN_OPS: u32 = 0x19F;
 
 libr::entry!(real_main);

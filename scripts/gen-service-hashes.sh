@@ -4,7 +4,7 @@
 # Calcola FNV-1a a 64 bit (stesso algoritmo di `syscall_numbers::image_hash`,
 # single source dell'identita' misurata) sui `.bin` finali di userland/build
 # e scrive `build-meta/service_hashes.rs` con una `pub const HASH_*` per
-# binario. I crate che ne hanno bisogno (init per il manifest, userfs per la
+# binario. I crate che ne hanno bisogno (init per il manifest, cardo per la
 # policy `FS_REGISTER`, usertests per t51) lo includono con
 # `include!(env!("VELORDOR_SERVICE_HASHES"))` — variabile esportata da
 # build-userland.sh / build-tests.sh DOPO questa generazione.
@@ -16,12 +16,12 @@
 #
 # Oltre agli hash emette `build-meta/service_policy.rs` (Fase 45, sandbox
 # build): tabella `SERVICE_POLICY: &[(hash, ops_mask)]` con la mask dei
-# diritti FS consentiti a CIASCUN servizio noto (userfs la applica come
+# diritti FS consentiti a CIASCUN servizio noto (cardo la applica come
 # tetto via `peer_info`, vedi `userland/fs/src/policy.rs`). I servizi TCB
 # hanno ALL (fiducia per parentela+hash, Strato 1+2); i programmi di terzi
 # hanno righe restrittive esplicite (sotto: solo runhello oggi — il futuro
 # toolchain avra' le sue righe, zero redesign). Gli hash ignoti al manifest
-# cadono nel default restrittivo di userfs (niente MOUNT/UMOUNT/GRANT/PIPE).
+# cadono nel default restrittivo di cardo (niente MOUNT/UMOUNT/GRANT/PIPE).
 #
 # Fail-loud (set -euo + check espliciti): binari mancanti/vuoti o output non
 # scrivibile = build interrotta, mai manifest stale silenzioso. Lo script
@@ -57,27 +57,27 @@ build, tmp = sys.argv[1], sys.argv[2]
 bins = sorted(glob.glob(os.path.join(build, "*.bin")))
 if not bins:
     sys.exit("nessun .bin in %s" % build)
-# userinit.bin e userfs.bin ESCLUSI: entrambi includono il manifest a compile
-# time (init: expected_hash; userfs: driver_name_of), quindi il loro hash nel
+# userinit.bin e cardo.bin ESCLUSI: entrambi includono il manifest a compile
+# time (init: expected_hash; cardo: driver_name_of), quindi il loro hash nel
 # manifest sarebbe stale-by-construction E instabile (ciclo: il binario
 # incorpora l'hash di se stesso → ogni build lo cambia → la successiva lo
-# ricambia, mai fixpoint — osservato: HASH_USERFS flippa a ogni run).
+# ricambia, mai fixpoint — osservato: HASH_CARDO flippa a ogni run).
 # Non servono: init non verifica se stesso (impossibile per costruzione, lo
-# misura il kernel) e non controlla fs (embedded, TCB); userfs non pinna se
+# misura il kernel) e non controlla fs (embedded, TCB); cardo non pinna se
 # stesso (la regola same-image confronta due peer vivi, niente manifest).
 # Il manifest copre esattamente i servizi caricati da disco + disk (embedded
 # ma senza ciclo: block non include il manifest) — per questi il fixpoint
 # e' raggiunto in UN passaggio (i loro binari non incorporano alcun hash).
-bins = [p for p in bins if os.path.basename(p) not in ("userinit.bin", "userfs.bin")]
+bins = [p for p in bins if os.path.basename(p) not in ("userinit.bin", "cardo.bin")]
 
 lines = [
     "// Generato da scripts/gen-service-hashes.sh — MAI modificare a mano.",
     "// Identita' misurata (Fase 36, Strato 2 di ADR-0026): FNV-1a a 64 bit",
     "// (`syscall_numbers::image_hash`) sui binari userland (esclusi",
-    "// userinit/userfs: incorporano il manifest, il loro hash sarebbe un",
+    "// userinit/cardo: incorporano il manifest, il loro hash sarebbe un",
     "// ciclo instabile — vedi filtro sotto).",
     "// Consumatori via `include!(env!(\"VELORDOR_SERVICE_HASHES\"))`: init",
-    "// (manifest pre-spawn), userfs (policy FS_REGISTER su identita'),",
+    "// (manifest pre-spawn), cardo (policy FS_REGISTER su identita'),",
     "// usertests (t51: peer_info atteso). Rigenerato a ogni build.",
     "// Fase 55 (N0): per ogni binario anche BLAKE2s-256 (`BLAKE_*`, array",
     "// di 32 byte): e' il `sys.content_hash` che init confronta al load da",
@@ -116,11 +116,11 @@ DEFAULT_MASK = 0xFFF  # ALL (servizi TCB)
 
 pol = [
     "// Generato da scripts/gen-service-hashes.sh — MAI modificare a mano.",
-    "// Sandbox build (Fase 45): tetto ops per hash noto, applicato da userfs",
+    "// Sandbox build (Fase 45): tetto ops per hash noto, applicato da cardo",
     "// (`userland/fs/src/policy.rs`) come `drop_mask & policy_mask`. Le mask",
     "// usano i bit RIGHTS_* di syscall-numbers (ALL=0xFFF con GRANT+PIPE+SYNC).",
     "// Consumato via `include!(env!(\"VELORDOR_SERVICE_POLICY\"))` SOLO da",
-    "// userfs (dopo service_hashes: referenzia le HASH_*). Rigenerato a build.",
+    "// cardo (dopo service_hashes: referenzia le HASH_*). Rigenerato a build.",
     "pub const SERVICE_POLICY: &[(u64, u32)] = &[",
 ]
 for p in bins:

@@ -217,7 +217,7 @@ pub const FAT_HELLO: &[u8] = b"Hello from Velordor FAT32!\n";
 
 /// Apre /dev/sda raw (throttled, Livello 1), legge il settore 0 e verifica la
 /// firma boot 0x55AA a offset 510 (stesso settore del mount /fat: prova il
-/// data-plane DISK di block e il relay DEV di userfs in un colpo solo).
+/// data-plane DISK di block e il relay DEV di cardo in un colpo solo).
 pub fn disk_sector0_ok() -> bool {
     let Ok(fd) = libr::open_wait("/dev/sda", 0, 1000, libr::POLL_PERIOD_TICKS) else {
         return false;

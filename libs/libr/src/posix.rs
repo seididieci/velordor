@@ -11,7 +11,7 @@
 //! senza aiuto del server) piu' i rifiuti che il client puo' attribuire da
 //! solo. Le varianti di DOMINIO (`NotFound`, `ReadOnly`, ...) sono dichiarate
 //! con mapping fissato ma senza produttori: li aggiunge la Fase 40, quando
-//! userfs iniziera' a inviare codici distinti invece del generico `ERR` (che
+//! cardo iniziera' a inviare codici distinti invece del generico `ERR` (che
 //! qui collassa in [`Error::Failed`]).
 //!
 //! Riesporta [`Error`](crate::Error) per compatibilita' (`libr::posix::Error`

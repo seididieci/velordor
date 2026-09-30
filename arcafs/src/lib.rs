@@ -1,6 +1,6 @@
 //! `arcafs` — casa del sottosistema ArcaFS (Fase 56.2a).
 //!
-//! Contiene tutto cio' che guest (userfs), client (via `libr`) e tool host
+//! Contiene tutto cio' che guest (cardo), client (via `libr`) e tool host
 //! condividono: tag di protocollo (`proto`), builder/parser dei frame
 //! (`wire`, puri, niente I/O) e formato blocchi on-disk (`format`).
 //! I wrapper IPC con retry vivono in `libr` (usano i suoi ring/sessione:

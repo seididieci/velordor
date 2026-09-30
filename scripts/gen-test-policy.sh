@@ -3,19 +3,19 @@
 #
 # Genera `build-meta/test_policy.rs` con `pub const TEST_POLICY: &[(u64,u32)]`
 # (hash FNV-1a -> mask ops, TUTTI ALL: la suite esercita ogni op). Incluso
-# SOLO da userfs via `VELORDOR_TEST_POLICY` (mai dai binari test: niente ciclo
-# hash-di-se', stesso motivo dell'esclusione userinit/userfs dal manifest
+# SOLO da cardo via `VELORDOR_TEST_POLICY` (mai dai binari test: niente ciclo
+# hash-di-se', stesso motivo dell'esclusione userinit/cardo dal manifest
 # servizi — vedi gen-service-hashes.sh).
 #
 # Esclusi:
 # - `userforeign.bin` (l'attore "ignoto" di t57: DEVE restare fuori da ogni
 #   tabella per provare il default restrittivo fail-closed);
-# - `userfs.bin` (artefatto del rebuild di userfs in coda a build-tests.sh:
-#   userfs e' fuori da entrambe le tabelle per costruzione, come userinit).
+# - `cardo.bin` (artefatto del rebuild di cardo in coda a build-tests.sh:
+#   cardo e' fuori da entrambe le tabelle per costruzione, come userinit).
 #
 # Chiamato in coda a build-tests.sh (i .bin test esistono solo allora) e
-# seguito dal rebuild di userfs (unico consumatore). Fixpoint in un passaggio:
-# userfs e' escluso da entrambe le tabelle, i test non includono questa.
+# seguito dal rebuild di cardo (unico consumatore). Fixpoint in un passaggio:
+# cardo e' escluso da entrambe le tabelle, i test non includono questa.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -46,14 +46,14 @@ bins = sorted(glob.glob(os.path.join(build, "*.bin")))
 if not bins:
     sys.exit("nessun .bin in %s" % build)
 # L'attore "ignoto" di t57 resta fuori da OGNI tabella (prova il default);
-# userfs.bin (rebuild artefatto, vedi sopra) mai in tabella.
-bins = [p for p in bins if os.path.basename(p) not in ("userforeign.bin", "userfs.bin")]
+# cardo.bin (rebuild artefatto, vedi sopra) mai in tabella.
+bins = [p for p in bins if os.path.basename(p) not in ("userforeign.bin", "cardo.bin")]
 
 lines = [
     "// Generato da scripts/gen-test-policy.sh — MAI modificare a mano.",
     "// Sandbox build (Fase 45): hash dei binari testland -> mask ALL (la",
     "// suite esercita ogni op; i negativi stanno in t57 sul default ignoto).",
-    "// Consumato via `include!(env!(\"VELORDOR_TEST_POLICY\"))` SOLO da userfs",
+    "// Consumato via `include!(env!(\"VELORDOR_TEST_POLICY\"))` SOLO da cardo",
     "// (dopo service_hashes+service_policy). Rigenerato a ogni build test.",
     "pub const TEST_POLICY: &[(u64, u32)] = &[",
 ]

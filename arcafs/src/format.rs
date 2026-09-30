@@ -253,7 +253,7 @@ pub fn node_verify(blk: &[u8; 3584]) -> Option<(u8, u64)> {
 /// Alloca un payload nodo azzerato sull'heap (regola stack §18).
 /// Mai `Box::new([0u8; N])`: l'array letterale si costruisce sullo stack
 /// prima del move nell'heap (3.5K transienti che, annidati sotto altri
-/// array, sfondano i 16 KiB del loop userfs — osservato: #PF al bind).
+/// array, sfondano i 16 KiB del loop cardo — osservato: #PF al bind).
 /// `new_zeroed` azzera direttamente la memoria heap: niente temp, sound
 /// perche' la memoria e' davvero inizializzata a zero.
 pub fn boxed_node() -> Box<[u8; ARCA_NODE_PAYLOAD_LEN]> {

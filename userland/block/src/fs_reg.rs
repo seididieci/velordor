@@ -1,7 +1,7 @@
 use super::*;
 
 // ── Mount (registrazione FS puramente async) ────────────────────────
-// Vedi doc in testa: MAI send sincrone verso userfs. Ring FS propri (allocati
+// Vedi doc in testa: MAI send sincrone verso cardo. Ring FS propri (allocati
 // raw, mappati qui, mai iniettati da nessuno) + FS_BUF_REG / R_REGISTER via
 // send_async + collect per req_id. Una sola op FS in volo (come libr).
 
@@ -14,7 +14,7 @@ pub(crate) struct FsReg {
     /// Fisici dei ring FS propri (per FS_BUF_REG).
     fs_req_phys: u64,
     fs_resp_phys: u64,
-    /// Canale verso userfs (None = da risolvere).
+    /// Canale verso cardo (None = da risolvere).
     chan: Option<u64>,
     /// Handshake FS_BUF_REG completato sul canale corrente.
     bufreg_done: bool,
@@ -36,10 +36,10 @@ impl FsReg {
         }
     }
 
-    /// Reset dopo morte di userfs (EXIT_NOTIFY): mounts purgati di la', i ring
+    /// Reset dopo morte di cardo (EXIT_NOTIFY): mounts purgati di la', i ring
     /// resettati di qua', si ricomincia da handshake + primo nodo.
     pub(crate) fn reset(&mut self) {
-        libr::println!("[block] reset registrazione FS (userfs morto)");
+        libr::println!("[block] reset registrazione FS (cardo morto)");
         self.chan = None;
         self.bufreg_done = false;
         self.pending = None;
@@ -65,7 +65,7 @@ impl FsReg {
         // Canale (re-lookup se assente/stale: la send_async fallita lo azzera).
         let chan = match self.chan {
             Some(c) => c,
-            None => match libr::service_lookup(libr::Service::Fs) {
+            None => match libr::service_lookup(libr::Service::Cardo) {
                 Ok(c) => {
                     self.chan = Some(c as u64);
                     self.bufreg_done = false;
@@ -123,11 +123,11 @@ impl FsReg {
         match rings::fs_resp_read() {
             Some(0) => {
                 self.pending = None;
-                libr::println!("[block] registered {} with userfs", prefixes[self.idx]);
+                libr::println!("[block] registered {} with cardo", prefixes[self.idx]);
                 self.idx += 1;
             }
             _ => {
-                // userfs ha scartato il frame (resync) o ring vuoto: pending
+                // cardo ha scartato il frame (resync) o ring vuoto: pending
                 // libero, si riprova al prossimo wakeup (mai throttle senza
                 // waker: vedi `step`).
                 self.pending = None;

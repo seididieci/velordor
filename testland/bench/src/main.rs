@@ -2,7 +2,7 @@
 //!
 //! Misura il percorso dati END-TO-END con il TSC (calibrato sul PIT), senza
 //! cache che nascondano il collo di bottiglia (non ne esistono ancora: ogni
-//! op attraversa IPC + userfs + block + PIO). Piattaforma di riferimento:
+//! op attraversa IPC + cardo + block + PIO). Piattaforma di riferimento:
 //! KVM (`scripts/bench.sh`, N run con media: i tempi TCG non sono reali).
 //!
 //! Op misurate (costo crescente del percorso):

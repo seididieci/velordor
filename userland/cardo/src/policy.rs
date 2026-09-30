@@ -1,7 +1,7 @@
 use super::*;
 
 // ── Policy su identita' (Fase 45, sandbox build) ───────────────────
-// La self-restriction (Fase 17) non vincola chi non droppa: qui userfs
+// La self-restriction (Fase 17) non vincola chi non droppa: qui cardo
 // applica un TETTO server-side per hash misurato. Al primo handshake
 // (FS_BUF_REG) il canale viene classificato UNA volta (peer_info = hash
 // FNV-1a misurato dal kernel allo spawn, ADR-0027) e il tetto resta in cache
@@ -23,9 +23,9 @@ use super::*;
 //    che creano stato globale o capability per altri; file e dir restano
 //    usabili). Fail-closed: a peer_info fallito, stesso default.
 //
-// La tabella test e' un file SEPARATO incluso SOLO da userfs: i binari test
+// La tabella test e' un file SEPARATO incluso SOLO da cardo: i binari test
 // incorporano service_hashes (t51) ma NON test_policy, quindi niente ciclo
-// (stesso motivo dell'esclusione userinit/userfs in Fase 36).
+// (stesso motivo dell'esclusione userinit/cardo in Fase 36).
 
 /// Default fail-closed per hash ignoto (Fase 45, SYNC escluso in Fase 52):
 /// ALL senza MOUNT (0x20), UMOUNT (0x40), GRANT (0x200), PIPE (0x400),

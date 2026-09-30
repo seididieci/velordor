@@ -169,7 +169,7 @@ fn is_mappable_phys(phys: u64) -> bool {
 
 /// map_physical(phys_addr, virt_addr, count): mappa `count` pagine fisiche
 /// a partire da `phys_addr` all'indirizzo virtuale `virt_addr` nello spazio
-/// del chiamante. Usato dal console server (VGA), da userfs (ring req/resp
+/// del chiamante. Usato dal console server (VGA), da cardo (ring req/resp
 /// di un client, dai phys registrati via `FS_BUF_REG`) e dalla test suite
 /// (pagina scratch MAP_TEST_PHYS). Fase 35: solo frame del sistema (vedi
 /// `is_mappable_phys`), mai RAM arbitraria.
@@ -204,7 +204,7 @@ pub(super) fn sys_map_physical(phys_addr: u64, virt_addr: u64, count: usize) -> 
     unsafe {
         crate::arc::vmm_user::map_user_region(cr3, virt_addr, phys_addr, count);
     }
-    // La PTE puo' gia' esistere (es. userfs rimappa la finestra FS a ogni
+    // La PTE puo' gia' esistere (es. cardo rimappa la finestra FS a ogni
     // client): invalida la TLB perche' il processo continua a girare dopo la
     // syscall e non deve riusare la traduzione vecchia.
     for i in 0..count {
@@ -245,8 +245,8 @@ pub(super) fn sys_sbrk(inc: u64) -> i64 {
 // Ogni processo alloca COPPIE fresche di pagine ring (request + response)
 // via `SYS_RING_ALLOC` (Fase 16: multi-coppia, es. block FS+DISK),
 // mappate a `USER_FS_BUFFER` (request) e `USER_RESP_RING` (response).
-// Il chiamante registra entrambi gli indirizzi fisici presso userfs con
-// una IPC `FS_BUF_REG`. Le operazioni FS sono IPC dirette client→userfs
+// Il chiamante registra entrambi gli indirizzi fisici presso cardo con
+// una IPC `FS_BUF_REG`. Le operazioni FS sono IPC dirette client→cardo
 // con trasferimento dati via ring buffer.
 
 /// ring_alloc(): alloca due pagine ring (request + response) per il processo
@@ -312,7 +312,7 @@ pub(super) fn sys_dma_alloc(pages: usize) -> i64 {
 
 /// map_in(chan, phys, virt, count): mappa `count` pagine fisiche a partire da
 /// `phys` all'indirizzo virtuale `virt` nello spazio del PEER del canale
-/// `chan` (ADR-0008). Mapper generico cross-process: usato da userfs per
+/// `chan` (ADR-0008). Mapper generico cross-process: usato da cardo per
 /// iniettare la response ring del client in un driver remoto (hub `vela`, `gpu`).
 ///
 /// Validazione: il peer deve essere un processo user, phys allineata a pagina,

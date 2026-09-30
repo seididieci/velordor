@@ -24,7 +24,7 @@ pub(crate) struct Node {
 
 /// Sniffa l'identità FAT del settore 0 di un nodo (whole-disk: settore 0
 /// fisico; partizione: settore `base`). Stesso bar di mount (`fat_bpb_identity`
-/// in libr): il nodo annuncia UUID/label sse userfs lo monterebbe davvero.
+/// in libr): il nodo annuncia UUID/label sse cardo lo monterebbe davvero.
 pub(crate) fn sniff_identity(disk: &block::AtaDisk, base: u64) -> (Option<u32>, Option<String>) {
     let mut sec = [0u8; 512];
     if !disk.read_sector(base, &mut sec) {

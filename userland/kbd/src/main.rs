@@ -2,7 +2,7 @@
 //!
 //! Possiede le porte 0x60/0x64 (via `io_ranges`, TSS per-processo ADR-0006) e
 //! pubblica gli scancode raw (Set 1) sul device `/dev/kbd`, registrato presso
-//! userfs come gli altri driver (FS_REGISTER). La decodifica resta fuori: sara'
+//! cardo come gli altri driver (FS_REGISTER). La decodifica resta fuori: sara'
 //! `usertty` a leggere `/dev/kbd` e a servire i byte cotti (Fase 15.3).
 //!
 //! Risveglio: il kernel su IRQ1 fa solo routing + EOI e sveglia l'owner del
@@ -22,10 +22,10 @@ use libr::pio as io;
 
 use libr::println;
 
-// ── IPC tags da userfs ──────────────────────────────────────────────
+// ── IPC tags da cardo ──────────────────────────────────────────────
 
 // ── IPC tags ────────────────────────────────────────────────────────
-// DEV_* come gli altri driver (da userfs). KBD_NOTIFY e' diverso: e' kbd che
+// DEV_* come gli altri driver (da cardo). KBD_NOTIFY e' diverso: e' kbd che
 // avvisa tty "ci sono scancode" (fire-and-forget, NESSUNA reply: il mittente
 // async non aspetta). Senza notify tty dovrebbe pompare in polling (sempre
 // Ready → dilution dello scheduler, vedi diagnosi t30 Fase 15).
@@ -38,7 +38,7 @@ use libr::{DEV_CLOSE, DEV_KBD, DEV_OPEN, DEV_READ, DEV_READDIR, DEV_WRITE};
 use libr::KBD_NOTIFY;
 
 // ── Ring I/O (Fase 10.2, stesso pattern di vela) ───────────────────
-// La response del client va nella finestra CLI_RESP_VA (mappata da userfs
+// La response del client va nella finestra CLI_RESP_VA (mappata da cardo
 // con i ring del client a ogni relay DEV).
 
 const RESP_RING_VA: u64 = libr::CLI_RESP_VA;
@@ -149,7 +149,7 @@ fn drain_hw(q: &mut ScanQueue) {
 // Frame helper response (A2): single source in `libr` (prima identica qui).
 use libr::resp_frame_write;
 
-/// Assicura il mount "/dev/kbd" presso userfs (stesso pattern di vela,
+/// Assicura il mount "/dev/kbd" presso cardo (stesso pattern di vela,
 /// `ensure_mounted`): attende Fs via soli lookup, poi UN tentativo; se
 /// fallisce ricomincia. Unbounded: senza Fs il driver e' comunque inutile.
 fn ensure_mounted() {
@@ -171,9 +171,9 @@ fn real_main(_sp: u64) -> ! {
         println!("[kbd] registered as service Kbd");
     }
 
-    // Registra il prefix "/dev/kbd" presso userfs.
+    // Registra il prefix "/dev/kbd" presso cardo.
     ensure_mounted();
-    println!("[kbd] registered /dev/kbd with userfs");
+    println!("[kbd] registered /dev/kbd with cardo");
 
     // Avvisa il parent (init) di essere pronto (SVC_READY fire-and-forget,
     // come vela: a boot init aspetta, su restart nessuno — mai sync).
@@ -191,7 +191,7 @@ fn real_main(_sp: u64) -> ! {
         // il drain e' comunque avvenuto.
         match libr::recv() {
             Ok(m) => {
-                // userfs morto e rinato: re-mount (come vela, t28). Mai reply.
+                // cardo morto e rinato: re-mount (come vela, t28). Mai reply.
                 if m.tag == libr::EXIT_NOTIFY {
                     println!("[kbd] peer morto, re-mount /dev/kbd");
                     ensure_mounted();

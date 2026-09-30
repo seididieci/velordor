@@ -74,7 +74,7 @@ fn real_main(_sp: u64) -> ! {
     helpers::report(&mut total, &mut ok, "t25 driver death mount purge", t_lifecycle::t_driver_death_mount());
     helpers::report(&mut total, &mut ok, "t26 client death purge", t_lifecycle::t_client_death_purge());
     helpers::report(&mut total, &mut ok, "t27 vela kill + init restart", t_lifecycle::t_vela_restart());
-    helpers::report(&mut total, &mut ok, "t28 userfs kill + full recovery", t_lifecycle::t_userfs_restart());
+    helpers::report(&mut total, &mut ok, "t28 cardo kill + full recovery", t_lifecycle::t_cardo_restart());
     helpers::report(&mut total, &mut ok, "t29 map flap isolation", t_mapflap::t_mapflap());
     helpers::report(&mut total, &mut ok, "t30 neighbor under flood", t_mapflap::t_neighbor());
     helpers::report(&mut total, &mut ok, "t31 kbd/tty presence", t_mapflap::t_kbd_presence());
