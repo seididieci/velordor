@@ -133,7 +133,7 @@ const ATA_PIO_RANGES: &[(u16, u16)] = &[
 /// Porte CRTC del cursore hardware VGA per il console server (terminale).
 const VGA_CURSOR_RANGES: &[(u16, u16)] = &[(0x3D4, 0x3D5)];
 
-/// Porte PS/2 (dati + stato/comandi) per il driver tastiera `userkbd` (Fase 15).
+/// Porte PS/2 (dati + stato/comandi) per il driver tastiera `kbd` (Fase 15, R3).
 const KBD_PS2_RANGES: &[(u16, u16)] = &[(0x60, 0x64)];
 
 use crate::ordo::sched::Priority;

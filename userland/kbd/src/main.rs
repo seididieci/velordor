@@ -1,4 +1,4 @@
-//! userkbd — Driver tastiera PS/2 in userspace (Fase 15).
+//! kbd — Driver tastiera PS/2 in userspace (Fase 15, R3).
 //!
 //! Possiede le porte 0x60/0x64 (via `io_ranges`, TSS per-processo ADR-0006) e
 //! pubblica gli scancode raw (Set 1) sul device `/dev/kbd`, registrato presso
@@ -45,60 +45,11 @@ const RESP_RING_VA: u64 = libr::CLI_RESP_VA;
 // Geometria ring + errore IPC (A1): single source in `libr` (ERR ancora usato).
 use libr::ERR;
 
-// ── Porte PS/2 ──────────────────────────────────────────────────────
-
-const PS2_DATA: u16 = 0x60;
-const PS2_STATUS: u16 = 0x64;
-const PS2_OBF: u8 = 0x01;
-const PS2_IBF: u8 = 0x02;
-/// Bit 5 di 0x64: il byte in attesa viene dal mouse (AUX), non dalla tastiera.
-const PS2_AUX: u8 = 0x20;
-/// Bit di errore di 0x64: parita' (7) e timeout (6) — il byte e' spazzatura.
-const PS2_ERR: u8 = 0xC0;
-
-// ── Coda scancode interna ───────────────────────────────────────────
-// Come la vecchia coda kernel (`kbd_events`, ora rimossa): cap 256, i byte in
-// eccesso sotto raffica vengono scartati (stesso contratto di prima).
-
-const SCANCAP: usize = 256;
-
-struct ScanQueue {
-    buf: [u8; SCANCAP],
-    head: usize,
-    tail: usize,
-    len: usize,
-}
-
-impl ScanQueue {
-    const fn new() -> Self {
-        Self { buf: [0; SCANCAP], head: 0, tail: 0, len: 0 }
-    }
-
-    fn push(&mut self, sc: u8) {
-        if self.len == SCANCAP {
-            return;
-        }
-        self.buf[self.tail] = sc;
-        self.tail = (self.tail + 1) % SCANCAP;
-        self.len += 1;
-    }
-
-    fn len(&self) -> usize {
-        self.len
-    }
-
-    /// Drena fino a `out.len()` byte, ritorna quanti.
-    fn drain_into(&mut self, out: &mut [u8]) -> usize {
-        let mut n = 0;
-        while self.len > 0 && n < out.len() {
-            out[n] = self.buf[self.head];
-            self.head = (self.head + 1) % SCANCAP;
-            self.len -= 1;
-            n += 1;
-        }
-        n
-    }
-}
+// ── Porte PS/2 + coda scancode (R3): casa `vela::input` (mossi tali e quali,
+// il driver li riusa da li' — primo accumulo Vela).
+use vela::input::{
+    ScanQueue, PS2_AUX, PS2_DATA, PS2_ERR, PS2_IBF, PS2_OBF, PS2_STATUS,
+};
 
 /// Attende IBF libero (controller pronto a ricevere un comando) con bound.
 /// Senza, un comando scritto mentre il controller e' occupato va perso
@@ -169,7 +120,7 @@ fn i8042_init() {
             let _ = io::inb(PS2_DATA);
         }
     }
-    println!("[userkbd] i8042 init (IRQ1 abilitata)");
+    println!("[kbd] i8042 init (IRQ1 abilitata)");
 }
 
 /// Drena l'hardware: finche' OBF e' alto, leggi uno scancode e accodalo.
@@ -207,7 +158,7 @@ fn ensure_mounted() {
 
 libr::entry!(real_main);
 fn real_main(_sp: u64) -> ! {
-    println!("[userkbd] starting, pid={}", libr::getpid());
+    println!("[kbd] starting, pid={}", libr::getpid());
 
     // Hardware prima di tutto: da qui in poi gli IRQ1 arrivano e il kernel ci
     // sveglia (il servizio non e' ancora registrato: i wake vanno persi ma
@@ -217,12 +168,12 @@ fn real_main(_sp: u64) -> ! {
     // Registra il servizio Kbd per nome (ADR-0008): il kernel risolve l'owner
     // su IRQ1 per il wake.
     if libr::service_register(libr::Service::Kbd).is_ok() {
-        println!("[userkbd] registered as service Kbd");
+        println!("[kbd] registered as service Kbd");
     }
 
     // Registra il prefix "/dev/kbd" presso userfs.
     ensure_mounted();
-    println!("[userkbd] registered /dev/kbd with userfs");
+    println!("[kbd] registered /dev/kbd with userfs");
 
     // Avvisa il parent (init) di essere pronto (SVC_READY fire-and-forget,
     // come devfs: a boot init aspetta, su restart nessuno — mai sync).
@@ -242,7 +193,7 @@ fn real_main(_sp: u64) -> ! {
             Ok(m) => {
                 // userfs morto e rinato: re-mount (come devfs, t28). Mai reply.
                 if m.tag == libr::EXIT_NOTIFY {
-                    println!("[userkbd] peer morto, re-mount /dev/kbd");
+                    println!("[kbd] peer morto, re-mount /dev/kbd");
                     ensure_mounted();
                     drain_hw(&mut queue);
                     continue;
@@ -319,6 +270,6 @@ fn real_main(_sp: u64) -> ! {
 
 #[panic_handler]
 fn panic(_info: &core::panic::PanicInfo) -> ! {
-    println!("[userkbd] panic");
+    println!("[kbd] panic");
     libr::exit(1)
 }

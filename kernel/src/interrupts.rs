@@ -262,12 +262,12 @@ extern "x86-interrupt" fn timer_handler(_stack_frame: InterruptStackFrame) {
 
 extern "x86-interrupt" fn keyboard_handler(_stack_frame: InterruptStackFrame) {
     // Fase 15: routing puro + notify. Il driver PS/2 vive in userspace
-    // (`userkbd`, servizio `Kbd`): legge lui la porta 0x60 al risveglio (ha
+    // (`kbd`, servizio `Kbd`): legge lui la porta 0x60 al risveglio (ha
     // `io_ranges` dedicati). Il kernel non tocca piu' porte ne' code: risolve
     // l'owner per nome (restart-safe) e gli accoda una notify
     // (bridge interrupt→IPC: un wake senza messaggio non farebbe mai ritorno
     // da `recv()` — vedi `notify_irq`); EOI in ogni caso (mai wedge). Senza
-    // driver registrato i tasti vanno persi finche' userkbd non parte.
+    // driver registrato i tasti vanno persi finche' kbd non parte.
     // 38.2d — EOI PRIMA della notify: `notify_irq` puo' cambiare contesto
     // (wakeup-preemption) e il PIC va riarmato prima (come il timer sopra).
     unsafe { crate::pic::end_of_interrupt(0x21) };

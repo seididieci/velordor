@@ -32,7 +32,7 @@ fn expected_hash(bin: &[u8]) -> Option<u64> {
         b"userconsole" => Some(HASH_USERCONSOLE),
         b"useruptime" => Some(HASH_USERUPTIME),
         b"userdevfs" => Some(HASH_USERDEVFS),
-        b"userkbd" => Some(HASH_USERKBD),
+        b"kbd" => Some(HASH_KBD),
         b"usertty" => Some(HASH_USERTTY),
         b"userposix" => Some(HASH_USERPOSIX),
         b"usershell" => Some(HASH_USERSHELL),
@@ -51,7 +51,7 @@ fn expected_blake(bin: &[u8]) -> Option<[u8; 32]> {
         b"userconsole" => Some(BLAKE_USERCONSOLE),
         b"useruptime" => Some(BLAKE_USERUPTIME),
         b"userdevfs" => Some(BLAKE_USERDEVFS),
-        b"userkbd" => Some(BLAKE_USERKBD),
+        b"kbd" => Some(BLAKE_KBD),
         b"usertty" => Some(BLAKE_USERTTY),
         b"userposix" => Some(BLAKE_USERPOSIX),
         b"usershell" => Some(BLAKE_USERSHELL),
@@ -509,7 +509,7 @@ const SVC_DEVFS: SvcMeta = SvcMeta {
     io: &[],
 };
 const SVC_KBD: SvcMeta = SvcMeta {
-    bin: b"userkbd",
+    bin: b"kbd",
     path: Some("/fat/bin/kbd.bin"),
     obj: None,
     prio: 16,
@@ -646,7 +646,7 @@ fn real_main(_sp: u64) -> ! {
     };
     let _ = devfs_chan;
     let _ = libr::log::log(b"init", b"devfs ready");
-    // 4. userkbd + attesa READY (Fase 15: registra Kbd + mount /dev/kbd; Fs
+    // 4. kbd + attesa READY (Fase 15: registra Kbd + mount /dev/kbd; Fs
     //    garantito dal passo 2, quindi riesce subito a boot).
     if boot_svc(&SVC_KBD, true).is_none() {
         println!("[init] boot FAILED (kbd), panic");

@@ -154,7 +154,7 @@ pub extern "C" fn rust_main(boot_info_phys: u64) -> ! {
     // Ordine spawn = ordine PID: idle=0, init=1 (Linux convention). Gli altri
     // processi user sono spaw da init. I processi kernel non hanno canale di
     // nascita (parent_chan=None, ADR-0008). (Fase 15: il processo `keyboard`
-    // e' stato eliminato — il driver PS/2 vive in userspace come `userkbd`.)
+    // e' stato eliminato — il driver PS/2 vive in userspace come `kbd`.)
     ordo::sched::spawn("idle", ordo::sched::Priority::Idle, idle::idle, None, None);
 
     // Fase 8.1: init, primo processo user (PID 1), antenato dei servizi

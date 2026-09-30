@@ -37,7 +37,7 @@ pub use syscall_numbers::Service;
 pub use syscall_numbers::EXIT_NOTIFY;
 /// Tag del cancel cooperativo parent→figlio (Fase 44b, job control: Ctrl-C).
 pub use syscall_numbers::JOB_CANCEL;
-/// Tag della notify kernel→userkbd su IRQ1 (Fase 15, bridge interrupt→IPC).
+/// Tag della notify kernel→kbd su IRQ1 (Fase 15, bridge interrupt→IPC).
 pub use syscall_numbers::IRQ_NOTIFY_KBD;
 /// Tag della notify kernel→userdisk su IRQ14/15 (Fase 38, ATA DMA: stesso
 /// bridge interrupt→IPC — userdisk drena lo status Bus-Master ad ogni giro).
@@ -175,7 +175,7 @@ pub mod scratch;
 /// Kernel invariato; vincoli Fase 13 invariati (vedi modulo).
 pub mod task;
 
-/// Port I/O x86 in ring 3 (A4: prima duplicato in userdisk/userkbd).
+/// Port I/O x86 in ring 3 (A4: prima duplicato in userdisk/kbd).
 pub mod pio;
 
 /// Spazio di configurazione PCI in ring 3 (Fase 38.0d, ATA DMA): modulo

@@ -1882,3 +1882,10 @@
     - [x] R2 (rename a fasi, ADR-0040): `libs/vela` scheletro (`hub|block|
           input|gpu`, solo doc + regola di accumulo, nessun uso ancora).
           Gate: 5/5 + 7/7 + 40/40 + 58/58, zero FAIL/PANIC/FAULT.
+    - [x] R3 (rename a fasi, ADR-0040, pilot): `userkbd`→`kbd` (package, bin
+          `kbd.bin`, display, bracci manifest `HASH_KBD`/`BLAKE_KBD`, build,
+          inject, init, `driver_name_of`, prosa nei file codice;
+          `Service::Kbd` invariata). Primo accumulo Vela: costanti PS/2 +
+          `ScanQueue` mosse tali e quali in `vela::input` (zero
+          comportamento). Gate: 5/5 + 7/7 + 40/40 + 58/58, zero
+          FAIL/PANIC/FAULT. Docs ai nuovi nomi in R-final.

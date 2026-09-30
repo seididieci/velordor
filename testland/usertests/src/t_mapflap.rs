@@ -212,7 +212,7 @@ pub fn t_neighbor() -> bool {
 
 /// t31 — presenza keyboard stack in userspace (Fase 15, gate leggero).
 /// Verifica che i servizi Kbd/Tty siano registrati e i device apribili:
-/// /dev/kbd (scancode raw da userkbd) e /dev/input/keyboard (byte cotti da
+/// /dev/kbd (scancode raw da kbd) e /dev/input/keyboard (byte cotti da
 /// usertty, stesso path di prima). Niente digitazione reale (serve QMP).
 pub fn t_kbd_presence() -> bool {
     helpers::drain_stray();

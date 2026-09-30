@@ -1,6 +1,6 @@
 //! usertty — Terminal server in userspace (Fase 15, raw in 43b).
 //!
-//! Legge scancode raw (Set 1) da `/dev/kbd` (driver `userkbd`), li decodifica
+//! Legge scancode raw (Set 1) da `/dev/kbd` (driver `kbd`), li decodifica
 //! con `pc_keyboard` (layout US) e serve i byte ai client sul device
 //! `/dev/input/keyboard` SENZA echo (Fase 43b: l'echo lo fa il lettore, la
 //! shell con la sua readline — tty resta un trasporto raw). Mappa tasti:
@@ -36,7 +36,7 @@ use libr::println;
 // ── IPC tags (DocsD: single source in `syscall-numbers`, via `libr`) ──
 use libr::{DEV_CLOSE, DEV_KEYBOARD, DEV_OPEN, DEV_READ, DEV_WRITE};
 
-/// Notify da userkbd (fire-and-forget, NESSUNA reply): scancode in attesa.
+/// Notify da kbd (fire-and-forget, NESSUNA reply): scancode in attesa.
 /// tty dorme in recv() e si sveglia solo qui (o su relay DEV / reply async).
 /// Senza notify servirebbe pump in polling (sempre Ready → dilution scheduler).
 /// Single source in `syscall-numbers` (DocsB), via `libr`.

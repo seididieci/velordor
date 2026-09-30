@@ -225,7 +225,7 @@ pub const FS_NOTIFY: u64 = 0x32;
 //   R_REGISTER nel request ring, letto da userfs).
 // - FS_BUF_REG (0x31): handshake register-only "i miei ring sono req=w0,
 //   resp=w1" (client e driver verso userfs).
-// - KBD_NOTIFY (0x40): userkbd → usertty, scancode in coda (w0 = count).
+// - KBD_NOTIFY (0x40): kbd → usertty, scancode in coda (w0 = count).
 // - JOB_CANCEL (0x43): parent → figlio, cancel cooperativo job control
 //   (Fase 44b: Ctrl-C della shell; w0 = 2/SIGINT, informativo). Il figlio
 //   puo' gestirlo (cleanup + exit a sua scelta) o ignorarlo (il parent
@@ -582,7 +582,7 @@ pub enum Service {
     /// `EXIT_NOTIFY` a TUTTI i peer (non solo al parent). Mai usato in
     /// produzione: nessun server reale lo registra o lo risolve.
     Test = 4,
-    /// Driver tastiera PS/2 in userspace (Fase 15, `userkbd`): pubblica
+    /// Driver tastiera PS/2 in userspace (Fase 15, `kbd`): pubblica
     /// scancode raw sul device `/dev/kbd`. Il kernel (IRQ1) risolve questo
     /// servizio per nome e sveglia l'owner (routing + EOI, mai lettura porte).
     Kbd = 5,
@@ -623,7 +623,7 @@ pub const CHANNEL_PARENT: u64 = 0;
 /// Valore "nessun canale" usato quando il parent non esiste.
 pub const CHANNEL_NONE: u64 = u64::MAX;
 
-/// Tag del messaggio con cui il kernel sveglia `userkbd` su IRQ1 (Fase 15):
+/// Tag del messaggio con cui il kernel sveglia `kbd` su IRQ1 (Fase 15):
 /// bridge interrupt→IPC — un wake senza messaggio non farebbe mai ritorno
 /// da `recv()` (la coda vuota ri-blocca in kernel), quindi l'handler accoda
 /// questa notify (fire-and-forget, MAI risposta: canale 0, nessun peer) e

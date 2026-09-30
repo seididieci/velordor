@@ -2,7 +2,7 @@
 //!
 //! E' l'UNICO processo che disegna sul frame buffer VGA e pubblica il device
 //! di output `/dev/console` (DEV_WRITE disegna i byte). La tastiera vive
-//! altrove (Fase 15): `userkbd` pubblica scancode raw su `/dev/kbd`, `usertty`
+//! altrove (Fase 15): `kbd` pubblica scancode raw su `/dev/kbd`, `usertty`
 //! decodifica, fa echo scrivendo qui e serve i byte cotti su
 //! `/dev/input/keyboard`.
 //!
@@ -242,7 +242,7 @@ fn real_main(_sp: u64) -> ! {
     let _ = libr::print_string(b"[console] registered /dev/console with userfs\n");
 
     // 6. Loop IPC: solo richieste DEV sul device di output (+ EXIT_NOTIFY).
-    //    Niente piu' tastiera qui (Fase 15: userkbd + usertty).
+    //    Niente piu' tastiera qui (Fase 15: kbd + usertty).
     loop {
         match libr::recv() {
             Ok(msg) => {

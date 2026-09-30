@@ -15,7 +15,7 @@ mmd -i "$IMG" ::/bin ::/test || exit 1
 mcopy -i "$IMG" userland/build/userconsole.bin ::/bin/console.bin || exit 1
 mcopy -i "$IMG" userland/build/useruptime.bin  ::/bin/uptime.bin  || exit 1
 mcopy -i "$IMG" userland/build/userdevfs.bin   ::/bin/devfs.bin   || exit 1
-mcopy -i "$IMG" userland/build/userkbd.bin     ::/bin/kbd.bin     || exit 1
+mcopy -i "$IMG" userland/build/kbd.bin     ::/bin/kbd.bin     || exit 1
 mcopy -i "$IMG" userland/build/usertty.bin     ::/bin/tty.bin     || exit 1
 mcopy -i "$IMG" userland/build/usershell.bin   ::/bin/shell.bin   || exit 1
 # Server di personalita' POSIX (Fase 40.3, P1): skeleton supervisionato.

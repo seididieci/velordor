@@ -16,7 +16,7 @@ pub mod hub;
 /// e convenzioni data-plane condivise coi client futuri.
 pub mod block;
 
-/// Input (server `kbd`, ex-userkbd): scancode e notify verso la terminale.
+/// Input (server `kbd`): scancode e notify verso la terminale.
 pub mod input;
 
 /// Terminale video (server `gpu`, ex-console): VGA + tastiera cotta.
