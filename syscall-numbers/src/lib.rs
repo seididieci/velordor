@@ -567,8 +567,8 @@ pub fn image_hash(bytes: &[u8]) -> u64 {
 #[repr(u64)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Service {
-    /// Console/terminale (VGA + tastiera). Usato da kbd_process e dai client.
-    Console = 0,
+    /// Terminale video (VGA). Usato da kbd_process e dai client.
+    Gpu = 0,
     /// File system server (userfs): tutti i client FS lo risolvono per nome.
     Fs = 1,
     /// Device file server (devfs, prefix `/dev`).

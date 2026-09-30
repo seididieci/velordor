@@ -10,7 +10,7 @@ use super::*;
 /// confronta gli hash, non i nomi).
 fn driver_name_of(chan: u64) -> &'static str {
     match libr::peer_info(chan) {
-        Ok(h) if h == HASH_USERCONSOLE => "userconsole",
+        Ok(h) if h == HASH_GPU => "gpu",
         Ok(h) if h == HASH_USERDEVFS => "userdevfs",
         Ok(h) if h == HASH_USERDISK => "userdisk",
         Ok(h) if h == HASH_KBD => "kbd",
@@ -26,7 +26,7 @@ fn driver_name_of(chan: u64) -> &'static str {
 /// Solo i binari che init carica per object_id (stessi byte iniettati su
 /// /fat via `inject-bins.sh`: l'hash manifest li copre in entrambi i path).
 const SYS_SEED: &[(&str, &[u8])] = &[
-    ("/fat/bin/console.bin", b"bin/userconsole.bin"),
+    ("/fat/bin/gpu.bin", b"bin/gpu.bin"),
     ("/fat/bin/shell.bin", b"bin/usershell.bin"),
 ];
 

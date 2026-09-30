@@ -1,5 +1,5 @@
 [package]
-name = "userconsole"
+name = "gpu"
 version = "0.1.0"
 edition = "2024"
 
@@ -8,6 +8,7 @@ edition = "2024"
 
 [dependencies]
 libr = { path = "../../libs/libr" }
+vela = { path = "../../libs/vela" }
 
 [profile.dev]
 panic = "abort"

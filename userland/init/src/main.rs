@@ -23,13 +23,13 @@ use libr::{SVC_READY, TEST_DONE};
 /// build-userland.sh; senza, questa compilazione fallisce loud).
 include!(env!("VELORDOR_SERVICE_HASHES"));
 
-/// Hash atteso del servizio `bin` (nome display, es. `b"userconsole"`), o
+/// Hash atteso del servizio `bin` (nome display, es. `b"gpu"`), o
 /// `None` se non e' nel manifest: embedded disk/fs (TCB del kernel — init non
 /// ha i byte in mano per verificarli, li spawna per nome) e binari di test
 /// (solo suite, mai servizi). Solo i servizi da disco sono pinnati.
 fn expected_hash(bin: &[u8]) -> Option<u64> {
     match bin {
-        b"userconsole" => Some(HASH_USERCONSOLE),
+        b"gpu" => Some(HASH_GPU),
         b"useruptime" => Some(HASH_USERUPTIME),
         b"userdevfs" => Some(HASH_USERDEVFS),
         b"kbd" => Some(HASH_KBD),
@@ -48,7 +48,7 @@ fn expected_hash(bin: &[u8]) -> Option<u64> {
 /// tenute d'accordo da testsarca). Stesse esclusioni di `expected_hash`.
 fn expected_blake(bin: &[u8]) -> Option<[u8; 32]> {
     match bin {
-        b"userconsole" => Some(BLAKE_USERCONSOLE),
+        b"gpu" => Some(BLAKE_GPU),
         b"useruptime" => Some(BLAKE_USERUPTIME),
         b"userdevfs" => Some(BLAKE_USERDEVFS),
         b"kbd" => Some(BLAKE_KBD),
@@ -488,9 +488,9 @@ fn restart_service(e: &mut Supervised) {
 /// che il FS esista); tutto il resto vive in `/bin` su /fat (iniettati a
 /// build via mcopy) e parte via `spawn_image`. Priorita': 16 Normal, 1 Low.
 const SVC_CONSOLE: SvcMeta = SvcMeta {
-    bin: b"userconsole",
-    path: Some("/fat/bin/console.bin"),
-    obj: Some((b"sys", b"bin/userconsole.bin")),
+    bin: b"gpu",
+    path: Some("/fat/bin/gpu.bin"),
+    obj: Some((b"sys", b"bin/gpu.bin")),
     prio: 16,
     io: VGA_CURSOR_RANGES,
 };
@@ -681,7 +681,7 @@ fn real_main(_sp: u64) -> ! {
     const META_DISK: SvcMeta = SvcMeta { bin: b"userdisk", path: None, obj: None, prio: 16, io: &[] };
     const META_FS: SvcMeta = SvcMeta { bin: b"userfs", path: None, obj: None, prio: 16, io: &[] };
     let mut supervised = [
-        Supervised { meta: &SVC_CONSOLE, svc: libr::Service::Console, chan: -1, pid: -1, restarts: 0, window_start: 0, held: false },
+        Supervised { meta: &SVC_CONSOLE, svc: libr::Service::Gpu, chan: -1, pid: -1, restarts: 0, window_start: 0, held: false },
         Supervised { meta: &META_DISK, svc: libr::Service::Disk, chan: -1, pid: -1, restarts: 0, window_start: 0, held: false },
         Supervised { meta: &META_FS, svc: libr::Service::Fs, chan: -1, pid: -1, restarts: 0, window_start: 0, held: false },
         Supervised { meta: &SVC_DEVFS, svc: libr::Service::Devfs, chan: -1, pid: -1, restarts: 0, window_start: 0, held: false },

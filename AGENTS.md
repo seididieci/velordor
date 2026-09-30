@@ -244,10 +244,9 @@ Gate: `[testfs] PASS 5/5` + `[testfat] PASS 7/7` + `[testsarca] PASS 40/40` + `[
 - **Reattivita' shell**: a valle del boot i soli processi `Normal` sono i
   servizi interattivi (console, fs, devfs, shell), tutti bloccati in attesa IPC;
   init resta bloccato in `recv`, `useruptime` e' `Low`. Quantum scheduler = 2
-  tick (20 ms). Ordine spawn di init: userconsole per PRIMO (registra
-  `Console`, kbd lo raggiunge per nome), userfs SUBITO DOPO (registra `Fs`;
-  init attende l'ACK "Fs pronto" via canale di nascita prima di spawnare chi usa
-  il filesystem), poi uptime/devfs, quindi i test in SEQUENZA (ognuno atteso
+  tick (20 ms). Ordine spawn di init: log+disk in parallelo, poi fs/time,
+  flush al log, gpu (registra `Gpu`, kbd la raggiunge per nome), uptime/
+  devfs, quindi i test in SEQUENZA (ognuno atteso
   fino a `TEST_DONE` sul canale di nascita), usershell per ultimo (interattivo).
 - **I test girano in sequenza, la shell e' ultima**: usertestfs/usertestfat/
   usertests condividono la ramfs di userfs (path e file di lavoro) e l'output

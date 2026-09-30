@@ -1,4 +1,4 @@
-//! Console server (Fase 8.2 + 9.4 + 15.4): driver VGA/rendering puro.
+//! gpu — Terminale video in userspace (Fase 8.2 + 9.4 + 15.4, R4: ex-console).
 //!
 //! E' l'UNICO processo che disegna sul frame buffer VGA e pubblica il device
 //! di output `/dev/console` (DEV_WRITE disegna i byte). La tastiera vive
@@ -17,16 +17,15 @@ use libr;
 /// Costante copiata da `vmm_user.rs` (il crate kernel non e' linkato qui).
 const USER_VGA: u64 = 0x4000_0010_0000;
 
-/// Indirizzo fisico del frame buffer VGA.
-const VGA_PHYS: u64 = 0xB8000;
+/// Indirizzo fisico del frame buffer VGA (single source in `vela::gpu`).
+use vela::gpu::VGA_PHYS;
 
-/// Dimensioni del buffer VGA (testo 80x25).
-const VGA_ROWS: usize = 25;
-const VGA_COLS: usize = 80;
+/// Dimensioni del buffer VGA (single source in `vela::gpu`).
+use vela::gpu::{VGA_COLS, VGA_ROWS};
 
 /// Porte CRTC per il cursore hardware VGA.
-const CRTC_INDEX: u16 = 0x3D4;
-const CRTC_DATA: u16 = 0x3D5;
+/// Porte CRTC (single source in `vela::gpu`).
+use vela::gpu::{CRTC_DATA, CRTC_INDEX};
 
 // ── IPC tags + device type (DocsD: single source in `syscall-numbers`) ─
 use libr::{DEV_CLOSE, DEV_CONSOLE, DEV_OPEN, DEV_READ, DEV_WRITE};
@@ -220,12 +219,12 @@ fn real_main(_sp: u64) -> ! {
     for &b in msg {
         unsafe { vga_write_char(vga, b, &mut cursor) };
     }
-    let _ = libr::print_string(b"[console] server up\n");
+    let _ = libr::print_string(b"[gpu] server up\n");
 
     // 4b. Registra il servizio Console per nome (ADR-0008): init lo usa per
     // la supervisione (service_pid) e i client potrebbero risolverlo.
-    if libr::service_register(libr::Service::Console).is_ok() {
-        let _ = libr::print_string(b"[console] registered as service Console\n");
+    if libr::service_register(libr::Service::Gpu).is_ok() {
+        let _ = libr::print_string(b"[gpu] registered as service Gpu\n");
     }
 
     // 4c. Avvisa il parent (init) di essere pronto (SVC_READY fire-and-forget):
@@ -239,7 +238,7 @@ fn real_main(_sp: u64) -> ! {
     //    che prima alloca e registra la pagina FS per-processo).
     //    ensure_mounted: stessa funzione a boot e su EXIT_NOTIFY (t28).
     ensure_mounted();
-    let _ = libr::print_string(b"[console] registered /dev/console with userfs\n");
+    let _ = libr::print_string(b"[gpu] registered /dev/console with userfs\n");
 
     // 6. Loop IPC: solo richieste DEV sul device di output (+ EXIT_NOTIFY).
     //    Niente piu' tastiera qui (Fase 15: kbd + usertty).
@@ -301,6 +300,6 @@ fn real_main(_sp: u64) -> ! {
 
 #[panic_handler]
 fn panic(_info: &core::panic::PanicInfo) -> ! {
-    let _ = libr::print_string(b"[console] panic\n");
+    let _ = libr::print_string(b"[gpu] panic\n");
     libr::exit(1)
 }

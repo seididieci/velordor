@@ -396,7 +396,7 @@ fn real_main(_sp: u64) -> ! {
             // 28. bind motore B+tree + seed `sys` (server-side): da qui gli
             // op nativi parlano ai blocchi (commit per-op, shadow + flip).
             let v28 = libr::arca_use_disk(true).is_ok()
-                && matches!(libr::obj_get(b"sys", b"bin/userconsole.bin"), Ok(v) if !v.is_empty());
+                && matches!(libr::obj_get(b"sys", b"bin/gpu.bin"), Ok(v) if !v.is_empty());
             c.ok("bind motore + seed sys", v28);
             // 4. round-trip piccolo su disco (stesso assert 56.1).
             let small = b"nativo-arcafs-obj";
@@ -581,7 +581,7 @@ fn real_main(_sp: u64) -> ! {
                 ok = ok && matches!(libr::obj_get(b"dcrash", b"bulk"), Ok(v) if v == last);
                 ok = ok
                     && matches!(
-                        libr::obj_get(b"sys", b"bin/userconsole.bin"),
+                        libr::obj_get(b"sys", b"bin/gpu.bin"),
                         Ok(v) if !v.is_empty()
                     );
                 let gen1 = read_gen();

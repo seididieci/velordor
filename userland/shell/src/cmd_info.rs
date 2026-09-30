@@ -307,7 +307,7 @@ pub(crate) fn parse_i64(s: &str) -> Option<i64> {
 }
 fn service_by_name(name: &str) -> Option<libr::Service> {
     match name {
-        "console" => Some(libr::Service::Console),
+        "gpu" => Some(libr::Service::Gpu),
         "fs" => Some(libr::Service::Fs),
         "devfs" => Some(libr::Service::Devfs),
         "init" => Some(libr::Service::Init),

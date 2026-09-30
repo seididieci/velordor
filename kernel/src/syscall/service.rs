@@ -131,7 +131,7 @@ pub(super) fn sys_peer_info(chan: usize) -> i64 {
 fn service_from_disc(disc: u64) -> Option<syscall_numbers::Service> {
     use syscall_numbers::Service::*;
     match disc {
-        0 => Some(Console),
+        0 => Some(Gpu),
         1 => Some(Fs),
         2 => Some(Devfs),
         3 => Some(Init),
@@ -149,7 +149,7 @@ fn service_from_disc(disc: u64) -> Option<syscall_numbers::Service> {
 /// Nome leggibile di un servizio (per log di debug).
 fn service_name(s: syscall_numbers::Service) -> &'static str {
     match s {
-        syscall_numbers::Service::Console => "console",
+        syscall_numbers::Service::Gpu => "gpu",
         syscall_numbers::Service::Fs => "fs",
         syscall_numbers::Service::Devfs => "devfs",
         syscall_numbers::Service::Init => "init",

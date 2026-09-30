@@ -1889,3 +1889,10 @@
           `ScanQueue` mosse tali e quali in `vela::input` (zero
           comportamento). Gate: 5/5 + 7/7 + 40/40 + 58/58, zero
           FAIL/PANIC/FAULT. Docs ai nuovi nomi in R-final.
+    - [x] R4 (rename a fasi, ADR-0040): `userconsole`→`gpu` (dir, package,
+          bin `gpu.bin` + dest FAT, display, `Service::Console`→`Service::Gpu`
+          guidata dal compilatore, manifest, seed `sys`, init, shell,
+          test t39/t51/t58). Accumulo Vela: geometria VGA + porte CRTC in
+          `vela::gpu`. Bug di rotta: t39/t58 hardcodano il dest FAT
+          (`/fat/bin/console.bin` → `gpu.bin`). Gate: 5/5 + 7/7 + 40/40 +
+          58/58, zero FAIL/PANIC/FAULT. Docs ai nuovi nomi in R-final.

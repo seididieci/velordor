@@ -12,7 +12,7 @@ cd "$(dirname "$0")/.."
 
 IMG="userland/fs/fat.img"
 mmd -i "$IMG" ::/bin ::/test || exit 1
-mcopy -i "$IMG" userland/build/userconsole.bin ::/bin/console.bin || exit 1
+mcopy -i "$IMG" userland/build/gpu.bin ::/bin/gpu.bin || exit 1
 mcopy -i "$IMG" userland/build/useruptime.bin  ::/bin/uptime.bin  || exit 1
 mcopy -i "$IMG" userland/build/userdevfs.bin   ::/bin/devfs.bin   || exit 1
 mcopy -i "$IMG" userland/build/kbd.bin     ::/bin/kbd.bin     || exit 1

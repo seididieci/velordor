@@ -36,7 +36,7 @@ fi
 
 build_one userland/disk    userland/disk/src/disk.ld       userdisk.bin    userdisk
 build_one userland/devfs   userland/devfs/src/devfs.ld     userdevfs.bin   userdevfs
-build_one userland/console userland/console/src/console.ld userconsole.bin userconsole
+build_one userland/gpu     userland/gpu/src/gpu.ld         gpu.bin         gpu
 build_one userland/kbd     userland/kbd/src/kbd.ld         kbd.bin         kbd
 build_one userland/tty     userland/tty/src/tty.ld         usertty.bin     usertty
 build_one userland/uptime  userland/uptime/src/uptime.ld   useruptime.bin  useruptime

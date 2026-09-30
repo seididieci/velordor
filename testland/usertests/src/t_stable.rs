@@ -409,7 +409,7 @@ pub fn t_identity() -> bool {
     helpers::drain_stray();
     // (A) hash dal kernel == manifest di build, per due servizi da disco.
     for (svc, expected, name) in [
-        (libr::Service::Console, crate::HASH_USERCONSOLE, "Console"),
+        (libr::Service::Gpu, crate::HASH_GPU, "Gpu"),
         (libr::Service::Devfs, crate::HASH_USERDEVFS, "Devfs"),
     ] {
         let chan = match libr::service_lookup(svc) {
@@ -567,10 +567,10 @@ pub fn t_identity() -> bool {
 /// init); (3) un byte flippato cambia il digest (init lo rifiuterebbe);
 /// (4) la chiave assente da' errore (mai dati inventati).
 pub fn t_sys_native() -> bool {
-    let fat = match libr::load_file("/fat/bin/console.bin") {
+    let fat = match libr::load_file("/fat/bin/gpu.bin") {
         Some(b) if !b.is_empty() => b,
         _ => {
-            println!("[usertests] t58: /fat/bin/console.bin illeggibile");
+            println!("[usertests] t58: /fat/bin/gpu.bin illeggibile");
             return false;
         }
     };
@@ -593,10 +593,10 @@ pub fn t_sys_native() -> bool {
         println!("[usertests] t58: nessun volume ArcaFS (ARCA_IMG=0?): salto");
         return true;
     }
-    let obj = match libr::obj_get(b"sys", b"bin/userconsole.bin") {
+    let obj = match libr::obj_get(b"sys", b"bin/gpu.bin") {
         Ok(v) => v,
         Err(_) => {
-            println!("[usertests] t58: obj sys/bin/userconsole.bin assente");
+            println!("[usertests] t58: obj sys/bin/gpu.bin assente");
             return false;
         }
     };
@@ -604,13 +604,13 @@ pub fn t_sys_native() -> bool {
         println!("[usertests] t58: sys != FAT ({} vs {} B)", obj.len(), fat.len());
         return false;
     }
-    if blake2s::blake2s(&obj) != crate::BLAKE_USERCONSOLE {
+    if blake2s::blake2s(&obj) != crate::BLAKE_GPU {
         println!("[usertests] t58: blake sys != manifest");
         return false;
     }
     let mut bad = obj.clone();
     bad[0] ^= 0xFF;
-    if blake2s::blake2s(&bad) == crate::BLAKE_USERCONSOLE {
+    if blake2s::blake2s(&bad) == crate::BLAKE_GPU {
         println!("[usertests] t58: digest invariato dopo flip?!");
         return false;
     }

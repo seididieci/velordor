@@ -486,7 +486,7 @@ pub fn t_stat() -> bool {
 pub fn t_diskboot() -> bool {
     let mut st = libr::Stat { size: 0, kind: 0, readonly: false, mtime: 0 };
     for path in [
-        "/fat/bin/console.bin",
+        "/fat/bin/gpu.bin",
         "/fat/bin/uptime.bin",
         "/fat/bin/devfs.bin",
         "/fat/bin/kbd.bin",
@@ -502,7 +502,7 @@ pub fn t_diskboot() -> bool {
         }
     }
     for svc in [
-        libr::Service::Console,
+        libr::Service::Gpu,
         libr::Service::Fs,
         libr::Service::Devfs,
         libr::Service::Kbd,
