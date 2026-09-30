@@ -1877,5 +1877,8 @@
           interni restano validi; `#[path]` rimosso), zero comportamento.
           Bug di rotta: `#[path = "sched_rt/..."]` ereditato puntava alla
           vecchia dir (fix: attributi rimossi, resolve naturale). Gate: 5/5 +
-          7/7 + 40/40 + 58/58, zero FAIL/PANIC/FAULT. Docs ai nuovi nomi in
+          7/7 + 40/40 + 58/58, zero FAIL/PANIC/FAULT.           Docs ai nuovi nomi in
           R-final (questa voce + ADR-0040 fanno fede nel mentre).
+    - [x] R2 (rename a fasi, ADR-0040): `libs/vela` scheletro (`hub|block|
+          input|gpu`, solo doc + regola di accumulo, nessun uso ancora).
+          Gate: 5/5 + 7/7 + 40/40 + 58/58, zero FAIL/PANIC/FAULT.

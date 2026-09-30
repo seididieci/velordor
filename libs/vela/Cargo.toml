@@ -1,0 +1,15 @@
+[package]
+name = "vela"
+version = "0.1.0"
+edition = "2021"
+
+# Casa dei driver (Fase R2, ADR-0040): codice condiviso dei server hardware
+# (`hub` = hub `/dev`, `block` = storage a blocchi, `input` = tastiera,
+# `gpu` = terminale video). no_std+alloc come `arcafs` (solo `core`+`alloc`
+# qui dentro; l'I/O e il loop server vivono nei binari driver).
+# Regola: cresce per accumulo opportunistico dalle fasi R3+ (mai traslochi
+# rischiosi: solo scheletri condivisi e costanti, un pezzo alla volta).
+# Crate fuori dal workspace del kernel: build freestanding separata.
+[workspace]
+
+[dependencies]
