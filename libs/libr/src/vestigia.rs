@@ -1,6 +1,6 @@
 //! Client del servizio `Log` (Fase 57, L1 nativo, ADR-0039).
 //!
-//! `userlog` e' il gateway centrale di logging: parte per primo dopo init,
+//! `vestigia` e' il gateway centrale di logging: parte per primo dopo init,
 //! assorbe tutto in RAM e riversa sul bucket `log` nativo alla `LOG_FLUSH`
 //! (dual-write dopo). Il kernel non e' nel percorso; lo storage-TCB non
 //! chiama mai qui (anti-ciclo).
@@ -139,7 +139,7 @@ pub fn log_idx_key(hash: u64, day: u64) -> Vec<u8> {
 // garantisce anelli allocati (senza handshake FS: il log funziona pre-FS),
 // niente fork-aliasing e niente interleave con async-FS in volo. I fisici
 // sono quelli di sessione (persistono anche ai restart: le pagine non si
-// riallocano mai, la REG di userlog resta valida). Canale cachato verso
+// riallocano mai, la REG di vestigia resta valida). Canale cachato verso
 // `Log`: un canale per processo, re-lookup al primo uso e dopo la morte del
 // server. Mai unbounded: senza `Log` registrato si ritorna `NotReady`.
 
@@ -158,7 +158,7 @@ fn log_chan_rt() -> i64 {
     }
     let t0 = sys::get_ticks();
     loop {
-        if let Ok(chan) = spawn::service_lookup(Service::Log) {
+        if let Ok(chan) = spawn::service_lookup(Service::Vestigia) {
             LOG_CHAN.store(chan, Ordering::Relaxed);
             return chan;
         }

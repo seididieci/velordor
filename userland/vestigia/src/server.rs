@@ -128,13 +128,13 @@ fn handle_reg(st: &mut State, chan: u64, req_phys: u64, resp_phys: u64) -> u64 {
 /// Persistenza opportunistica di UN record (chiave+bytes): PUT dato + PUT
 /// `!idx` (max seq del giorno). True se entrambi Ok interi (durevole).
 fn persist_one(hash: u64, day: u64, seq: u64, key: &[u8], rec: &[u8]) -> bool {
-    let idx_key = libr::log::log_idx_key(hash, day);
+    let idx_key = libr::vestigia::log_idx_key(hash, day);
     let idx_val = seq.to_le_bytes();
-    match libr::obj_put(libr::log::LOG_BUCKET, key, rec) {
+    match libr::obj_put(libr::vestigia::LOG_BUCKET, key, rec) {
         Ok(n) if n as usize == rec.len() => {}
         _ => return false,
     }
-    match libr::obj_put(libr::log::LOG_BUCKET, &idx_key, &idx_val) {
+    match libr::obj_put(libr::vestigia::LOG_BUCKET, &idx_key, &idx_val) {
         Ok(8) => true,
         _ => false,
     }
@@ -176,7 +176,7 @@ fn handle_append(st: &mut State, chan: u64, expect: u64) -> (u64, u64) {
     }
     let level = frame[0];
     let taglen = frame[1] as usize;
-    if level > libr::log::LOG_ERR
+    if level > libr::vestigia::LOG_ERR
         || taglen == 0
         || taglen > LOG_SRC_MAX
         || frame.len() < 2 + taglen
@@ -185,19 +185,19 @@ fn handle_append(st: &mut State, chan: u64, expect: u64) -> (u64, u64) {
     }
     let ctag = &frame[2..2 + taglen];
     let msg = &frame[2 + taglen..];
-    if !libr::log::tag_valid(ctag) || !libr::log::msg_valid(msg) {
+    if !libr::vestigia::tag_valid(ctag) || !libr::vestigia::msg_valid(msg) {
         return (libr::ERR, 0);
     }
 
     let tick = libr::get_ticks() as u64;
     let epoch = libr::time::wall_secs().unwrap_or(0);
     let day = if epoch == 0 { 0 } else { epoch / 86_400 };
-    let rec = match libr::log::record_encode(tick, epoch, level, ctag, msg) {
+    let rec = match libr::vestigia::record_encode(tick, epoch, level, ctag, msg) {
         Some(r) => r,
         None => return (libr::ERR, 0),
     };
     let seq = st.index.get(&(hash, day)).copied().unwrap_or(0) + 1;
-    let key = libr::log::log_key(hash, day, seq);
+    let key = libr::vestigia::log_key(hash, day, seq);
 
     // Durevole subito solo a volume legato (post-FLUSH o re-bind): prima il
     // disco non esiste ancora per noi (mai hang a boot). A fallimento si
@@ -252,7 +252,7 @@ fn handle_read(st: &mut State, chan: u64, expect: u64) -> (u64, u64) {
         seq = match st.index.get(&(hash, day)) {
             Some(&s) if s > 0 => s,
             _ => match st.want_volume {
-                true => match libr::obj_get(libr::log::LOG_BUCKET, &libr::log::log_idx_key(hash, day)) {
+                true => match libr::obj_get(libr::vestigia::LOG_BUCKET, &libr::vestigia::log_idx_key(hash, day)) {
                     Ok(v) if v.len() == 8 => {
                         let s = u64::from_le_bytes(v[..8].try_into().unwrap_or([0; 8]));
                         if s == 0 {
@@ -270,7 +270,7 @@ fn handle_read(st: &mut State, chan: u64, expect: u64) -> (u64, u64) {
     if seq == 0 {
         return (libr::ERR_NOTFOUND, 0);
     }
-    let key = libr::log::log_key(hash, day, seq);
+    let key = libr::vestigia::log_key(hash, day, seq);
     // Coda RAM prima (dagli ultimi: le versioni post-restart stanno in coda),
     // poi il volume.
     let mut rec: Option<Vec<u8>> = None;
@@ -284,7 +284,7 @@ fn handle_read(st: &mut State, chan: u64, expect: u64) -> (u64, u64) {
         if !st.want_volume {
             return (libr::ERR_NOTFOUND, 0);
         }
-        match libr::obj_get(libr::log::LOG_BUCKET, &key) {
+        match libr::obj_get(libr::vestigia::LOG_BUCKET, &key) {
             Ok(v) if !v.is_empty() => rec = Some(v),
             _ => return (libr::ERR_NOTFOUND, 0),
         }
@@ -336,7 +336,7 @@ fn backdate_rekey(st: &mut State) {
     // chiavi finali (bound 128: heap, mai stack).
     let mut tmp: Vec<(u64, u64, Vec<u8>, Vec<u8>)> = Vec::new();
     while let Some((old_key, rec)) = st.tail.pop_front() {
-        let (tick, epoch, level, tag, msg) = match libr::log::record_decode(&rec) {
+        let (tick, epoch, level, tag, msg) = match libr::vestigia::record_decode(&rec) {
             Some(v) => v,
             None => continue,
         };
@@ -357,7 +357,7 @@ fn backdate_rekey(st: &mut State) {
             continue;
         }
         let day = back / 86_400;
-        let fixed = match libr::log::record_encode(tick, back, level, tag, msg) {
+        let fixed = match libr::vestigia::record_encode(tick, back, level, tag, msg) {
             Some(r) => r,
             None => continue,
         };
@@ -383,7 +383,7 @@ fn backdate_rekey(st: &mut State) {
             // Rilocato: seq ridato sul giorno vero.
             let s = counters.get(&(h, d)).copied().unwrap_or(0) + 1;
             counters.insert((h, d), s);
-            (d, libr::log::log_key(h, d, s))
+            (d, libr::vestigia::log_key(h, d, s))
         } else {
             // Intatto: giorno+seq dalla chiave vecchia.
             let od = old_day(&k);
@@ -404,7 +404,7 @@ fn backdate_rekey(st: &mut State) {
     }
     // Il cursore di flush riparte da zero: tutto va persistito con chiavi finali.
     st.flush_cursor = 0;
-    println!("[userlog] backdate+rekey fatto");
+    println!("[vestigia] backdate+rekey fatto");
 }
 
 /// Hash-bucket (u64) dai primi 16 hex della chiave. None se malformata.
@@ -497,11 +497,11 @@ fn drain_flush(st: &mut State) {
 pub fn run() -> ! {
     // Avvio a ZERO dipendenze (Fase 57 rivista): niente FS, niente Time —
     // solo registrazione + READY. Il primo contatto FS avviene alla FLUSH.
-    if libr::service_register(libr::Service::Log).is_err() {
-        println!("[userlog] FAILED to register service Log");
+    if libr::service_register(libr::Service::Vestigia).is_err() {
+        println!("[vestigia] FAILED to register service Vestigia");
         libr::exit(1);
     }
-    println!("[userlog] registered as service Log");
+    println!("[vestigia] registered as service Vestigia");
     libr::signal_ready(1);
 
     // Re-bind opportunistico dopo un restart (init-restart): se Fs e' gia'
@@ -531,7 +531,7 @@ pub fn run() -> ! {
                 let _ = libr::reply(LOG_FLUSH, r, 0);
             }
             Ok(m) if m.tag == LOG_SEAL => {
-                match libr::snap_create(libr::log::LOG_BUCKET) {
+                match libr::snap_create(libr::vestigia::LOG_BUCKET) {
                     Ok(id) => {
                         st.last_seal = id;
                         let _ = libr::reply(LOG_SEAL, id, 0);
@@ -564,7 +564,7 @@ pub fn run() -> ! {
                 let before = st.regs.len();
                 st.regs.retain(|r| r.chan != m.channel);
                 if st.regs.len() != before {
-                    println!("[userlog] purge reg chan={}", m.channel);
+                    println!("[vestigia] purge reg chan={}", m.channel);
                 }
             }
             Ok(_) => {

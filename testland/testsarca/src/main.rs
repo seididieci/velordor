@@ -31,7 +31,7 @@
 //!  31. refcount pin sopravvive a delete (56.2b)
 //!  32. crash kill + remount LOAD: dati committati intatti (56.2b)
 //!  33. GC deterministico + snapshot sopravvissuto (56.2c)
-//!  34. servizio `Log` registrato e raggiungibile per nome (57)
+//!  34. servizio `Vestigia` registrato e raggiungibile per nome (57)
 //!  35. log append + read latest own-bucket con seq e record integri (57)
 //!  36. log msg 1024B round-trip per-seq (57)
 //!  37. log rifiuti (bound tag/msg, msg vuoto) + giorno ignoto (57)
@@ -668,23 +668,23 @@ fn real_main(_sp: u64) -> ! {
                 ok
             };
             c.ok("gc orfani + snapshot sopravvissuto", v33);
-            // 34-40. Logging L1 (Fase 57, ADR-0039): gateway `Log` RAM-first
+            // 34-40. Logging L1 (Fase 57, ADR-0039): gateway `Vestigia` RAM-first
             // con flush via cardo nativo. Bucket per IDENTITA' (hash del
             // chiamante, mai dichiarato): ogni client legge solo il proprio
             // (latest o per-seq). Dopo crash/GC per scelta: il restart di
             // cardo non deve rompere il client log.
             // 34. servizio registrato e raggiungibile per nome.
-            let v34 = libr::service_lookup(libr::Service::Log).is_ok();
+            let v34 = libr::service_lookup(libr::Service::Vestigia).is_ok();
             c.ok("log registrato", v34);
             // 35. append + read latest own-bucket: seq monotonico, record
             // integro (livello/tag/messaggio), epoch vera (post-Time).
-            let day = libr::log::log_day();
-            let v35 = match libr::log::log_append(libr::log::LOG_INFO, b"t57", b"hello-57") {
-                Ok(seq) if seq >= 1 => match libr::log::log_read(day, 0) {
-                    Ok((got, rec)) => match libr::log::record_decode(&rec) {
+            let day = libr::vestigia::log_day();
+            let v35 = match libr::vestigia::log_append(libr::vestigia::LOG_INFO, b"t57", b"hello-57") {
+                Ok(seq) if seq >= 1 => match libr::vestigia::log_read(day, 0) {
+                    Ok((got, rec)) => match libr::vestigia::record_decode(&rec) {
                         Some((_, epoch, lvl, tag, msg)) => {
                             got == seq
-                                && lvl == libr::log::LOG_INFO
+                                && lvl == libr::vestigia::LOG_INFO
                                 && tag == b"t57"
                                 && msg == b"hello-57"
                                 && epoch > 0
@@ -702,12 +702,12 @@ fn real_main(_sp: u64) -> ! {
                 for (i, b) in big.iter_mut().enumerate() {
                     *b = ((i * 13) % 251) as u8;
                 }
-                match libr::log::log_append(libr::log::LOG_WARN, b"t57", &big) {
-                    Ok(seq) => match libr::log::log_read(day, seq) {
-                        Ok((got, rec)) => match libr::log::record_decode(&rec) {
+                match libr::vestigia::log_append(libr::vestigia::LOG_WARN, b"t57", &big) {
+                    Ok(seq) => match libr::vestigia::log_read(day, seq) {
+                        Ok((got, rec)) => match libr::vestigia::record_decode(&rec) {
                             Some((_, _, lvl, tag, msg)) => {
                                 got == seq
-                                    && lvl == libr::log::LOG_WARN
+                                    && lvl == libr::vestigia::LOG_WARN
                                     && tag == b"t57"
                                     && msg == big
                             }
@@ -730,13 +730,13 @@ fn real_main(_sp: u64) -> ! {
             for (i, b) in too_msg.iter_mut().enumerate() {
                 *b = (i % 251) as u8;
             }
-            let v37 = libr::log::log_append(libr::log::LOG_INFO, &too_tag, b"v").is_err()
-                && libr::log::log_append(libr::log::LOG_INFO, b"t57", &too_msg).is_err()
-                && libr::log::log_append(libr::log::LOG_INFO, b"t57", b"").is_err()
-                && libr::log::log_read(day + 1000, 0).is_err();
+            let v37 = libr::vestigia::log_append(libr::vestigia::LOG_INFO, &too_tag, b"v").is_err()
+                && libr::vestigia::log_append(libr::vestigia::LOG_INFO, b"t57", &too_msg).is_err()
+                && libr::vestigia::log_append(libr::vestigia::LOG_INFO, b"t57", b"").is_err()
+                && libr::vestigia::log_read(day + 1000, 0).is_err();
             c.ok("log rifiuti + giorno ignoto", v37);
             // 38. seal esplicito: due snapshot monotonici, delete di cleanup.
-            let v38 = match (libr::log::log_seal(), libr::log::log_seal()) {
+            let v38 = match (libr::vestigia::log_seal(), libr::vestigia::log_seal()) {
                 (Ok(s1), Ok(s2)) if s1 >= 1 && s2 > s1 => {
                     libr::snap_delete(s1).is_ok() && libr::snap_delete(s2).is_ok()
                 }
@@ -746,32 +746,32 @@ fn real_main(_sp: u64) -> ! {
             // 39. stats: appended conta (2 qui + 9 milestone di init riversati
             // dal flush — prova che la FLUSH ha funzionato), niente evict,
             // backend durevole col volume presente.
-            let v39 = match libr::log::log_stats() {
+            let v39 = match libr::vestigia::log_stats() {
                 Ok((appended, evicted, durable, _)) => {
                     appended >= 11 && evicted == 0 && durable
                 }
                 Err(_) => false,
             };
             c.ok("log stats", v39);
-            // 40. restart di userlog via init (bounce): ricompare (supervisione),
+            // 40. restart di vestigia via init (bounce): ricompare (supervisione),
             // il client rifa lookup+REG da solo e latest e' il just-written
             // (indice RAM vergine + overlay di versioni per disegno, mai wedge).
-            let v40 = match libr::init_bounce(libr::Service::Log) {
+            let v40 = match libr::init_bounce(libr::Service::Vestigia) {
                 Ok(_) => {
                     let gone = libr::poll_wait(1000, libr::POLL_PERIOD_TICKS, || {
-                        libr::service_pid(libr::Service::Log).is_err()
+                        libr::service_pid(libr::Service::Vestigia).is_err()
                     });
                     let back = libr::poll_value(1000, libr::POLL_PERIOD_TICKS, || {
-                        libr::service_pid(libr::Service::Log).ok()
+                        libr::service_pid(libr::Service::Vestigia).ok()
                     });
                     let alive = gone
                         && back.is_some()
                         && libr::poll_wait(1000, libr::POLL_PERIOD_TICKS, || {
-                            libr::service_lookup(libr::Service::Log).is_ok()
+                            libr::service_lookup(libr::Service::Vestigia).is_ok()
                         });
-                    alive && match libr::log::log_append(libr::log::LOG_INFO, b"t57", b"post-bounce") {
-                        Ok(_) => match libr::log::log_read(day, 0) {
-                            Ok((_, rec)) => match libr::log::record_decode(&rec) {
+                    alive && match libr::vestigia::log_append(libr::vestigia::LOG_INFO, b"t57", b"post-bounce") {
+                        Ok(_) => match libr::vestigia::log_read(day, 0) {
+                            Ok((_, rec)) => match libr::vestigia::record_decode(&rec) {
                                 Some((_, _, _, tag, msg)) => tag == b"t57" && msg == b"post-bounce",
                                 None => false,
                             },

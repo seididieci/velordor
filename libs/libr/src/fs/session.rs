@@ -249,7 +249,7 @@ pub(crate) fn fs_rings() -> bool {
 
 /// Cancello leggero per il client LOG (Fase 57): come `fs_gate` ma SENZA
 /// handshake FS (il log funziona pre-FS e senza cardo: gli anelli bastano,
-/// la registrazione LOG viaggia su `LOG_REG` presso userlog). Rifiuta su
+/// la registrazione LOG viaggia su `LOG_REG` presso vestigia). Rifiuta su
 /// fork (aliasing) e su async-FS in volo (un frame LOG interleavato
 /// corromperebbe il ring condiviso — il formato non ha lunghezze).
 pub(crate) fn fs_light_gate() -> Result<(), Error> {

@@ -316,7 +316,7 @@ fn service_by_name(name: &str) -> Option<libr::Service> {
         "block" => Some(libr::Service::Block),
         "posix" => Some(libr::Service::Posix),
         "time" => Some(libr::Service::Time),
-        "log" => Some(libr::Service::Log),
+        "vestigia" => Some(libr::Service::Vestigia),
         _ => None,
     }
 }

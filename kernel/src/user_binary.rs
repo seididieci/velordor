@@ -27,12 +27,12 @@ macro_rules! user_binary {
 mod init_bin { user_binary!(userinit_elf, "/../userland/build/userinit.bin"); }
 mod fs_bin { user_binary!(cardo_elf, "/../userland/build/cardo.bin"); }
 mod disk_bin { user_binary!(block_elf, "/../userland/build/block.bin"); }
-mod log_bin { user_binary!(userlog_elf, "/../userland/build/userlog.bin"); }
+mod log_bin { user_binary!(vestigia_elf, "/../userland/build/vestigia.bin"); }
 
 use init_bin::userinit_elf;
 use fs_bin::cardo_elf;
 use disk_bin::block_elf;
-use log_bin::userlog_elf;
+use log_bin::vestigia_elf;
 
 /// Spawna un processo user (gira in ring 3) dal binario ELF `elf`. `io_ranges`
 /// = porte I/O (inclusive) consentite a ring 3 (TSS per-processo, ADR-0006);
@@ -146,7 +146,7 @@ const NAMED_BINARIES: &[NamedBinary] = &[
     NamedBinary { name: "cardo",       elf: cardo_elf,       io_ranges: &[], priority: Priority::Normal },
     NamedBinary { name: "block",       elf: block_elf,       io_ranges: ATA_PIO_RANGES, priority: Priority::Normal },
     NamedBinary { name: "userinit",    elf: userinit_elf,    io_ranges: &[], priority: Priority::Normal },
-    NamedBinary { name: "userlog",     elf: userlog_elf,     io_ranges: &[], priority: Priority::Normal },
+    NamedBinary { name: "vestigia",     elf: vestigia_elf,     io_ranges: &[], priority: Priority::Normal },
 ];
 
 /// Crea un nuovo processo dal binario embedded chiamato `name`. `parent` e'

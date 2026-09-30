@@ -127,7 +127,7 @@ pub use syscall_numbers::{
 /// Tag TIME_* (Fase 50, P1 orologio): client→usertime, data/ora di sistema.
 /// Reply `TIME_NOW`: `w0` = secondi epoch (UTC), `w1` = centesimi di secondo.
 pub use syscall_numbers::TIME_NOW;
-/// Tag LOG_* (Fase 57, L1 logging, ADR-0039): client→userlog, gateway centrale
+/// Tag LOG_* (Fase 57, L1 logging, ADR-0039): client→vestigia, gateway centrale
 /// (bucket `log` nativo + coda RAM senza volume). Reply `APPEND`: `w0` = seq,
 /// `w1` = durable; `READ`: `w0` = len + frame, `w1` = seq; `SEAL`: `w0` =
 /// snap_id; `STATS`: registri + frame `[durable:8][last_seal:8]`.
@@ -220,10 +220,10 @@ pub mod sys;
 /// `Time` (`TIME_NOW` → secondi epoch UTC + centesimi). Meccanismo neutro
 /// (mai `posix::`): serve il FS (mtime), i log e qualunque servizio.
 pub mod time;
-/// Logging L1 nativo (Fase 57, ADR-0039): client sincrono del servizio `Log`
-/// (gateway append + lettura + seal + contatori) + formato record condiviso
-/// col server. Meccanismo neutro (mai `posix::`).
-pub mod log;
+/// Logging L1 nativo (Fase 57, ADR-0039; servizio `Vestigia`, R8): client
+/// sincrono del gateway (append + lettura + seal + contatori) + formato
+/// record condiviso col server. Meccanismo neutro (mai `posix::`).
+pub mod vestigia;
 pub mod tsc;
 
 /// Convenzione argv sullo stack iniziale (Fase 37.1): macro `entry!` (CRT

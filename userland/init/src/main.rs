@@ -37,7 +37,7 @@ fn expected_hash(bin: &[u8]) -> Option<u64> {
         b"userposix" => Some(HASH_USERPOSIX),
         b"usershell" => Some(HASH_USERSHELL),
         b"usertime" => Some(HASH_USERTIME),
-        b"userlog" => Some(HASH_USERLOG),
+        b"vestigia" => Some(HASH_VESTIGIA),
         _ => None,
     }
 }
@@ -56,7 +56,7 @@ fn expected_blake(bin: &[u8]) -> Option<[u8; 32]> {
         b"userposix" => Some(BLAKE_USERPOSIX),
         b"usershell" => Some(BLAKE_USERSHELL),
         b"usertime" => Some(BLAKE_USERTIME),
-        b"userlog" => Some(BLAKE_USERLOG),
+        b"vestigia" => Some(BLAKE_VESTIGIA),
         _ => None,
     }
 }
@@ -546,11 +546,11 @@ const SVC_TIME: SvcMeta = SvcMeta {
     prio: 16,
     io: TIME_CMOS_RANGES,
 };
-/// Gateway centrale di logging L1 (Fase 57, ADR-0039): EMBEDDED come
-/// disk/fs (deve partire prima che il FS esista — spawn per nome, mai da
-/// disco). Primo dopo init, supervisionato con restart come gli altri driver.
-const SVC_LOG: SvcMeta = SvcMeta {
-    bin: b"userlog",
+/// Gateway centrale di logging L1 (Fase 57, ADR-0039, R8):
+/// EMBEDDED come block/cardo (deve partire prima che il FS esista — spawn
+/// per nome, mai da disco). Primo dopo init, supervisionato con restart.
+const SVC_VESTIGIA: SvcMeta = SvcMeta {
+    bin: b"vestigia",
     path: None,
     obj: None,
     prio: 16,
@@ -588,13 +588,13 @@ fn real_main(_sp: u64) -> ! {
 
     // Spawna i servizi user. Fase 57: log+disk in PARALLELO (log non aspetta
     // nessuno — prova che il chicken-egg e' morto; disk fa detection). Poi
-    // fs (serve Disk registrato), time (serve /fat), FLUSH a userlog (dopo
+    // fs (serve Disk registrato), time (serve /fat), FLUSH a vestigia (dopo
     // time: backdate/re-key), gpu (prima di kbd), uptime, vela, kbd,
     // tty, posix. A boot ogni spawn mancato e' FAIL LOUD (exit → panic).
-    // userlog PRIMA di cardo per disegno (ADR-0039): assorbe tutto in RAM e
+    // vestigia PRIMA di cardo per disegno (ADR-0039): assorbe tutto in RAM e
     // riversa alla FLUSH; block fa READY subito dopo detection +
     // service_register (prima del mount dei nodi, che aspetta Fs).
-    let Some(log_chan) = boot_svc_nowait(&SVC_LOG) else {
+    let Some(vestigia_chan) = boot_svc_nowait(&SVC_VESTIGIA) else {
         println!("[init] boot FAILED (log spawn), panic");
         libr::exit(1);
     };
@@ -602,9 +602,9 @@ fn real_main(_sp: u64) -> ! {
         println!("[init] boot FAILED (disk), panic");
         libr::exit(1);
     };
-    wait_any(&[log_chan, disk_chan], SVC_READY);
-    let _ = libr::log::log(b"init", b"log ready");
-    let _ = libr::log::log(b"init", b"disk ready");
+    wait_any(&[vestigia_chan, disk_chan], SVC_READY);
+    let _ = libr::vestigia::log(b"init", b"log ready");
+    let _ = libr::vestigia::log(b"init", b"disk ready");
 
     // cardo SUBITO DOPO disk (serve Disk registrato: resta dopo per non
     // spendere il bound HELLO — il mount aspetterebbe comunque il disco).
@@ -614,18 +614,18 @@ fn real_main(_sp: u64) -> ! {
         libr::exit(1);
     };
     wait_msg(fs_chan, SVC_READY);
-    let _ = libr::log::log(b"init", b"fs ready");
+    let _ = libr::vestigia::log(b"init", b"fs ready");
     // Time da disco (Fase 50, P1 orologio): registra Time + ack; chi serve
-    // data/ora (cardo per mtime, userlog per i timbri) lo risolve per nome.
+    // data/ora (cardo per mtime, vestigia per i timbri) lo risolve per nome.
     if boot_svc(&SVC_TIME, true).is_none() {
         println!("[init] boot FAILED (time), panic");
         libr::exit(1);
     }
-    let _ = libr::log::log(b"init", b"time ready");
-    // FLUSH a userlog (Fase 57, ADR-0039): dopo fs (backend) + time (epoch
+    let _ = libr::vestigia::log(b"init", b"time ready");
+    // FLUSH a vestigia (Fase 57, ADR-0039): dopo fs (backend) + time (epoch
     // per backdate/re-key). Da qui dual-write RAM+volume; il pre-boot resta
     // anche su seriale (duplicazione dichiarata, non perdita).
-    if libr::log::log_flush().is_err() {
+    if libr::vestigia::log_flush().is_err() {
         println!("[init] boot FAILED (log flush), panic");
         libr::exit(1);
     }
@@ -637,7 +637,7 @@ fn real_main(_sp: u64) -> ! {
         libr::exit(1);
     };
     let _ = console_chan;
-    let _ = libr::log::log(b"init", b"console ready");
+    let _ = libr::vestigia::log(b"init", b"console ready");
     // uptime: nessuna attesa (solo informativo, come prima).
     boot_svc(&SVC_UPTIME, false);
     let Some(vela_chan) = boot_svc(&SVC_VELA, true) else {
@@ -645,28 +645,28 @@ fn real_main(_sp: u64) -> ! {
         libr::exit(1);
     };
     let _ = vela_chan;
-    let _ = libr::log::log(b"init", b"vela ready");
+    let _ = libr::vestigia::log(b"init", b"vela ready");
     // 4. kbd + attesa READY (Fase 15: registra Kbd + mount /dev/kbd; Fs
     //    garantito dal passo 2, quindi riesce subito a boot).
     if boot_svc(&SVC_KBD, true).is_none() {
         println!("[init] boot FAILED (kbd), panic");
         libr::exit(1);
     }
-    let _ = libr::log::log(b"init", b"kbd ready");
+    let _ = libr::vestigia::log(b"init", b"kbd ready");
     // 5. usertty + attesa READY (Fase 15: registra /dev/input; /dev/kbd e
     //    /dev/console garantiti dai passi precedenti, riesce subito a boot).
     if boot_svc(&SVC_TTY, true).is_none() {
         println!("[init] boot FAILED (tty), panic");
         libr::exit(1);
     }
-    let _ = libr::log::log(b"init", b"tty ready");
+    let _ = libr::vestigia::log(b"init", b"tty ready");
     // 6. userposix + attesa READY (Fase 40.3, P1): skeleton senza dipendenze
     //    (registra solo il servizio e resta in recv), riesce subito a boot.
     if boot_svc(&SVC_POSIX, true).is_none() {
         println!("[init] boot FAILED (posix), panic");
         libr::exit(1);
     }
-    let _ = libr::log::log(b"init", b"posix ready");
+    let _ = libr::vestigia::log(b"init", b"posix ready");
 
     // Tabella supervisione (Fase 14, init-restart): gpu/fs/vela/kbd/tty/
     // disk/posix/time/log vengono riavviati alla morte (dalla loro sorgente: embedded per
@@ -689,7 +689,7 @@ fn real_main(_sp: u64) -> ! {
         Supervised { meta: &SVC_TTY, svc: libr::Service::Tty, chan: -1, pid: -1, restarts: 0, window_start: 0, held: false },
         Supervised { meta: &SVC_POSIX, svc: libr::Service::Posix, chan: -1, pid: -1, restarts: 0, window_start: 0, held: false },
         Supervised { meta: &SVC_TIME, svc: libr::Service::Time, chan: -1, pid: -1, restarts: 0, window_start: 0, held: false },
-        Supervised { meta: &SVC_LOG, svc: libr::Service::Log, chan: -1, pid: -1, restarts: 0, window_start: 0, held: false },
+        Supervised { meta: &SVC_VESTIGIA, svc: libr::Service::Vestigia, chan: -1, pid: -1, restarts: 0, window_start: 0, held: false },
     ];
     for e in supervised.iter_mut() {
         e.pid = libr::service_pid(e.svc).unwrap_or(-1);

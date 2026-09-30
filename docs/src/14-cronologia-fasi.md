@@ -1915,3 +1915,9 @@
           Modulo client `libr::fs` invariato (API, non server). Gate: 5/5 +
           7/7 + 40/40 + 58/58, zero FAIL/PANIC/FAULT. Docs ai nuovi nomi in
           R-final.
+    - [x] R8 (rename a fasi, ADR-0040): `userlog`→`vestigia` (dir, package,
+          bin embedded + dest FAT, display, mod `libr::log`→`libr::vestigia`,
+          `Service::Log`→`Service::Vestigia`, manifest, tabella kernel, init,
+          shell, test 34-40). Tag `LOG_*` e bucket `log` invariati
+          (precedente `TIME_NOW`). Gate: 5/5 + 7/7 + 40/40 + 58/58, zero
+          FAIL/PANIC/FAULT. Docs ai nuovi nomi in R-final.

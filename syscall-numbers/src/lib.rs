@@ -267,8 +267,8 @@ pub const DEV_KBD: u64 = 4;
 // - NOW (0x60): richiesta data/ora; reply `w0` = secondi epoch (UTC),
 //   `w1` = centesimi di secondo nel secondo corrente (0..99).
 pub const TIME_NOW: u64 = 0x60;
-// ── Protocollo LOG_* (client→userlog, Fase 57/L1, ADR-0039) ───────────
-// Single source of truth dei tag. Il servizio `Log` e' il gateway centrale
+// ── Protocollo LOG_* (client→vestigia, Fase 57/L1, ADR-0039) ───────────
+// Single source of truth dei tag. Il servizio `Vestigia` e' il gateway centrale
 // di logging (bucket `log` nativo + coda RAM quando il volume manca):
 // - REG (0x61): handshake register-only "i miei ring sono req=w0, resp=w1"
 //   (stampo FS_BUF_REG; niente frame). Il server archivia (chan→phys) +
@@ -300,7 +300,7 @@ pub const LOG_FLUSH: u64 = 0x66;
 /// record `[tick:8][epoch:8][level:1][srclen:1][src][msg]` resta in un frame).
 pub const LOG_SRC_MAX: usize = 32;
 pub const LOG_MSG_MAX: usize = 1024;
-/// Coda RAM del servizio `userlog` (Fase 57): ultimi N record sempre leggibili
+/// Coda RAM del servizio `vestigia` (Fase 57): ultimi N record sempre leggibili
 /// anche senza volume (degrado RAM-only); oltre si butta il piu' vecchio e si
 /// conta in `evicted` (drop ammesso e contato, mai wedge il chiamante).
 pub const LOG_RAM_TAIL: usize = 128;
@@ -603,16 +603,16 @@ pub enum Service {
     /// legge il CMOS all'avvio (epoch) e serve `TIME_NOW` (epoch + monotono
     /// PIT). Supervisionato da init come gli altri driver.
     Time = 9,
-    /// Gateway centrale di logging L1 (Fase 57, `userlog`, ADR-0039): append
+    /// Gateway centrale di logging L1 (Fase 57, `vestigia`, ADR-0039): append
     /// nel bucket `log` nativo (+ coda RAM senza volume), lettura, seal via
     /// snapshot, contatori. Supervisionato da init dopo `Time`.
-    Log = 10,
+    Vestigia = 10,
 }
 
 /// Massimo numero di servizi conosciuti = dimensione del registro kernel.
 /// Fase 39: 8→16 (slot liberi per futuri servizi senza ritoccare il
 /// kernel; discriminant storici intoccati, ABI stabile). Fase 50: slot 9
-/// assegnato a `Time`; Fase 57: slot 10 assegnato a `Log`; liberi 11-15.
+/// assegnato a `Time`; Fase 57/R8: slot 10 assegnato a `Vestigia`; liberi 11-15.
 
 /// Massimo numero di servizi conosciuti = dimensione del registro kernel.
 pub const SERVICE_COUNT: usize = 16;

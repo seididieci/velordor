@@ -141,7 +141,7 @@ fn service_from_disc(disc: u64) -> Option<syscall_numbers::Service> {
         7 => Some(Block),
         8 => Some(Posix),
         9 => Some(Time),
-        10 => Some(Log),
+        10 => Some(Vestigia),
         _ => None,
     }
 }
@@ -159,7 +159,7 @@ fn service_name(s: syscall_numbers::Service) -> &'static str {
         syscall_numbers::Service::Block => "block",
         syscall_numbers::Service::Posix => "posix",
         syscall_numbers::Service::Time => "time",
-        syscall_numbers::Service::Log => "log",
+        syscall_numbers::Service::Vestigia => "vestigia",
     }
 }
 
