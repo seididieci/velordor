@@ -1,6 +1,7 @@
 # ADR-0040: Pantheon dei nomi + rename a fasi (R0–R8)
 
-**Status**: Accepted (R0 — solo docs; il codice segue nelle fasi R1–R8).
+**Status**: Accepted (R0 — solo docs; il codice segue nelle fasi R1–R9).
+Emendamento R0b: entrano `Vestigia` (logging) e `Porta` (terminale).
 
 ## Context
 
@@ -27,10 +28,13 @@ Velordor e' il sistema operativo. Dentro:
 | Aegis | isolamento temporale / bandwidth reservation (CBS), dentro Ordo | lo scudo |
 | Arc | memoria (fisica + virtuale + heap) | — (nome tecnico) |
 | Cardo | il perno del traffico file/driver (server FS: mount, registry, smistamento) | la cerniera |
+| Vestigia | le tracce che il sistema lascia (logging L1) | le vestigia |
+| Porta | la soglia d'ingresso dell'utente (terminale, line discipline) | la porta |
 
-Fuori schema (nomi invariati, per sempre o fino a nuova ADR): `tty`
-(line discipline autonoma), `shell`, `uptime`, `posix`, `time`, `log`,
-helper di test (`usertest*`, `utcbstest`, `hogheap`, ...).
+Fuori schema (nomi invariati, per sempre o fino a nuova ADR): `shell`,
+`uptime`, `posix`, `time`, helper di test (`usertest*`, `utcbstest`,
+`hogheap`, ...). I device path (`/dev/input/*`, `/dev/kbd/*`, ...) non
+cambiano mai: namespace device ≠ nomi servizi.
 
 ### Mapping vecchio → nuovo
 
@@ -47,11 +51,16 @@ helper di test (`usertest*`, `utcbstest`, `hogheap`, ...).
 | `userdevfs` | `vela` hub (display, `/dev` invariato, `Service::Vela`) | R5 |
 | `userdisk` | `block` (embedded: tabella kernel + path init, `Service::Block`) | R6 |
 | `userfs` | `cardo` (embedded + piu' citata, `Service::Cardo`) | R7 |
+| `userlog` (+ mod `libr::log`) | `vestigia` (embedded, `Service::Vestigia`; `LOG_*` invariati) | R8 |
+| `usertty` | `porta` (`Service::Porta`; device path intoccati) | R9 |
 
 Note: `tty` non si tocca; i dest FAT restano `X.bin` corti e stabili dove
-sono (si rinominano solo con la fase del driver, in coppia con init);
-manifest/policy si rigenerano da soli (glob `*.bin`) — verificare, non
-editare. Repo, OS e titoli restano `Velordor`.
+sono (si rinominano solo con la fase del driver, in coppia con init:
+`tty.bin`→`porta.bin`, `console.bin`→`gpu.bin`, `vestigia.bin` e' 8.3
+valido); manifest/policy si rigenerano da soli (glob `*.bin`) — verificare,
+non editare. I tag wire restano stabili anche quando il servizio cambia
+nome (precedente: `TIME_NOW` per `Time`, `LOG_*` per `Vestigia`). Repo, OS
+e titoli restano `Velordor`.
 
 ### Regole standing per fase (non negoziabili)
 
@@ -59,7 +68,8 @@ editare. Repo, OS e titoli restano `Velordor`.
    58/58`, zero FAIL/PANIC/FAULT) + voce di cronologia.
 2. Checklist meccanica: `build_one` + inject dest + `NAMED_BINARIES` (se
    embedded) + `SvcMeta`/`expected_*` + shell map + test refs +
-   `rg oldname == 0` in code+scripts+tests (docs ammessi fino a R-final,
+   `rg oldname == 0` in code+scripts+tests (`-w` obbligatorio per `porta`:
+   sottostringa di `riporta/trasportato`; docs ammessi fino a R-final,
    con questa tabella come riferimento).
 3. Mai due fasi in un commit; mai rename + comportamento insieme.
 4. Le varianti `Service::*` si rinominano con la fase driver (match
