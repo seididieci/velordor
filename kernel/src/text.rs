@@ -91,7 +91,7 @@ pub unsafe fn acquire(bytes: &[u8], l: &Layout) -> Option<u32> {
         }
     }
     // Miss: costruisci l'immagine.
-    let phys = crate::phys_mem::alloc_contiguous(pages)?;
+    let phys = crate::arc::phys_mem::alloc_contiguous(pages)?;
     unsafe {
         core::ptr::write_bytes(crate::addr::phys_to_virt(phys) as *mut u8, 0, pages * PAGE as usize);
         fill_shared(bytes, l, phys);
@@ -107,7 +107,7 @@ pub unsafe fn acquire(bytes: &[u8], l: &Layout) -> Option<u32> {
             return Some(i as u32 + 1);
         }
     }
-    crate::phys_mem::free_contiguous(phys, pages);
+    crate::arc::phys_mem::free_contiguous(phys, pages);
     None
 }
 
@@ -129,7 +129,7 @@ pub unsafe fn map_shared(cr3: u64, l: &Layout, id: u32) {
         let va = l.base + (p as u64) * PAGE;
         let (_w, x) = crate::elf::page_flags(l, va);
         unsafe {
-            crate::vmm_user::map_user_leaf_shared(cr3, va, e.0 + (p as u64) * PAGE, x);
+            crate::arc::vmm_user::map_user_leaf_shared(cr3, va, e.0 + (p as u64) * PAGE, x);
         }
     }
 }
@@ -147,7 +147,7 @@ pub fn release(id: u32) {
     LIVE.fetch_sub(1, Ordering::Relaxed);
     let refs = e.5.saturating_sub(1);
     if refs == 0 {
-        crate::phys_mem::free_contiguous(e.0, e.1 as usize);
+        crate::arc::phys_mem::free_contiguous(e.0, e.1 as usize);
         unsafe { *core::ptr::addr_of_mut!(TEXT_TABLE[idx]) = (0, 0, 0, 0, 0, 0); }
     } else {
         unsafe { *core::ptr::addr_of_mut!(TEXT_TABLE[idx].5) = refs; }

@@ -12,7 +12,7 @@ sonde in smoke41.py).
 """
 import socket, subprocess, sys, time, os, re
 
-KERNEL_DFLT = "target/x86_64-unknown-none/release/velordor-kernel"
+KERNEL_DFLT = "target/x86_64-unknown-none/release/velord"
 FAT_DFLT = "userland/fs/fat.img"
 # Secondo disco (stessa fixture di run.sh: UUID C0FFEE01, label SECOND):
 # senza, t36 fallisce per ambiente (mount UUID impossibile).

@@ -1,6 +1,6 @@
 // Split from sched_rt.rs (byte-identical move; see facade).
 use super::*;
-use crate::process::State;
+use crate::ordo::process::State;
 use core::sync::atomic::Ordering;
 use super::ctx::{SCHED, INITIALIZED, switch_to};
 
@@ -35,7 +35,7 @@ pub fn on_tick() {
     // erano stati throttle-ati: mai risvegliare un processo Terminated (il suo
     // server CBS deve essere stato rilasciato a exit) ne' uno Blocked (in
     // attesa IPC: lo sblocca la reply, non il CBS).
-    let replenished = crate::cbs::tick_replenish();
+    let replenished = crate::ordo::aegis::tick_replenish();
     for pid in replenished.iter() {
         if pid < sched.processes.len() {
             let st = sched.processes[pid].state;
@@ -61,7 +61,7 @@ pub fn on_tick() {
     // CBS: decrement budget del processo corrente. Se esaurito, toglilo
     // dalla ready queue e forza lo switch.
     if let Some(cur) = sched.current {
-        if crate::cbs::tick_budget(cur) {
+        if crate::ordo::aegis::tick_budget(cur) {
             sched.clear_ready(cur);
             need_switch = true;
         }
@@ -85,7 +85,7 @@ pub fn on_tick() {
         if tn % 100 == 0 {
             crate::serial_println!("[sched] tick={} cur={:?} mask={:#x} l16={:#x} heap_out={} heap_n={}",
                 tn, sched.current, sched.ready_prio_mask, sched.ready_by_prio[16],
-                crate::heap::outstanding(), crate::heap::allocs_total());
+                crate::arc::heap::outstanding(), crate::arc::heap::allocs_total());
             // Diagnostica sched_debug (vedi sopra): chi e' Blocked e su cosa.
             for (pid, p) in sched.processes.iter().enumerate() {
                 if p.state == State::Blocked {
@@ -105,7 +105,7 @@ pub fn on_tick() {
             if tn % 100 == 0 {
                 crate::serial_println!("[sched] tick={} cur={:?} mask={:#x} l16={:#x} heap_out={} heap_n={} (no-switch)",
                     tn, sched.current, sched.ready_prio_mask, sched.ready_by_prio[16],
-                    crate::heap::outstanding(), crate::heap::allocs_total());
+                    crate::arc::heap::outstanding(), crate::arc::heap::allocs_total());
             }
             return;
         }
@@ -133,7 +133,7 @@ pub fn notify_irq(id: usize, tag: u64) {
     };
     if id < sched.processes.len() {
         let p = &mut sched.processes[id];
-        let _ = p.msg_queue.try_push(crate::process::PendingMsg {
+        let _ = p.msg_queue.try_push(crate::ordo::process::PendingMsg {
             channel: 0,
             req_id: 0,
             tag,

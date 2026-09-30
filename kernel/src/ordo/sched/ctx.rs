@@ -1,7 +1,7 @@
 // Split from sched_rt.rs (byte-identical move; see facade).
 use core::sync::atomic::AtomicBool;
 use spin::Mutex;
-use crate::context::CpuContext;
+use crate::ordo::context::CpuContext;
 use super::queue::Scheduler;
 
 pub(super) static INITIALIZED: AtomicBool = AtomicBool::new(false);
@@ -51,5 +51,5 @@ pub(super) fn switch_to(
         core::arch::asm!("mov cr3, {}", in(reg) next_cr3, options(nostack, preserves_flags));
     }
 
-    unsafe { crate::context::switch_to(cur_ptr, next_ptr) };
+    unsafe { crate::ordo::context::switch_to(cur_ptr, next_ptr) };
 }

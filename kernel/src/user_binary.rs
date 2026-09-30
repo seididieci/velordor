@@ -40,20 +40,20 @@ use log_bin::userlog_elf;
 /// malformato o la creazione fallisce (pool PID/TSS saturo, OOM).
 fn spawn_user(
     name: &'static str,
-    priority: crate::sched::Priority,
+    priority: crate::ordo::sched::Priority,
     elf: &[u8],
     parent: Option<usize>,
     parent_chan: Option<usize>,
     io_ranges: &[(u16, u16)],
 ) -> Option<usize> {
     let id = unsafe {
-        crate::sched::create_user(name, priority, elf, parent, parent_chan, io_ranges, false)
+        crate::ordo::sched::create_user(name, priority, elf, parent, parent_chan, io_ranges, false)
     }?;
     crate::serial_println!(
         "[user] binary '{}': elf {} byte, entry={:#x}",
         name,
         elf.len(),
-        crate::vmm_user::USER_CODE,
+        crate::arc::vmm_user::USER_CODE,
     );
     Some(id)
 }
@@ -68,7 +68,7 @@ fn spawn_user(
 /// parent (ri-parentato a init); deciso dallo spawner via SpawnMeta.
 pub fn spawn_image(
     owned: &[u8],
-    priority: crate::sched::Priority,
+    priority: crate::ordo::sched::Priority,
     src: *const u8,
     len: usize,
     parent: Option<usize>,
@@ -83,9 +83,9 @@ pub fn spawn_image(
     // validata come range user da `sys_spawn_image`.
     let elf = unsafe { core::slice::from_raw_parts(src, len) };
     let id = unsafe {
-        crate::sched::create_user("image", priority, elf, parent, parent_chan, io_ranges, detached)
+        crate::ordo::sched::create_user("image", priority, elf, parent, parent_chan, io_ranges, detached)
     }?;
-    crate::sched::set_owned_name(id, owned);
+    crate::ordo::sched::set_owned_name(id, owned);
     Some(id)
 }
 
@@ -93,7 +93,7 @@ pub fn spawn_image(
 /// prima di qualunque altro processo user, cosi' init sia l'antenato dei servizi
 /// che poi creera' via `spawn` (Fase 8.1). Parent e canale `None` (kernel).
 pub fn spawn_init() -> usize {
-    spawn_user("userinit", crate::sched::Priority::Normal, userinit_elf(), None, None, &[])
+    spawn_user("userinit", crate::ordo::sched::Priority::Normal, userinit_elf(), None, None, &[])
         .expect("spawn di init fallito")
 }
 
@@ -105,7 +105,7 @@ struct NamedBinary {
     /// per-processo). `&[]` = nessuna porta. Es. `userdisk` → ATA PIO.
     io_ranges: &'static [(u16, u16)],
     /// Priorita' di scheduling del processo.
-    priority: crate::sched::Priority,
+    priority: crate::ordo::sched::Priority,
 }
 
 /// Porte dei controller ATA PIO primario + secondario per il disk driver
@@ -136,7 +136,7 @@ const VGA_CURSOR_RANGES: &[(u16, u16)] = &[(0x3D4, 0x3D5)];
 /// Porte PS/2 (dati + stato/comandi) per il driver tastiera `userkbd` (Fase 15).
 const KBD_PS2_RANGES: &[(u16, u16)] = &[(0x60, 0x64)];
 
-use crate::sched::Priority;
+use crate::ordo::sched::Priority;
 
 /// I binari embedded spawabili per nome dalla syscall `spawn`. Fase 21: SOLO
 /// lo storage-TCB (init/disk/fs) — Fase 57: +log (boot-TCB: deve partire prima

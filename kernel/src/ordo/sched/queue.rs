@@ -2,7 +2,7 @@
 use super::*;
 use crate::*;
 use alloc::vec::Vec;
-use crate::process::Process;
+use crate::ordo::process::Process;
 
 pub(super) struct Scheduler {
     pub(super) processes: Vec<Process>,

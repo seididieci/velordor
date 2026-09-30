@@ -4,7 +4,7 @@ use super::entry::{current_id, PERCPU};
 
 /// exit(code): termina il processo corrente. Non ritorna (tipo `!` → i64).
 pub(super) fn sys_exit(code: i64) -> i64 {
-    crate::sched::exit_current(code)
+    crate::ordo::sched::exit_current(code)
 }
 
 /// Fase 14 — `kill(pid, code)`: termina un processo user per la stessa via di
@@ -18,12 +18,12 @@ pub(super) fn sys_kill(pid: u64, code: i64) -> i64 {
     let me = current_id() as usize;
     let target = pid as usize;
     if me != 1 {
-        match crate::sched::process_ps(target) {
+        match crate::ordo::sched::process_ps(target) {
             Some(s) if s.parent == Some(me) => {}
             _ => return -1, // non-figlio (o morto/sconosciuto): rifiutato
         }
     }
-    if crate::sched::kill(target, code) {
+    if crate::ordo::sched::kill(target, code) {
         0
     } else {
         -1
@@ -44,12 +44,12 @@ pub(super) fn sys_suspend(pid: u64) -> i64 {
     let me = current_id() as usize;
     let target = pid as usize;
     if me != 1 {
-        match crate::sched::process_ps(target) {
+        match crate::ordo::sched::process_ps(target) {
             Some(s) if s.parent == Some(me) => {}
             _ => return -1, // non-figlio (o morto/sconosciuto): rifiutato
         }
     }
-    if crate::sched::suspend(target) {
+    if crate::ordo::sched::suspend(target) {
         0
     } else {
         -1
@@ -62,12 +62,12 @@ pub(super) fn sys_resume(pid: u64) -> i64 {
     let me = current_id() as usize;
     let target = pid as usize;
     if me != 1 {
-        match crate::sched::process_ps(target) {
+        match crate::ordo::sched::process_ps(target) {
             Some(s) if s.parent == Some(me) => {}
             _ => return -1, // non-figlio (o morto/sconosciuto): rifiutato
         }
     }
-    if crate::sched::resume(target) {
+    if crate::ordo::sched::resume(target) {
         0
     } else {
         -1
@@ -92,7 +92,7 @@ pub(super) fn sys_write(fd: u64, buf: *const u8, count: usize) -> i64 {
         return 0;
     }
     // Validazione: il buffer deve stare nel range user mappato (U=1).
-    if !crate::vmm_user::is_user_range(buf as u64, count) {
+    if !crate::arc::vmm_user::is_user_range(buf as u64, count) {
         crate::serial_println!("[syscall] write: puntatore fuori dallo spazio user");
         return -1;
     }
@@ -117,7 +117,7 @@ pub(super) fn sys_get_ticks() -> i64 {
 /// cbs_create(budget, period): crea un server CBS con i parametri dati.
 /// Esegue l'admission control: ritorna l'id del server o -1.
 pub(super) fn sys_cbs_create(budget: u64, period: u64) -> i64 {
-    match crate::cbs::create(budget as u32, period as u32) {
+    match crate::ordo::aegis::create(budget as u32, period as u32) {
         Ok(id) => id as i64,
         Err(()) => -1,
     }
@@ -128,9 +128,9 @@ pub(super) fn sys_cbs_create(budget: u64, period: u64) -> i64 {
 pub(super) fn sys_cbs_attach() -> i64 {
     let server_id = unsafe { (*(addr_of!(PERCPU))).arg1 as usize };
     let pid = current_id() as usize;
-    match crate::cbs::attach(server_id, pid) {
+    match crate::ordo::aegis::attach(server_id, pid) {
         Ok(()) => {
-            if let Some(proc) = crate::sched::process_of(pid) {
+            if let Some(proc) = crate::ordo::sched::process_of(pid) {
                 unsafe { (*proc).cbs_server = Some(server_id); }
             }
             0
@@ -142,7 +142,7 @@ pub(super) fn sys_cbs_attach() -> i64 {
 /// cbs_get_info(server_id): ritorna le informazioni di un server CBS.
 /// Return: rax = budget, rdi = period, rsi = remaining (via ipc_override).
 pub(super) fn sys_cbs_get_info(server_id: u64) -> i64 {
-    match crate::cbs::get_info(server_id as usize) {
+    match crate::ordo::aegis::get_info(server_id as usize) {
         Some(info) => {
             unsafe {
                 let p = addr_of_mut!(PERCPU);
@@ -167,7 +167,7 @@ pub(super) fn sys_text_stats() -> i64 {
         (*p).ipc_override = 1;
         (*p).ret_rdi = misses;
         (*p).ret_rsi = live;
-        (*p).ret_rdx = crate::phys_mem::cow_count();
+        (*p).ret_rdx = crate::arc::phys_mem::cow_count();
     }
     hits as i64
 }
@@ -177,8 +177,8 @@ pub(super) fn sys_text_stats() -> i64 {
 /// rsi = usati. Mai fallisce (nessun argomento, nessun lock). Sensore per
 /// swap/quota futuri; il kernel non decide nulla (niente OOM-kill).
 pub(super) fn sys_meminfo() -> i64 {
-    let free = crate::phys_mem::free_frames();
-    let total = crate::phys_mem::total_frames();
+    let free = crate::arc::phys_mem::free_frames();
+    let total = crate::arc::phys_mem::total_frames();
     unsafe {
         let p = addr_of_mut!(PERCPU);
         (*p).ipc_override = 1;
@@ -192,7 +192,7 @@ pub(super) fn sys_meminfo() -> i64 {
 /// vivo (campi nei registri, layout in `syscall-numbers`), -1 se vuoto o
 /// terminato (lo slot si salta, come `ps` salta i PID morti).
 pub(super) fn sys_ps_info(pid: usize) -> i64 {
-    let snap = match crate::sched::process_ps(pid) {
+    let snap = match crate::ordo::sched::process_ps(pid) {
         Some(s) => s,
         None => return -1,
     };
@@ -208,15 +208,15 @@ pub(super) fn sys_ps_info(pid: usize) -> i64 {
         2u64
     } else {
         match snap.state {
-            crate::process::State::Ready => 0u64,
-            crate::process::State::Blocked => 1u64,
-            crate::process::State::Terminated => return -1, // non dovrebbe accadere
+            crate::ordo::process::State::Ready => 0u64,
+            crate::ordo::process::State::Blocked => 1u64,
+            crate::ordo::process::State::Terminated => return -1, // non dovrebbe accadere
         }
     };
     let ipc = match snap.ipc {
-        crate::process::IpcState::None => 0u64,
-        crate::process::IpcState::BlockedOnRecv => 1u64,
-        crate::process::IpcState::BlockedOnReply => 2u64,
+        crate::ordo::process::IpcState::None => 0u64,
+        crate::ordo::process::IpcState::BlockedOnRecv => 1u64,
+        crate::ordo::process::IpcState::BlockedOnReply => 2u64,
     };
     let parent = snap.parent.map(|p| p as u64 + 1).unwrap_or(0);
     let packed = state | (snap.prio as u64) << 8 | parent << 16 | ipc << 24;

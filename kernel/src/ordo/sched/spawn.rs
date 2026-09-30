@@ -1,6 +1,6 @@
 // Split from sched_rt.rs (byte-identical move; see facade).
 use super::*;
-use crate::process::Process;
+use crate::ordo::process::Process;
 use core::sync::atomic::Ordering;
 use super::ctx::{SCHED, INITIALIZED};
 use super::queue::Scheduler;
@@ -12,7 +12,7 @@ pub fn init() {
     crate::serial_println!("[sched_rt] init (preemptive, 32-prio + RR, quantum {} tick)", QUANTUM_TICKS);
 }
 
-pub fn spawn(name: &'static str, priority: Priority, entry: crate::process::ProcessFn, parent: Option<usize>, parent_chan: Option<usize>) -> Option<usize> {
+pub fn spawn(name: &'static str, priority: Priority, entry: crate::ordo::process::ProcessFn, parent: Option<usize>, parent_chan: Option<usize>) -> Option<usize> {
     let mut guard = SCHED.lock();
     let sched = guard.as_mut().expect("scheduler non inizializzato");
 

@@ -34,7 +34,7 @@ unsafe fn free_pt_leaves(pt_phys: u64) {
         let e = unsafe { raw_entry(pt_phys, i) };
         if e & PTE_PRESENT != 0 {
             if e & USER_OWNED != 0 {
-                crate::phys_mem::deref(PTE_ADDR_MASK & e);
+                crate::arc::phys_mem::deref(PTE_ADDR_MASK & e);
             }
         }
     }
@@ -47,7 +47,7 @@ unsafe fn free_pd_tree(pd_phys: u64) {
         if e & PTE_PRESENT != 0 {
             let pt = PTE_ADDR_MASK & e;
             unsafe { free_pt_leaves(pt) };
-            crate::phys_mem::free(pt);
+            crate::arc::phys_mem::free(pt);
         }
     }
 }
@@ -59,7 +59,7 @@ unsafe fn free_pdp_tree(pdp_phys: u64) {
         if e & PTE_PRESENT != 0 {
             let pd = PTE_ADDR_MASK & e;
             unsafe { free_pd_tree(pd) };
-            crate::phys_mem::free(pd);
+            crate::arc::phys_mem::free(pd);
         }
     }
 }
@@ -86,9 +86,9 @@ pub unsafe fn teardown_user_space(cr3: u64, pid: usize) {    let kernel_pml4 = k
                 continue;
             }
             free_pdp_tree(tbl);
-            crate::phys_mem::free(tbl);
+            crate::arc::phys_mem::free(tbl);
         }
-        crate::phys_mem::free(cr3);
+        crate::arc::phys_mem::free(cr3);
     }
     if pid < MAX_PROCS {
         unsafe { *core::ptr::addr_of_mut!(HEAP_BRK[pid]) = 0; }
@@ -132,7 +132,7 @@ pub(crate) unsafe fn exec_clear_user(cr3: u64) {
                 continue;
             }
             free_pdp_tree(tbl);
-            crate::phys_mem::free(tbl);
+            crate::arc::phys_mem::free(tbl);
             core::ptr::write_volatile((base + (i as u64) * 8) as *mut u64, 0);
         }
     }

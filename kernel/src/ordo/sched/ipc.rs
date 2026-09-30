@@ -1,5 +1,5 @@
 // Split from sched_rt.rs (byte-identical move; see facade).
-use crate::process::State;
+use crate::ordo::process::State;
 use core::sync::atomic::Ordering;
 use super::ctx::{SCHED, INITIALIZED, switch_to};
 use super::queue::Scheduler;
@@ -54,7 +54,7 @@ pub fn ipc_send(channel: usize, tag: u64, w0: u64, w1: u64) -> IpcResult {
             Some(c) => c,
             None => return err_result(),
         };
-        let dest = match crate::channels::peer(chan, cur) {
+        let dest = match crate::relay::channels::peer(chan, cur) {
             Some(p) => p,
             None => return err_result(),
         };
@@ -63,9 +63,9 @@ pub fn ipc_send(channel: usize, tag: u64, w0: u64, w1: u64) -> IpcResult {
 
         {
             let d = &mut sched.processes[dest];
-            d.msg_queue.push(crate::process::PendingMsg { channel: chan, req_id, tag, w0, w1 });
-            if d.ipc_state == crate::process::IpcState::BlockedOnRecv {
-                d.ipc_state = crate::process::IpcState::None;
+            d.msg_queue.push(crate::ordo::process::PendingMsg { channel: chan, req_id, tag, w0, w1 });
+            if d.ipc_state == crate::ordo::process::IpcState::BlockedOnRecv {
+                d.ipc_state = crate::ordo::process::IpcState::None;
                 d.state = State::Ready;
                 sched.set_ready(dest);
             }
@@ -73,7 +73,7 @@ pub fn ipc_send(channel: usize, tag: u64, w0: u64, w1: u64) -> IpcResult {
 
         {
             let c = &mut sched.processes[cur];
-            c.ipc_state = crate::process::IpcState::BlockedOnReply;
+            c.ipc_state = crate::ordo::process::IpcState::BlockedOnReply;
             // Fase 14: ricorda su chi siamo bloccati, cosi' la morte del
             // destinatario ci sblocca con un errore (niente deadlock).
             c.waiting_pid = Some(dest);
@@ -86,7 +86,7 @@ pub fn ipc_send(channel: usize, tag: u64, w0: u64, w1: u64) -> IpcResult {
             _ => {
                 sched.processes[cur].state = State::Ready;
                 sched.set_ready(cur);
-                sched.processes[cur].ipc_state = crate::process::IpcState::None;
+                sched.processes[cur].ipc_state = crate::ordo::process::IpcState::None;
                 sched.processes[cur].waiting_pid = None;
                 return err_result();
             }
@@ -127,7 +127,7 @@ pub fn ipc_send_async(channel: usize, tag: u64, w0: u64, w1: u64) -> IpcResult {
         Some(c) => c,
         None => return err_result(),
     };
-    let dest = match crate::channels::peer(chan, cur) {
+    let dest = match crate::relay::channels::peer(chan, cur) {
         Some(p) => p,
         None => return err_result(),
     };
@@ -136,9 +136,9 @@ pub fn ipc_send_async(channel: usize, tag: u64, w0: u64, w1: u64) -> IpcResult {
 
     let ok = {
         let d = &mut sched.processes[dest];
-        let pushed = d.msg_queue.try_push(crate::process::PendingMsg { channel: chan, req_id, tag, w0, w1 });
-        if pushed && d.ipc_state == crate::process::IpcState::BlockedOnRecv {
-            d.ipc_state = crate::process::IpcState::None;
+        let pushed = d.msg_queue.try_push(crate::ordo::process::PendingMsg { channel: chan, req_id, tag, w0, w1 });
+        if pushed && d.ipc_state == crate::ordo::process::IpcState::BlockedOnRecv {
+            d.ipc_state = crate::ordo::process::IpcState::None;
             d.state = State::Ready;
             sched.set_ready(dest);
         }
@@ -195,7 +195,7 @@ pub fn ipc_recv() -> IpcResult {
             if let Some(res) = pop_msg(sched, cur) {
                 return res;
             }
-            sched.processes[cur].ipc_state = crate::process::IpcState::BlockedOnRecv;
+            sched.processes[cur].ipc_state = crate::ordo::process::IpcState::BlockedOnRecv;
             sched.processes[cur].state = State::Blocked;
             sched.clear_ready(cur);
             match sched.pick_next() {
@@ -203,7 +203,7 @@ pub fn ipc_recv() -> IpcResult {
                 _ => {
                     sched.processes[cur].state = State::Ready;
                     sched.set_ready(cur);
-                    sched.processes[cur].ipc_state = crate::process::IpcState::None;
+                    sched.processes[cur].ipc_state = crate::ordo::process::IpcState::None;
                     None
                 }
             }
@@ -247,7 +247,7 @@ pub fn ipc_reply(tag: u64, w0: u64, w1: u64) -> IpcResult {
         None => return err_result(),
     };
     let reply_req = sched.processes[cur].reply_req;
-    let target = match crate::channels::peer(target_chan, cur) {
+    let target = match crate::relay::channels::peer(target_chan, cur) {
         Some(t) => t,
         None => return err_result(),
     };
@@ -255,28 +255,28 @@ pub fn ipc_reply(tag: u64, w0: u64, w1: u64) -> IpcResult {
     sched.processes[cur].reply_chan = None;
     sched.processes[cur].reply_req = 0;
 
-    let sync = sched.processes[target].ipc_state == crate::process::IpcState::BlockedOnReply;
+    let sync = sched.processes[target].ipc_state == crate::ordo::process::IpcState::BlockedOnReply;
 
     if sync {
         {
             let t = &mut sched.processes[target];
-            t.reply_slot = Some(crate::process::PendingReply { tag, w0, w1 });
-            t.ipc_state = crate::process::IpcState::None;
+            t.reply_slot = Some(crate::ordo::process::PendingReply { tag, w0, w1 });
+            t.ipc_state = crate::ordo::process::IpcState::None;
             t.state = State::Ready;
         }
         sched.set_ready(target);
     } else {
         let delivered = {
             let t = &mut sched.processes[target];
-            let pushed = t.msg_queue.try_push(crate::process::PendingMsg {
+            let pushed = t.msg_queue.try_push(crate::ordo::process::PendingMsg {
                 channel: target_chan,
                 req_id: -reply_req,
                 tag,
                 w0,
                 w1,
             });
-            if pushed && t.ipc_state == crate::process::IpcState::BlockedOnRecv {
-                t.ipc_state = crate::process::IpcState::None;
+            if pushed && t.ipc_state == crate::ordo::process::IpcState::BlockedOnRecv {
+                t.ipc_state = crate::ordo::process::IpcState::None;
                 t.state = State::Ready;
                 sched.set_ready(target);
             }

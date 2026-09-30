@@ -90,8 +90,8 @@ extern "x86-interrupt" fn page_fault_handler(
     // COW). Le protection-violation su codice/rodata (senza COW) continuano a
     // uccidere il processo (user) o ad haltare (supervisor, bug del kernel).
     if prot {
-        let cr3 = crate::vmm_user::active_cr3();
-        if crate::vmm_user::cow_fault(cr3, fault_addr) {
+        let cr3 = crate::arc::vmm_user::active_cr3();
+        if crate::arc::vmm_user::cow_fault(cr3, fault_addr) {
             return;
         }
         if user {
@@ -102,14 +102,14 @@ extern "x86-interrupt" fn page_fault_handler(
     // Demand-zero dell'heap on-demand (test lazy): una pagina sotto il
     // `heap_brk` del processo non ancora materializzata viene mappata lazy con
     // un frame zero (vale anche per fault supervisor).
-    if !prot && fault_addr >= crate::vmm_user::USER_HEAP_BASE {
-        let brk = crate::vmm_user::heap_brk(pid);
+    if !prot && fault_addr >= crate::arc::vmm_user::USER_HEAP_BASE {
+        let brk = crate::arc::vmm_user::heap_brk(pid);
         if fault_addr < brk {
             let page = fault_addr & !0xfff;
-            if let Some(frame) = crate::phys_mem::alloc() {
+            if let Some(frame) = crate::arc::phys_mem::alloc() {
                 unsafe { core::ptr::write_bytes(crate::addr::phys_to_virt(frame) as *mut u8, 0, 4096); }
-                let cr3 = crate::vmm_user::active_cr3();
-                unsafe { crate::vmm_user::map_user_region_owned(cr3, page, frame, 1); }
+                let cr3 = crate::arc::vmm_user::active_cr3();
+                unsafe { crate::arc::vmm_user::map_user_region_owned(cr3, page, frame, 1); }
                 unsafe { flush_page(page) };
                 return;
             }
@@ -122,10 +122,10 @@ extern "x86-interrupt" fn page_fault_handler(
     // mmap anonimo (Fase 28/29): fault dentro una VMA viva del basso canonico
     // → materializza con i flag del prot. PROT_NONE o write su RO senza PTE =
     // abuso → kill. Altrimenti demand-zero owned (RW o RO) come l'heap.
-    if !prot && fault_addr >= crate::vmm_user::MMAP_BASE
-        && fault_addr < crate::vmm_user::MMAP_END
+    if !prot && fault_addr >= crate::arc::vmm_user::MMAP_BASE
+        && fault_addr < crate::arc::vmm_user::MMAP_END
     {
-        if let Some((vb, vl, vprot, vshm)) = crate::vmm_user::vma_lookup(pid, fault_addr) {
+        if let Some((vb, vl, vprot, vshm)) = crate::arc::vmm_user::vma_lookup(pid, fault_addr) {
             use syscall_numbers::{PROT_NONE, PROT_WRITE};
             // VMA condivisa (30): le pagine sono pre-materializzate a
             // `shm_map`; un fault qui e' un edge (PTE staccata) → hole-fill
@@ -133,11 +133,11 @@ extern "x86-interrupt" fn page_fault_handler(
             // clobbererebbe le copie private delle VMA COW con il contenuto
             // condiviso — le presenti si preservano, si riempiono solo i buchi).
             if vshm != 0 {
-                if let Some((phys, frames)) = crate::vmm_user::shm_region(vshm as u32) {
+                if let Some((phys, frames)) = crate::arc::vmm_user::shm_region(vshm as u32) {
                     let writable = vprot & PROT_WRITE as u8 != 0;
-                    let cr3 = crate::vmm_user::active_cr3();
-                    let cow = crate::vmm_user::range_has_cow(cr3, vb, frames as usize);
-                    crate::vmm_user::remap_shared_holes(cr3, vb, phys, frames as usize, writable, cow);
+                    let cr3 = crate::arc::vmm_user::active_cr3();
+                    let cow = crate::arc::vmm_user::range_has_cow(cr3, vb, frames as usize);
+                    crate::arc::vmm_user::remap_shared_holes(cr3, vb, phys, frames as usize, writable, cow);
                     let _ = vl;
                     return;
                 }
@@ -147,13 +147,13 @@ extern "x86-interrupt" fn page_fault_handler(
                 fault_kill(pid, fault_addr, error_code, &stack_frame);
             }
             let page = fault_addr & !0xfff;
-            if let Some(frame) = crate::phys_mem::alloc() {
+            if let Some(frame) = crate::arc::phys_mem::alloc() {
                 unsafe { core::ptr::write_bytes(crate::addr::phys_to_virt(frame) as *mut u8, 0, 4096); }
-                let cr3 = crate::vmm_user::active_cr3();
+                let cr3 = crate::arc::vmm_user::active_cr3();
                 if vprot & PROT_WRITE as u8 != 0 {
-                    unsafe { crate::vmm_user::map_user_region_owned(cr3, page, frame, 1); }
+                    unsafe { crate::arc::vmm_user::map_user_region_owned(cr3, page, frame, 1); }
                 } else {
-                    unsafe { crate::vmm_user::map_user_region_owned_ro(cr3, page, frame, 1); }
+                    unsafe { crate::arc::vmm_user::map_user_region_owned_ro(cr3, page, frame, 1); }
                 }
                 unsafe { flush_page(page) };
                 return;
@@ -175,7 +175,7 @@ extern "x86-interrupt" fn page_fault_handler(
         fault_addr,
         error_code
     );
-    let (pnb, pnl) = crate::sched::process_name(pid);
+    let (pnb, pnl) = crate::ordo::sched::process_name(pid);
     let pname = core::str::from_utf8(&pnb[..pnl as usize]).unwrap_or("???");
     crate::serial_println!(
         "[int ] rip={:#x} rsp={:#x} pid={} '{}'",
@@ -198,7 +198,7 @@ fn fault_kill(
     error_code: PageFaultErrorCode,
     stack_frame: &InterruptStackFrame,
 ) -> ! {
-    let (pnb, pnl) = crate::sched::process_name(pid);
+    let (pnb, pnl) = crate::ordo::sched::process_name(pid);
     let pname = core::str::from_utf8(&pnb[..pnl as usize]).unwrap_or("???");
     crate::serial_println!(
         "[int ] #PF (kill) @ {:#x}, err={:?} rip={:#x} pid={} '{}'",
@@ -208,7 +208,7 @@ fn fault_kill(
         pid,
         pname,
     );
-    crate::sched::exit_current(syscall_numbers::FAULT_EXIT_CODE)
+    crate::ordo::sched::exit_current(syscall_numbers::FAULT_EXIT_CODE)
 }
 
 /// Invalida la TLB per una singola pagina (dopo un demand-map).
@@ -221,7 +221,7 @@ unsafe fn flush_page(addr: u64) {
 extern "x86-interrupt" fn gpf_handler(stack_frame: InterruptStackFrame, error_code: u64) {
     let pid = crate::syscall::current_id() as usize;
     let user = stack_frame.code_segment.rpl() == x86_64::PrivilegeLevel::Ring3;
-    let (pnb, pnl) = crate::sched::process_name(pid);
+    let (pnb, pnl) = crate::ordo::sched::process_name(pid);
     let pname = core::str::from_utf8(&pnb[..pnl as usize]).unwrap_or("???");
     crate::serial_println!(
         "[int ] #GP err={} @ {:#x} pid={} '{}'{}",
@@ -234,7 +234,7 @@ extern "x86-interrupt" fn gpf_handler(stack_frame: InterruptStackFrame, error_co
     if user {
         // Errore del processo (es. `in`/`out` su una porta non concessa dalla
         // sua I/O bitmap TSS): muore il processo, mai il kernel (come 29).
-        crate::sched::exit_current(syscall_numbers::FAULT_EXIT_CODE)
+        crate::ordo::sched::exit_current(syscall_numbers::FAULT_EXIT_CODE)
     }
     halt();
 }
@@ -257,7 +257,7 @@ extern "x86-interrupt" fn timer_handler(_stack_frame: InterruptStackFrame) {
     // in un altro processo, il PIC non deve restare in attesa di EOI con i
     // successivi timer bloccati.
     unsafe { crate::pic::end_of_interrupt(0x20) };
-    crate::sched::on_tick();
+    crate::ordo::sched::on_tick();
 }
 
 extern "x86-interrupt" fn keyboard_handler(_stack_frame: InterruptStackFrame) {
@@ -271,10 +271,10 @@ extern "x86-interrupt" fn keyboard_handler(_stack_frame: InterruptStackFrame) {
     // 38.2d — EOI PRIMA della notify: `notify_irq` puo' cambiare contesto
     // (wakeup-preemption) e il PIC va riarmato prima (come il timer sopra).
     unsafe { crate::pic::end_of_interrupt(0x21) };
-    if let Some(owner) = crate::channels::lookup(syscall_numbers::Service::Kbd) {
+    if let Some(owner) = crate::relay::channels::lookup(syscall_numbers::Service::Kbd) {
         #[cfg(feature = "sched_debug")]
         crate::serial_println!("[irq1] wake kbd pid={}", owner);
-        crate::sched::notify_irq(owner, syscall_numbers::IRQ_NOTIFY_KBD);
+        crate::ordo::sched::notify_irq(owner, syscall_numbers::IRQ_NOTIFY_KBD);
     } else {
         #[cfg(feature = "sched_debug")]
         crate::serial_println!("[irq1] Kbd non registrato");
@@ -299,8 +299,8 @@ extern "x86-interrupt" fn disk_secondary_handler(_stack_frame: InterruptStackFra
 /// non parte (come i tasti senza kbd).
 fn disk_irq(vector: u8) {
     unsafe { crate::pic::end_of_interrupt(vector) };
-    if let Some(owner) = crate::channels::lookup(syscall_numbers::Service::Disk) {
-        crate::sched::notify_irq(owner, syscall_numbers::IRQ_NOTIFY_DISK);
+    if let Some(owner) = crate::relay::channels::lookup(syscall_numbers::Service::Disk) {
+        crate::ordo::sched::notify_irq(owner, syscall_numbers::IRQ_NOTIFY_DISK);
     }
 }
 

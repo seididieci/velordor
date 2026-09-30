@@ -306,7 +306,7 @@ cargo build --release --features selftest
 # Verifica la mappa di memoria dinamica a diverse dimensioni RAM
 # (QEMU -m 4G/16G/32G: la RAM sale sopra 4 GiB per il PCI hole)
 timeout 6 qemu-system-x86_64 -m 4G -display none -serial stdio -no-reboot \
-  -kernel target/x86_64-unknown-none/release/velordor-kernel
+  -kernel target/x86_64-unknown-none/release/velord
 
 # Produzione (default): niente test, shell subito usabile
 timeout 60 ./run.sh > /tmp/boot.log

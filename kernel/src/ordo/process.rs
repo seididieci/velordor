@@ -1,7 +1,7 @@
 //! Process Control Block: descrive un singolo processo utente/kernel.
 
 use x86_64::structures::gdt::SegmentSelector;
-use crate::context::CpuContext;
+use crate::ordo::context::CpuContext;
 
 /// Stack kernel di un processo (inizializzato nel frattempo, fuori dall'heap
 /// affinche' non venga mai spostato). Grandezza fissa in frame fisici.
@@ -130,7 +130,7 @@ pub struct Process {
     pub name_len: u8,
     /// Priorita' BASE del processo (31 = massima, 0 = minima/idle).
     /// Immutabile. `pick_next` sceglie il livello piu' alto via bitmask.
-    pub priority: crate::sched::Priority,
+    pub priority: crate::ordo::sched::Priority,
     pub state: State,
     /// Sospeso via `SYS_SUSPEND` (Fase 44a, job control): fuori dalle ready
     /// queue finche' `SYS_RESUME` (meccanismo neutro, semantica POSIX in
@@ -252,20 +252,20 @@ impl Process {
     /// creatore (`None` per init/idle/... creati dal kernel).
     pub fn create(
         name: &'static str,
-        priority: crate::sched::Priority,
+        priority: crate::ordo::sched::Priority,
         entry: ProcessFn,
         parent: Option<usize>,
         parent_chan: Option<usize>,
         io_ranges: &[(u16, u16)],
     ) -> Option<Process> {
-        let stack_base = crate::phys_mem::alloc_contiguous(STACK_FRAMES)?;
+        let stack_base = crate::arc::phys_mem::alloc_contiguous(STACK_FRAMES)?;
         // `stack_base` resta PHYS (free a teardown); `stack_top` e' VIRT
         // (direct map: RSP0 del TSS + scritture del frame iniziale).
-        let stack_top = crate::addr::phys_to_virt(stack_base + (STACK_FRAMES as u64 * crate::phys_mem::FRAME_SIZE));
+        let stack_top = crate::addr::phys_to_virt(stack_base + (STACK_FRAMES as u64 * crate::arc::phys_mem::FRAME_SIZE));
 
         // Stack kernel in 16 KiB: finestra per il frame CPU fittizio e i
         // frame di interrupt annidati.
-        let saved = unsafe { crate::context::new_context(stack_top, entry as usize as u64) };
+        let saved = unsafe { crate::ordo::context::new_context(stack_top, entry as usize as u64) };
 
         let tss_slot = Self::alloc_tss(stack_top, io_ranges)?;
         let tss_sel = crate::gdt::selectors().tss_selector(tss_slot);
@@ -280,7 +280,7 @@ impl Process {
             parent,
             detached: false,
             stack_base,
-            cr3: crate::vmm_user::kernel_cr3(),
+            cr3: crate::arc::vmm_user::kernel_cr3(),
             kernel_stack_top: stack_top,
             saved,
             tss_sel,
@@ -316,7 +316,7 @@ impl Process {
     /// `io_ranges` = porte I/O (inclusive) consentite a ring 3 (TSS ADR-0006).
     pub unsafe fn create_user(
         name: &'static str,
-        priority: crate::sched::Priority,
+        priority: crate::ordo::sched::Priority,
         elf: &[u8],
         parent: Option<usize>,
         parent_chan: Option<usize>,
@@ -333,21 +333,21 @@ impl Process {
 
         // Kernel stack: RSP0 (per rientrare a ring 0 su interrupt) + frame.
         // Come sopra: base PHYS (teardown), top VIRT (RSP0 + frame iniziale).
-        let stack_base = crate::phys_mem::alloc_contiguous(STACK_FRAMES)?;
-        let stack_top = crate::addr::phys_to_virt(stack_base + (STACK_FRAMES as u64 * crate::phys_mem::FRAME_SIZE));
+        let stack_base = crate::arc::phys_mem::alloc_contiguous(STACK_FRAMES)?;
+        let stack_top = crate::addr::phys_to_virt(stack_base + (STACK_FRAMES as u64 * crate::arc::phys_mem::FRAME_SIZE));
 
         // Address space user dedicato (PML4 proprio, kernel condiviso U=0).
-        let cr3 = crate::vmm_user::new_address_space()?;
+        let cr3 = crate::arc::vmm_user::new_address_space()?;
 
         // Carica i segmenti ELF + stack user. La pagina FS per-processo viene
         // allocata/mappata lazy al primo uso (syscall 26).
         let text_id = unsafe { crate::elf::load(cr3, elf, &layout) };
-        let user_stack_top = unsafe { crate::vmm_user::setup_user_stack(cr3) };
+        let user_stack_top = unsafe { crate::arc::vmm_user::setup_user_stack(cr3) };
 
         // Frame CPU ring 3 sul kernel stack (entry dall'ELF).
         let entry = crate::elf::entry(&layout);
         let saved =
-            unsafe { crate::context::new_context_user(stack_top, entry, user_stack_top) };
+            unsafe { crate::ordo::context::new_context_user(stack_top, entry, user_stack_top) };
 
         let tss_slot = Self::alloc_tss(stack_top, io_ranges)?;
         let tss_sel = crate::gdt::selectors().tss_selector(tss_slot);
@@ -402,7 +402,7 @@ impl Process {
         name: &'static str,
         name_owned: [u8; 16],
         name_len: u8,
-        priority: crate::sched::Priority,
+        priority: crate::ordo::sched::Priority,
         req_next: u64,
         parent_pid: usize,
         child_cr3: u64,

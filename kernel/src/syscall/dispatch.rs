@@ -84,7 +84,7 @@ pub(super) extern "C" fn syscall_handler() -> i64 {
 /// Applica il risultato di una primitiva IPC ai registri di ritorno della
 /// syscall: imposta i valori di ritorno e il flag `ipc_override` perche'
 /// l'entry riempia rdi/rsi/rdx/r10. Ritorna il valore di `rax` (stato).
-pub(super) fn apply_ipc(r: crate::sched::IpcResult) -> i64 {
+pub(super) fn apply_ipc(r: crate::ordo::sched::IpcResult) -> i64 {
     unsafe {
         let p = addr_of_mut!(PERCPU);
         (*p).ipc_override = 1;

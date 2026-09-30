@@ -1,5 +1,5 @@
 // Split from sched_rt.rs (byte-identical move; see facade).
-use crate::process::{Process, State};
+use crate::ordo::process::{Process, State};
 use super::ctx::SCHED;
 
 /// Stato del processo `pid` (`None` se non esiste o e' terminato).
@@ -26,13 +26,13 @@ pub struct PsSnap {
     pub suspended: bool,
     pub prio: u8,
     pub parent: Option<usize>,
-    pub ipc: crate::process::IpcState,
+    pub ipc: crate::ordo::process::IpcState,
     pub ticks_used: u64,
 }
 
 /// Copia il nome display in un buffer locale (i log avvengono dopo il
 /// rilascio dei borrow sul PCB).
-pub(super) fn name_buf(p: &crate::process::Process) -> ([u8; 16], u8) {
+pub(super) fn name_buf(p: &crate::ordo::process::Process) -> ([u8; 16], u8) {
     let s = p.name_str();
     let mut b = [0u8; 16];
     let n = s.len().min(16);

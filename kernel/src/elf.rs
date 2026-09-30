@@ -13,7 +13,7 @@
 //! come il resto dello spawn). Usato sia dai binari embedded sia da
 //! `spawn_image` (ELF letto da disco: input non fidato → validazione stretta).
 
-use crate::vmm_user::{USER_CODE, USER_FS_BUFFER};
+use crate::arc::vmm_user::{USER_CODE, USER_FS_BUFFER};
 
 const ELFCLASS64: u8 = 2;
 const ELFDATA2LSB: u8 = 1;
@@ -212,7 +212,7 @@ unsafe fn map_private(cr3: u64, bytes: &[u8], l: &Layout, from: u64, to: u64) {
         return;
     }
     let pages = ((to - from) / PAGE) as usize;
-    let phys = crate::phys_mem::alloc_contiguous(pages).expect("oom per l'ELF");
+    let phys = crate::arc::phys_mem::alloc_contiguous(pages).expect("oom per l'ELF");
     let base_ptr = crate::addr::phys_to_virt(phys) as *mut u8;
     unsafe { core::ptr::write_bytes(base_ptr, 0, pages * PAGE as usize); }
     for s in &l.segments[..l.nseg] {
@@ -231,7 +231,7 @@ unsafe fn map_private(cr3: u64, bytes: &[u8], l: &Layout, from: u64, to: u64) {
         let va = from + (p as u64) * PAGE;
         let (w, x) = page_flags(l, va);
         unsafe {
-            crate::vmm_user::map_user_leaf(cr3, va, phys + (p as u64) * PAGE, w, x);
+            crate::arc::vmm_user::map_user_leaf(cr3, va, phys + (p as u64) * PAGE, w, x);
         }
     }
 }

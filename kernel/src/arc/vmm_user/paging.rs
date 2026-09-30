@@ -74,7 +74,7 @@ pub fn new_address_space() -> Option<u64> {
     let kernel_pml4 = kernel_cr3();
 
     // PML4 del processo: copia dell'active (condivide la mappa kernel).
-    let pm = crate::phys_mem::alloc()?;
+    let pm = crate::arc::phys_mem::alloc()?;
     unsafe {
         zero_frame(pm);
         core::ptr::copy_nonoverlapping(
@@ -85,9 +85,9 @@ pub fn new_address_space() -> Option<u64> {
     }
 
     // Regione user: alloco i 3 livelli sotto USER_BASE.
-    let pdp = crate::phys_mem::alloc()?;
-    let pd = crate::phys_mem::alloc()?;
-    let pt = crate::phys_mem::alloc()?;
+    let pdp = crate::arc::phys_mem::alloc()?;
+    let pd = crate::arc::phys_mem::alloc()?;
+    let pt = crate::arc::phys_mem::alloc()?;
     unsafe {
         zero_frame(pdp);
         zero_frame(pd);
@@ -159,7 +159,7 @@ unsafe fn map_user_region_flags(cr3: u64, vaddr: u64, phys: u64, count: usize, f
         // Livello 1: PML4
         let l1 = unsafe { entry_at(cur, pml4_index(addr)) };
         let pdp = if l1 == 0 {
-            let f = crate::phys_mem::alloc().expect("oom page table");
+            let f = crate::arc::phys_mem::alloc().expect("oom page table");
             unsafe { zero_frame(f); }
             unsafe { set_entry(cur, pml4_index(addr), f | USER_PRESENT_WRITABLE); }
             f
@@ -168,7 +168,7 @@ unsafe fn map_user_region_flags(cr3: u64, vaddr: u64, phys: u64, count: usize, f
         // Livello 2: PDPT
         let l2 = unsafe { entry_at(pdp, pdpt_index(addr)) };
         let pd = if l2 == 0 {
-            let f = crate::phys_mem::alloc().expect("oom page table");
+            let f = crate::arc::phys_mem::alloc().expect("oom page table");
             unsafe { zero_frame(f); }
             unsafe { set_entry(pdp, pdpt_index(addr), f | USER_PRESENT_WRITABLE); }
             f
@@ -177,7 +177,7 @@ unsafe fn map_user_region_flags(cr3: u64, vaddr: u64, phys: u64, count: usize, f
         // Livello 3: PD (pagine 4 KiB, niente large page nello user)
         let l3 = unsafe { entry_at(pd, pd_index(addr)) };
         let pt = if l3 == 0 {
-            let f = crate::phys_mem::alloc().expect("oom page table");
+            let f = crate::arc::phys_mem::alloc().expect("oom page table");
             unsafe { zero_frame(f); }
             unsafe { set_entry(pd, pd_index(addr), f | USER_PRESENT_WRITABLE); }
             f
@@ -219,7 +219,7 @@ pub fn cow_fault(cr3: u64, vaddr: u64) -> bool {
         return false; // assente, non-COW (codice/rodata → kill) o gia' W
     }
     let old = PTE_ADDR_MASK & e;
-    let new = match crate::phys_mem::alloc() {
+    let new = match crate::arc::phys_mem::alloc() {
         Some(f) => f,
         None => return false, // OOM: il chiamante uccide (mai halt per user)
     };
@@ -232,8 +232,8 @@ pub fn cow_fault(cr3: u64, vaddr: u64) -> bool {
         set_entry(l3, pt_index(page), new | USER_LEAF_RW | USER_OWNED);
     }
     flush_page(page);
-    crate::phys_mem::deref(old);
-    crate::phys_mem::cow_note();
+    crate::arc::phys_mem::deref(old);
+    crate::arc::phys_mem::cow_note();
     true
 }
 
@@ -304,21 +304,21 @@ pub fn remap_shared_holes(cr3: u64, vbase: u64, phys: u64, count: usize, writabl
         // Walk con allocazione livelli (come `map_user_region_flags`).
         let l1 = unsafe { entry_at(cr3, pml4_index(addr)) };
         let pdp = if l1 == 0 {
-            let f = crate::phys_mem::alloc().expect("oom page table");
+            let f = crate::arc::phys_mem::alloc().expect("oom page table");
             unsafe { zero_frame(f); }
             unsafe { set_entry(cr3, pml4_index(addr), f | USER_PRESENT_WRITABLE); }
             f
         } else { l1 };
         let l2 = unsafe { entry_at(pdp, pdpt_index(addr)) };
         let pd = if l2 == 0 {
-            let f = crate::phys_mem::alloc().expect("oom page table");
+            let f = crate::arc::phys_mem::alloc().expect("oom page table");
             unsafe { zero_frame(f); }
             unsafe { set_entry(pdp, pdpt_index(addr), f | USER_PRESENT_WRITABLE); }
             f
         } else { l2 };
         let l3 = unsafe { entry_at(pd, pd_index(addr)) };
         let pt = if l3 == 0 {
-            let f = crate::phys_mem::alloc().expect("oom page table");
+            let f = crate::arc::phys_mem::alloc().expect("oom page table");
             unsafe { zero_frame(f); }
             unsafe { set_entry(pd, pd_index(addr), f | USER_PRESENT_WRITABLE); }
             f
@@ -374,7 +374,7 @@ pub fn map_leaf_raw(cr3: u64, vaddr: u64, phys: u64, flags: u64) -> bool {
     let page = vaddr & !(PAGE_SIZE - 1);
     let l1 = unsafe { entry_at(cr3, pml4_index(page)) };
     let pdp = if l1 == 0 {
-        match crate::phys_mem::alloc() {
+        match crate::arc::phys_mem::alloc() {
             Some(f) => {
                 unsafe { zero_frame(f); }
                 unsafe { set_entry(cr3, pml4_index(page), f | USER_PRESENT_WRITABLE); }
@@ -385,7 +385,7 @@ pub fn map_leaf_raw(cr3: u64, vaddr: u64, phys: u64, flags: u64) -> bool {
     } else { l1 };
     let l2 = unsafe { entry_at(pdp, pdpt_index(page)) };
     let pd = if l2 == 0 {
-        match crate::phys_mem::alloc() {
+        match crate::arc::phys_mem::alloc() {
             Some(f) => {
                 unsafe { zero_frame(f); }
                 unsafe { set_entry(pdp, pdpt_index(page), f | USER_PRESENT_WRITABLE); }
@@ -396,7 +396,7 @@ pub fn map_leaf_raw(cr3: u64, vaddr: u64, phys: u64, flags: u64) -> bool {
     } else { l2 };
     let l3 = unsafe { entry_at(pd, pd_index(page)) };
     let pt = if l3 == 0 {
-        match crate::phys_mem::alloc() {
+        match crate::arc::phys_mem::alloc() {
             Some(f) => {
                 unsafe { zero_frame(f); }
                 unsafe { set_entry(pd, pd_index(page), f | USER_PRESENT_WRITABLE); }
@@ -486,7 +486,7 @@ pub fn read_leaf(cr3: u64, vaddr: u64) -> Option<(u64, u64)> {
 /// `cr3` e' un address space creato da `new_address_space`.
 pub unsafe fn setup_user_stack(cr3: u64) -> u64 {
     let stack_base = USER_STACK_TOP - (USER_STACK_FRAMES as u64 * PAGE_SIZE);
-    let stack_phys = crate::phys_mem::alloc_contiguous(USER_STACK_FRAMES)
+    let stack_phys = crate::arc::phys_mem::alloc_contiguous(USER_STACK_FRAMES)
         .expect("oom per lo stack user");
     unsafe { map_user_region_owned(cr3, stack_base, stack_phys, USER_STACK_FRAMES); }
     let top = crate::addr::phys_to_virt(stack_phys) + (USER_STACK_FRAMES as u64 * PAGE_SIZE);

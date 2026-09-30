@@ -1,6 +1,6 @@
 // Split from sched_rt.rs (byte-identical move; see facade).
 use super::*;
-use crate::process::State;
+use crate::ordo::process::State;
 use core::sync::atomic::Ordering;
 use x86_64::instructions::hlt;
 use super::ctx::{SCHED, INITIALIZED, switch_to};
@@ -66,7 +66,7 @@ pub fn kill(pid: usize, code: i64) -> bool {
     if p.state == State::Terminated {
         return false;
     }
-    if p.cr3 == crate::vmm_user::kernel_cr3() {
+    if p.cr3 == crate::arc::vmm_user::kernel_cr3() {
         return false; // processo kernel (solo idle oltre init)
     }
     let name = name_buf(p);
@@ -95,7 +95,7 @@ pub fn suspend(pid: usize) -> bool {
     if p.state == State::Terminated {
         return false;
     }
-    if p.cr3 == crate::vmm_user::kernel_cr3() {
+    if p.cr3 == crate::arc::vmm_user::kernel_cr3() {
         return false; // processo kernel (solo idle oltre init)
     }
     let name = name_buf(p);
@@ -132,7 +132,7 @@ pub fn resume(pid: usize) -> bool {
     if p.state == State::Terminated {
         return false;
     }
-    if p.cr3 == crate::vmm_user::kernel_cr3() {
+    if p.cr3 == crate::arc::vmm_user::kernel_cr3() {
         return false; // processo kernel (solo idle oltre init)
     }
     if !sched.processes[pid].suspended {
@@ -142,10 +142,10 @@ pub fn resume(pid: usize) -> bool {
     {
         let p = &mut sched.processes[pid];
         p.suspended = false;
-        if p.ipc_state == crate::process::IpcState::BlockedOnRecv && !p.msg_queue.is_empty() {
+        if p.ipc_state == crate::ordo::process::IpcState::BlockedOnRecv && !p.msg_queue.is_empty() {
             // Messaggi arrivati da sospeso: sveglia ora (`ipc_recv`, che al
             // ritorno dallo switch ricontrolla la coda, li trovera').
-            p.ipc_state = crate::process::IpcState::None;
+            p.ipc_state = crate::ordo::process::IpcState::None;
             p.state = State::Ready;
             sched.set_ready(pid);
         } else if p.state == State::Ready {
@@ -184,7 +184,7 @@ impl Scheduler {
             // (wake/reuse) lo vede mai insieme a Terminated.
             p.suspended = false;
             p.exit_code = code;
-            p.ipc_state = crate::process::IpcState::None;
+            p.ipc_state = crate::ordo::process::IpcState::None;
             p.reply_chan = None;
             p.reply_req = 0;
             p.reply_slot = None;
@@ -192,7 +192,7 @@ impl Scheduler {
             p.pending_wake = false;
         }
         self.clear_ready(pid);
-        crate::cbs::release_pid(pid);
+        crate::ordo::aegis::release_pid(pid);
 
         // Niente notifica QUI: sblocca solo i mittenti bloccati su `pid` e
         // accoda il reclaim. Le notifiche EXIT ai peer avvengono in
@@ -230,7 +230,7 @@ impl Scheduler {
         // `release_pid` (che rimuove i canali) e salvale nel PCB del morente:
         // `reclaim_one` le consuma DOPO il teardown. Il parent e' uno dei peer
         // (la sua coppia porta il birth channel): nessun caso speciale.
-        let (peers, npeer) = crate::channels::enumerate_peers(pid);
+        let (peers, npeer) = crate::relay::channels::enumerate_peers(pid);
         {
             let p = &mut self.processes[pid];
             p.die_peers = peers;
@@ -239,7 +239,7 @@ impl Scheduler {
 
         // Canali e slot servizi del morto (prima che il pid torni nel free-set
         // a reclaim).
-        crate::channels::release_pid(pid);
+        crate::relay::channels::release_pid(pid);
 
         self.push_reclaim(pid);
         crate::serial_println!(
@@ -257,11 +257,11 @@ impl Scheduler {
                 continue;
             }
             let blocked_on_dead = self.processes[i].state == State::Blocked
-                && self.processes[i].ipc_state == crate::process::IpcState::BlockedOnReply
+                && self.processes[i].ipc_state == crate::ordo::process::IpcState::BlockedOnReply
                 && self.processes[i].waiting_pid == Some(pid);
             if blocked_on_dead {
                 let p = &mut self.processes[i];
-                p.ipc_state = crate::process::IpcState::None;
+                p.ipc_state = crate::ordo::process::IpcState::None;
                 p.waiting_pid = None;
                 p.reply_slot = None;
                 p.state = State::Ready;
@@ -301,12 +301,12 @@ impl Scheduler {
             (p.die_peers, p.die_peer_count, name_buf(p), p.stack_base, p.cr3, p.exit_code, p.tss_slot, p.text_id)
         };
 
-        crate::phys_mem::free_contiguous(stack_base, crate::process::STACK_FRAMES);
+        crate::arc::phys_mem::free_contiguous(stack_base, crate::ordo::process::STACK_FRAMES);
         crate::gdt::free_tss_slot(tss_slot);
 
-        let is_user = cr3 != crate::vmm_user::kernel_cr3();
+        let is_user = cr3 != crate::arc::vmm_user::kernel_cr3();
         if is_user {
-            unsafe { crate::vmm_user::teardown_user_space(cr3, pid) };
+            unsafe { crate::arc::vmm_user::teardown_user_space(cr3, pid) };
         }
         // Fase 32: rilascia la text image condivisa DOPO il teardown (il walk
         // non libera le foglie non-owned; a refcount 0 i frame sono liberati).
@@ -327,7 +327,7 @@ impl Scheduler {
             {
                 continue;
             }
-            let msg = crate::process::PendingMsg {
+            let msg = crate::ordo::process::PendingMsg {
                 channel: chan_u32 as usize,
                 req_id: 0,
                 tag: syscall_numbers::EXIT_NOTIFY,
@@ -336,9 +336,9 @@ impl Scheduler {
             };
             if self.processes[peer].msg_queue.try_push(msg) {
                 if self.processes[peer].ipc_state
-                    == crate::process::IpcState::BlockedOnRecv
+                    == crate::ordo::process::IpcState::BlockedOnRecv
                 {
-                    self.processes[peer].ipc_state = crate::process::IpcState::None;
+                    self.processes[peer].ipc_state = crate::ordo::process::IpcState::None;
                     self.processes[peer].state = State::Ready;
                     self.set_ready(peer);
                 }
@@ -359,7 +359,7 @@ impl Scheduler {
             name_str_of(&name),
             pid,
             if is_user { " (addr space)" } else { "" },
-            crate::phys_mem::free_frames()
+            crate::arc::phys_mem::free_frames()
         );
     }
 }

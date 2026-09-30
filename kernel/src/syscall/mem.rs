@@ -21,7 +21,7 @@ pub(super) fn sys_mmap(hint: u64, len: usize, prot: u64, flags: u64) -> i64 {
         return -1; // FIXED senza hint non ha senso
     }
     let cur = current_id() as usize;
-    match crate::vmm_user::vma_map(cur, hint, len as u64, fixed, prot as u8, 0) {
+    match crate::arc::vmm_user::vma_map(cur, hint, len as u64, fixed, prot as u8, 0) {
         Some(base) => base as i64,
         None => -1,
     }
@@ -30,7 +30,7 @@ pub(super) fn sys_mmap(hint: u64, len: usize, prot: u64, flags: u64) -> i64 {
 /// shm_create(len): crea una regione di memoria condivisa (Fase 30) di `len`
 /// byte (frame contigui azzerati, max 256 KiB), ritorna l'id (>= 1) o -1.
 pub(super) fn sys_shm_create(len: u64) -> i64 {
-    match crate::vmm_user::shm_create(len) {
+    match crate::arc::vmm_user::shm_create(len) {
         Some(id) => id as i64,
         None => -1,
     }
@@ -67,7 +67,7 @@ pub(super) fn sys_shm_map(id: u64, hint: u64, prot: u64, flags: u64) -> i64 {
         return -1;
     }
     let fixed = flags & MMAP_FIXED != 0;
-    let (phys, frames) = match crate::vmm_user::shm_region(id) {
+    let (phys, frames) = match crate::arc::vmm_user::shm_region(id) {
         Some(r) => r,
         None => return -1,
     };
@@ -82,33 +82,33 @@ pub(super) fn sys_shm_map(id: u64, hint: u64, prot: u64, flags: u64) -> i64 {
     // la VMA o mappare: nessun cambio di stato, nessun rollback.
     if cow {
         for i in 0..frames {
-            if !crate::phys_mem::ref_available(phys + i * 0x1000) {
+            if !crate::arc::phys_mem::ref_available(phys + i * 0x1000) {
                 return -1;
             }
         }
     }
     // `id` (1..=16) entra nel campo shm (u8) del record VMA.
-    let base = match crate::vmm_user::vma_map(cur, hint, len, fixed, prot as u8, id as u8) {
+    let base = match crate::arc::vmm_user::vma_map(cur, hint, len, fixed, prot as u8, id as u8) {
         Some(b) => b,
         None => return -1,
     };
     if cow {
         for i in 0..frames {
-            assert!(crate::phys_mem::ref_inc(phys + i * 0x1000));
+            assert!(crate::arc::phys_mem::ref_inc(phys + i * 0x1000));
         }
         unsafe {
-            crate::vmm_user::map_user_region_cow(cr3, base, phys, frames as usize);
+            crate::arc::vmm_user::map_user_region_cow(cr3, base, phys, frames as usize);
         }
     } else {
         let writable = prot & PROT_WRITE != 0;
         unsafe {
-            crate::vmm_user::map_user_region_shared(cr3, base, phys, frames as usize, writable);
+            crate::arc::vmm_user::map_user_region_shared(cr3, base, phys, frames as usize, writable);
         }
     }
     for i in 0..frames {
-        crate::vmm_user::flush_page(base + i * 0x1000);
+        crate::arc::vmm_user::flush_page(base + i * 0x1000);
     }
-    crate::vmm_user::shm_ref(id);
+    crate::arc::vmm_user::shm_ref(id);
     base as i64
 }
 
@@ -127,7 +127,7 @@ pub(super) fn sys_mprotect(addr: u64, len: usize, prot: u64) -> i64 {
         return -1; // cr3 non impostata
     }
     let cur = current_id() as usize;
-    if crate::vmm_user::vma_protect(cur, cr3, addr, len as u64, prot as u8) {
+    if crate::arc::vmm_user::vma_protect(cur, cr3, addr, len as u64, prot as u8) {
         0
     } else {
         -1
@@ -141,7 +141,7 @@ pub(super) fn sys_munmap(addr: u64, len: usize) -> i64 {
         return -1; // cr3 non impostata
     }
     let cur = current_id() as usize;
-    if crate::vmm_user::vma_unmap(cur, cr3, addr, len as u64) {
+    if crate::arc::vmm_user::vma_unmap(cur, cr3, addr, len as u64) {
         0
     } else {
         -1
@@ -164,7 +164,7 @@ fn is_mappable_phys(phys: u64) -> bool {
     if phys >= test_start && phys < test_end {
         return true;
     }
-    crate::vmm_user::is_ring_page(phys)
+    crate::arc::vmm_user::is_ring_page(phys)
 }
 
 /// map_physical(phys_addr, virt_addr, count): mappa `count` pagine fisiche
@@ -180,7 +180,7 @@ pub(super) fn sys_map_physical(phys_addr: u64, virt_addr: u64, count: usize) -> 
     if phys_addr & (PAGE_SIZE - 1) != 0 {
         return -1; // phys_addr non allineato a pagina
     }
-    if virt_addr < crate::vmm_user::USER_BASE {
+    if virt_addr < crate::arc::vmm_user::USER_BASE {
         return -1; // virt_addr fuori spazio user
     }
     if count == 0 || count > MAX_PAGES {
@@ -202,13 +202,13 @@ pub(super) fn sys_map_physical(phys_addr: u64, virt_addr: u64, count: usize) -> 
         return -1; // cr3 non impostata
     }
     unsafe {
-        crate::vmm_user::map_user_region(cr3, virt_addr, phys_addr, count);
+        crate::arc::vmm_user::map_user_region(cr3, virt_addr, phys_addr, count);
     }
     // La PTE puo' gia' esistere (es. userfs rimappa la finestra FS a ogni
     // client): invalida la TLB perche' il processo continua a girare dopo la
     // syscall e non deve riusare la traduzione vecchia.
     for i in 0..count {
-        crate::vmm_user::flush_page(virt_addr + (i as u64) * PAGE_SIZE);
+        crate::arc::vmm_user::flush_page(virt_addr + (i as u64) * PAGE_SIZE);
     }
     0
 }
@@ -222,7 +222,7 @@ pub(super) fn sys_map_physical(phys_addr: u64, virt_addr: u64, count: usize) -> 
 pub(super) fn sys_sbrk(inc: u64) -> i64 {
     const PAGE: u64 = 0x1000;
     let cur = current_id() as usize;
-    let old = crate::vmm_user::heap_brk(cur);
+    let old = crate::arc::vmm_user::heap_brk(cur);
     if inc == 0 {
         return old as i64;
     }
@@ -232,11 +232,11 @@ pub(super) fn sys_sbrk(inc: u64) -> i64 {
         Some(v) => v,
         None => return -1,
     };
-    if new > crate::vmm_user::USER_HEAP_LIMIT {
+    if new > crate::arc::vmm_user::USER_HEAP_LIMIT {
         return -1;
     }
 
-    crate::vmm_user::set_heap_brk(cur, new);
+    crate::arc::vmm_user::set_heap_brk(cur, new);
     old as i64
 }
 
@@ -257,7 +257,7 @@ pub(super) fn sys_sbrk(inc: u64) -> i64 {
 /// record a teardown (`free_ring_pages`), mai double-free col walk owned.
 pub(super) fn sys_ring_alloc() -> i64 {
     let cur = current_id() as usize;
-    let (req_phys, resp_phys) = match crate::vmm_user::alloc_ring_pages(cur) {
+    let (req_phys, resp_phys) = match crate::arc::vmm_user::alloc_ring_pages(cur) {
         Some(p) => p,
         None => {
             crate::serial_println!("[syscall] ring_alloc: oom");
@@ -269,13 +269,13 @@ pub(super) fn sys_ring_alloc() -> i64 {
         return -1;
     }
     unsafe {
-        crate::vmm_user::map_user_region(cr3, crate::vmm_user::USER_FS_BUFFER, req_phys, 1);
-        crate::vmm_user::map_user_region(cr3, crate::vmm_user::USER_RESP_RING, resp_phys, 1);
+        crate::arc::vmm_user::map_user_region(cr3, crate::arc::vmm_user::USER_FS_BUFFER, req_phys, 1);
+        crate::arc::vmm_user::map_user_region(cr3, crate::arc::vmm_user::USER_RESP_RING, resp_phys, 1);
     }
-    crate::vmm_user::flush_page(crate::vmm_user::USER_FS_BUFFER);
-    crate::vmm_user::flush_page(crate::vmm_user::USER_RESP_RING);
+    crate::arc::vmm_user::flush_page(crate::arc::vmm_user::USER_FS_BUFFER);
+    crate::arc::vmm_user::flush_page(crate::arc::vmm_user::USER_RESP_RING);
     // Restituiamo entrambi gli indirizzi fisici via IpcResult.
-    apply_ipc(crate::sched::IpcResult { rax: req_phys as i64, rdi: resp_phys, rsi: 0, rdx: 0, r10: 0 })
+    apply_ipc(crate::ordo::sched::IpcResult { rax: req_phys as i64, rdi: resp_phys, rsi: 0, rdx: 0, r10: 0 })
 }
 
 // ── Staging DMA per-processo (Fase 38.1) ─────────────────────────
@@ -294,7 +294,7 @@ pub(super) fn sys_dma_alloc(pages: usize) -> i64 {
     if cr3 == 0 {
         return -1; // cr3 non impostata (prima di allocare: mai record orfani)
     }
-    let (phys, n) = match crate::vmm_user::alloc_dma_pages(cur, pages) {
+    let (phys, n) = match crate::arc::vmm_user::alloc_dma_pages(cur, pages) {
         Some(p) => p,
         None => {
             crate::serial_println!("[syscall] dma_alloc: oom/busy/range");
@@ -302,12 +302,12 @@ pub(super) fn sys_dma_alloc(pages: usize) -> i64 {
         }
     };
     unsafe {
-        crate::vmm_user::map_user_region(cr3, crate::vmm_user::USER_DMA_VA, phys, n);
+        crate::arc::vmm_user::map_user_region(cr3, crate::arc::vmm_user::USER_DMA_VA, phys, n);
     }
     for i in 0..n {
-        crate::vmm_user::flush_page(crate::vmm_user::USER_DMA_VA + (i as u64) * 4096);
+        crate::arc::vmm_user::flush_page(crate::arc::vmm_user::USER_DMA_VA + (i as u64) * 4096);
     }
-    apply_ipc(crate::sched::IpcResult { rax: phys as i64, rdi: n as u64, rsi: 0, rdx: 0, r10: 0 })
+    apply_ipc(crate::ordo::sched::IpcResult { rax: phys as i64, rdi: n as u64, rsi: 0, rdx: 0, r10: 0 })
 }
 
 /// map_in(chan, phys, virt, count): mappa `count` pagine fisiche a partire da
@@ -324,7 +324,7 @@ pub(super) fn sys_map_in(chan: usize, phys: u64, virt_addr: u64, count: usize) -
     if phys & (PAGE_SIZE - 1) != 0 {
         return -1;
     }
-    if virt_addr < crate::vmm_user::USER_BASE {
+    if virt_addr < crate::arc::vmm_user::USER_BASE {
         return -1;
     }
     if count == 0 || count > MAX_PAGES {
@@ -333,7 +333,7 @@ pub(super) fn sys_map_in(chan: usize, phys: u64, virt_addr: u64, count: usize) -
     // Fase 35: `map_in` inietta solo ring page (il data-plane FS); mai RAM
     // arbitraria nello spazio di un altro processo.
     for i in 0..count {
-        if !crate::vmm_user::is_ring_page(phys + (i as u64) * PAGE_SIZE) {
+        if !crate::arc::vmm_user::is_ring_page(phys + (i as u64) * PAGE_SIZE) {
             crate::serial_println!(
                 "[syscall] map_in: frame non-ring {:#x} rifiutato",
                 phys + (i as u64) * PAGE_SIZE
@@ -345,26 +345,26 @@ pub(super) fn sys_map_in(chan: usize, phys: u64, virt_addr: u64, count: usize) -
     // (page table propria). Channel 0 = canale di nascita.
     let me = current_id() as usize;
     let real = if chan == syscall_numbers::CHANNEL_PARENT as usize {
-        crate::sched::parent_channel(me)
+        crate::ordo::sched::parent_channel(me)
     } else {
         Some(chan)
     };
-    let target_pid = match real.and_then(|c| crate::channels::peer(c, me)) {
+    let target_pid = match real.and_then(|c| crate::relay::channels::peer(c, me)) {
         Some(p) => p,
         None => return -1,
     };
-    let cr3 = match crate::sched::process_cr3(target_pid) {
-        Some(cr3) if cr3 != crate::vmm_user::kernel_cr3() => cr3,
+    let cr3 = match crate::ordo::sched::process_cr3(target_pid) {
+        Some(cr3) if cr3 != crate::arc::vmm_user::kernel_cr3() => cr3,
         _ => {
             crate::serial_println!("[syscall] map_in: peer {} non e' un processo user", target_pid);
             return -1;
         }
     };
     unsafe {
-        crate::vmm_user::map_user_region(cr3, virt_addr, phys, count);
+        crate::arc::vmm_user::map_user_region(cr3, virt_addr, phys, count);
     }
     for i in 0..count {
-        crate::vmm_user::flush_page(virt_addr + (i as u64) * PAGE_SIZE);
+        crate::arc::vmm_user::flush_page(virt_addr + (i as u64) * PAGE_SIZE);
     }
     0
 }

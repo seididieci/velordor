@@ -102,9 +102,9 @@ pub fn peer(id: usize, me: usize) -> Option<usize> {
 /// distinti (bound provabile: PID diversi da se' con max 32 concorrenti).
 /// Da chiamare in `terminate` PRIMA di `release_pid`; non prende altri lock
 /// oltre CHANNELS (sicuro con SCHED held: ordine SCHED→CHANNELS stabilito).
-pub fn enumerate_peers(pid: usize) -> ([(u32, u32); crate::process::MAX_NOTIFY_PEERS], usize) {
+pub fn enumerate_peers(pid: usize) -> ([(u32, u32); crate::ordo::process::MAX_NOTIFY_PEERS], usize) {
     let pool = CHANNELS.lock();
-    let mut out = [(0u32, 0u32); crate::process::MAX_NOTIFY_PEERS];
+    let mut out = [(0u32, 0u32); crate::ordo::process::MAX_NOTIFY_PEERS];
     let mut n = 0usize;
     for (id, slot) in pool.iter().enumerate() {
         let Some(ch) = slot else { continue };
@@ -170,7 +170,7 @@ pub fn register(service: Service, pid: usize) -> Result<(), ()> {
     let slot = &mut owners[service as usize];
     if *slot != 0 {
         // Occupato da un processo ancora vivo?
-        if crate::sched::process_state(*slot).is_some() {
+        if crate::ordo::sched::process_state(*slot).is_some() {
             return Err(());
         }
     }
@@ -183,7 +183,7 @@ pub fn lookup(service: Service) -> Option<usize> {
     let owners = SERVICE_OWNER.lock();
     let pid = owners[service as usize];
     if pid != 0 {
-        crate::sched::process_state(pid).is_some().then_some(pid)
+        crate::ordo::sched::process_state(pid).is_some().then_some(pid)
     } else {
         None
     }

@@ -31,7 +31,7 @@ pub fn shm_create(len: u64) -> Option<u32> {
     if frames == 0 || frames > SHM_MAX_FRAMES {
         return None;
     }
-    let phys = crate::phys_mem::alloc_contiguous(frames)?;
+    let phys = crate::arc::phys_mem::alloc_contiguous(frames)?;
     unsafe {
         core::ptr::write_bytes(
             crate::addr::phys_to_virt(phys) as *mut u8,
@@ -46,7 +46,7 @@ pub fn shm_create(len: u64) -> Option<u32> {
             return Some(i as u32 + 1);
         }
     }
-    crate::phys_mem::free_contiguous(phys, frames);
+    crate::arc::phys_mem::free_contiguous(phys, frames);
     None
 }
 
@@ -87,7 +87,7 @@ pub fn shm_release(id: u32) {
     }
     let refs = e.2.saturating_sub(1);
     if refs == 0 {
-        crate::phys_mem::deref_contiguous(e.0, e.1 as usize);
+        crate::arc::phys_mem::deref_contiguous(e.0, e.1 as usize);
         unsafe { *core::ptr::addr_of_mut!(SHM_TABLE[idx]) = (0, 0, 0); }
     } else {
         unsafe { *core::ptr::addr_of_mut!(SHM_TABLE[idx].2) = refs; }

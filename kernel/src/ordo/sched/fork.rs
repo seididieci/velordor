@@ -10,7 +10,7 @@
 //! stack / TSS esaurito). Fallimento = `-1` al chiamante, padre intatto (le
 //! pagine gia' COW-izzate si privatizzano al write).
 
-use crate::process::{Process, STACK_FRAMES};
+use crate::ordo::process::{Process, STACK_FRAMES};
 use super::ctx::SCHED;
 use super::queue::Scheduler;
 use crate::syscall::{
@@ -29,7 +29,7 @@ pub fn fork_current() -> Option<(usize, usize)> {
 
     let child_pid = sched.alloc_pid()?;
     // Canale di nascita PER PRIMO: fallisce → solo release pid, nessuno stato.
-    let chan = match crate::channels::alloc(parent_pid, child_pid) {
+    let chan = match crate::relay::channels::alloc(parent_pid, child_pid) {
         Some(c) => c,
         None => {
             sched.release_pid(child_pid);
@@ -49,38 +49,38 @@ pub fn fork_current() -> Option<(usize, usize)> {
             p.name,
             p.name_owned,
             p.name_len,
-            crate::vmm_user::heap_brk(parent_pid),
+            crate::arc::vmm_user::heap_brk(parent_pid),
         )
     };
     // Solo processi user forkabili (cr3 propria, mai quella kernel).
-    if p_cr3 == crate::vmm_user::kernel_cr3() {
-        crate::channels::release_pid(child_pid);
+    if p_cr3 == crate::arc::vmm_user::kernel_cr3() {
+        crate::relay::channels::release_pid(child_pid);
         sched.release_pid(child_pid);
         return None;
     }
 
     // Address space figlio + walk COW (puo' fallire OOM → unwind).
-    let child_cr3 = match crate::vmm_user::new_address_space() {
+    let child_cr3 = match crate::arc::vmm_user::new_address_space() {
         Some(c) => c,
         None => {
             unwind(sched, child_pid, None, None, None);
             return None;
         }
     };
-    if !crate::vmm_user::fork_share(p_cr3, child_cr3) {
+    if !crate::arc::vmm_user::fork_share(p_cr3, child_cr3) {
         unwind(sched, child_pid, Some(child_cr3), None, None);
         return None;
     }
 
     // Kernel stack figlio (PHYS base per teardown, VIRT top per RSP0/frame).
-    let stack_base = match crate::phys_mem::alloc_contiguous(STACK_FRAMES) {
+    let stack_base = match crate::arc::phys_mem::alloc_contiguous(STACK_FRAMES) {
         Some(b) => b,
         None => {
             unwind(sched, child_pid, Some(child_cr3), None, None);
             return None;
         }
     };
-    let stack_top = crate::addr::phys_to_virt(stack_base + (STACK_FRAMES as u64 * crate::phys_mem::FRAME_SIZE));
+    let stack_top = crate::addr::phys_to_virt(stack_base + (STACK_FRAMES as u64 * crate::arc::phys_mem::FRAME_SIZE));
 
     // TSS figlio, bitmap I/O VUOTA (34: nessuna porta ereditata).
     let tss_slot = match Process::alloc_tss(stack_top, &[]) {
@@ -116,7 +116,7 @@ pub fn fork_current() -> Option<(usize, usize)> {
         cp(72, SAVED_USER_R12);
         cp(80, SAVED_USER_RSP);
         let rd = |soff: u64| core::ptr::read((src - soff) as *const u64);
-        crate::context::CpuContext {
+        crate::ordo::context::CpuContext {
             rbx: rd(SAVED_RBX),
             rbp: rd(SAVED_RBP),
             r12: 0, // scartato: fork_child_exit fa pop r12 dallo stack finto
@@ -127,8 +127,8 @@ pub fn fork_current() -> Option<(usize, usize)> {
         }
     };
     // Record per-processo (infallibili da qui in poi: nessun unwind).
-    crate::vmm_user::vma_clone(parent_pid, child_pid);
-    crate::vmm_user::set_heap_brk(child_pid, p_brk);
+    crate::arc::vmm_user::vma_clone(parent_pid, child_pid);
+    crate::arc::vmm_user::set_heap_brk(child_pid, p_brk);
     if p_text != 0 {
         crate::text::add_ref(p_text);
     }
@@ -158,14 +158,14 @@ fn unwind(
     tss_slot: Option<usize>,
 ) {
     if let Some(cr3) = child_cr3 {
-        unsafe { crate::vmm_user::teardown_user_space(cr3, child_pid) };
+        unsafe { crate::arc::vmm_user::teardown_user_space(cr3, child_pid) };
     }
     if let Some(b) = stack_base {
-        crate::phys_mem::free_contiguous(b, STACK_FRAMES);
+        crate::arc::phys_mem::free_contiguous(b, STACK_FRAMES);
     }
     if let Some(s) = tss_slot {
         crate::gdt::free_tss_slot(s);
     }
-    crate::channels::release_pid(child_pid);
+    crate::relay::channels::release_pid(child_pid);
     sched.release_pid(child_pid);
 }

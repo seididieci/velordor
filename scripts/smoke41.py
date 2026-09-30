@@ -15,7 +15,7 @@ Uso: python3 scripts/smoke41.py [--probe-only]
 """
 import socket, subprocess, sys, time, os, re
 
-KERNEL = "target/x86_64-unknown-none/release/velordor-kernel"
+KERNEL = "target/x86_64-unknown-none/release/velord"
 SERIAL = "/tmp/velordor-smoke41-serial.log"
 MON = "/tmp/velordor-smoke41-mon.sock"
 FAT = "userland/fs/fat.img"

@@ -6,31 +6,22 @@
 extern crate alloc;
 
 mod addr;
+mod arc;
 mod boot_info;
 mod boot_tables;
-mod channels;
-mod context;
 mod elf;
 mod gdt;
-mod heap;
 mod idle;
 mod interrupts;
+mod ordo;
 mod pic;
-mod phys_mem;
 mod pit;
-mod process;
-// Scheduler unico: RT a 32 priorita' + CBS (Fase 11). Il file mantiene il nome
-// `sched_rt.rs`; esposto come `crate::sched` per i chiamanti.
-#[path = "sched_rt.rs"]
-mod sched;
-mod cbs;
+mod relay;
 mod serial;
 mod syscall;
 mod text;
 mod user_binary;
 mod vga;
-mod vmm;
-mod vmm_user;
 
 use boot_info::HVM_START_MAGIC;
 use core::panic::PanicInfo;
@@ -90,7 +81,7 @@ pub extern "C" fn rust_main(boot_info_phys: u64) -> ! {
     // un NULL-deref faulta invece di leggere spazzatura (lo stack e' gia'
     // alto dallo stub; nessun processo user esiste ancora, quindi nessun
     // walk sui PML4 vivi — i futuri ereditano il PML4 pulito).
-    vmm::unmap_low();
+    arc::vmm::unmap_low();
     serial_println!("[boot] low unmapped: solo alto + direct map");
 
     gdt::init();
@@ -127,8 +118,8 @@ pub extern "C" fn rust_main(boot_info_phys: u64) -> ! {
     serial_println!("[boot] max_addr RAM: {:#x} ({} MiB)", max_addr, max_addr / (1024 * 1024));
 
     // Fase 4 + 27: direct map 64G (verificata) → frame allocator → heap
-    vmm::init(max_addr);
-    vmm_user::init();
+    arc::vmm::init(max_addr);
+    arc::vmm_user::init();
 
     unsafe extern "C" {
         static _kernel_start: u8;
@@ -137,34 +128,34 @@ pub extern "C" fn rust_main(boot_info_phys: u64) -> ! {
     let kernel_start = unsafe { &_kernel_start as *const u8 as u64 };
     let kernel_end = unsafe { &_kernel_end as *const u8 as u64 };
 
-    phys_mem::init(memmap, kernel_start, kernel_end);
+    arc::phys_mem::init(memmap, kernel_start, kernel_end);
 
     // Riserva la regione del kernel heap NEL frame allocator: se non la si
     // marca "used", i frame che la compongono verrebbero dati ai processi e
     // sovrascriverebbero la free-list dell'heap (corruzione).
     {
-        let hs = phys_mem::bitmap_end();
-        phys_mem::reserve(crate::addr::virt_to_phys(hs), crate::heap::HEAP_SIZE as u64);
+        let hs = arc::phys_mem::bitmap_end();
+        arc::phys_mem::reserve(crate::addr::virt_to_phys(hs), crate::arc::heap::HEAP_SIZE as u64);
     }
 
     // Pagina fisica scratch per i test userspace di `map_physical`
     // (usertests, testland): riservata qui cosi' il frame allocator non la
     // assegna a nessun processo.
     {
-        phys_mem::reserve(syscall_numbers::MAP_TEST_PHYS, syscall_numbers::MAP_TEST_FRAMES * 4096);
+        arc::phys_mem::reserve(syscall_numbers::MAP_TEST_PHYS, syscall_numbers::MAP_TEST_FRAMES * 4096);
     }
 
     // Heap: subito dopo bitmap + kernel
-    let heap_start = phys_mem::bitmap_end();
-    heap::init(heap_start);
+    let heap_start = arc::phys_mem::bitmap_end();
+    arc::heap::init(heap_start);
 
     // Fase 5 step 2: scheduler preemptive con context switch reale.
-    sched::init();
+    ordo::sched::init();
     // Ordine spawn = ordine PID: idle=0, init=1 (Linux convention). Gli altri
     // processi user sono spaw da init. I processi kernel non hanno canale di
     // nascita (parent_chan=None, ADR-0008). (Fase 15: il processo `keyboard`
     // e' stato eliminato — il driver PS/2 vive in userspace come `userkbd`.)
-    sched::spawn("idle", sched::Priority::Idle, idle::idle, None, None);
+    ordo::sched::spawn("idle", ordo::sched::Priority::Idle, idle::idle, None, None);
 
     // Fase 8.1: init, primo processo user (PID 1), antenato dei servizi
     // che poi creera' via syscall `spawn`.
@@ -221,20 +212,20 @@ fn selftests() {
     drop(v);
     serial_println!("[test] alloc ok");
 
-    serial_println!("[test] frame alloc: liberi prima = {}", phys_mem::free_frames());
-    let f1 = phys_mem::alloc().expect("frame alloc fallito");
-    let f2 = phys_mem::alloc().expect("frame alloc fallito");
+    serial_println!("[test] frame alloc: liberi prima = {}", arc::phys_mem::free_frames());
+    let f1 = arc::phys_mem::alloc().expect("frame alloc fallito");
+    let f2 = arc::phys_mem::alloc().expect("frame alloc fallito");
     assert_ne!(f1, f2, "allocatore ha restituito due volte la stessa frame");
-    assert!(f1 < vmm::mapped_max() && f2 < vmm::mapped_max());
+    assert!(f1 < arc::vmm::mapped_max() && f2 < arc::vmm::mapped_max());
     serial_println!(
         "[test] frame {} e {} allocati, liberi dopo = {}, usati = {}",
         f1, f2,
-        phys_mem::free_frames(),
-        phys_mem::used_frames()
+        arc::phys_mem::free_frames(),
+        arc::phys_mem::used_frames()
     );
-    phys_mem::free(f1);
-    phys_mem::free(f2);
-    serial_println!("[test] frame liberati, liberi di nuovo = {}", phys_mem::free_frames());
+    arc::phys_mem::free(f1);
+    arc::phys_mem::free(f2);
+    serial_println!("[test] frame liberati, liberi di nuovo = {}", arc::phys_mem::free_frames());
     serial_println!("[test] frame alloc ok");
 }
 

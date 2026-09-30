@@ -309,7 +309,7 @@ unsafe fn unmap_user_range(cr3: u64, vaddr: u64, count: usize) {
                     let e = unsafe { raw_entry(l3, pt_index(addr)) };
                     if e & PTE_PRESENT != 0 {
                         if e & USER_OWNED != 0 {
-                            crate::phys_mem::deref(PTE_ADDR_MASK & e);
+                            crate::arc::phys_mem::deref(PTE_ADDR_MASK & e);
                         }
                         unsafe { set_entry(l3, pt_index(addr), 0); }
                         flush_page(addr);

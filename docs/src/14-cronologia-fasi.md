@@ -1869,3 +1869,13 @@
           ogni coppia sulle stesse VA fisse — "una coppia in piu'" non e'
           mai gratis. Gate: 5/5 + 7/7 + 40/40 + 58/58, zero FAIL/PANIC/FAULT;
           boot produzione pulito. Prossimo: 58+ (A3 quota/subvolumi, ...).
+    - [x] R1 (rename a fasi, ADR-0040): kernel in `ordo/` (`sched`+`aegis`+
+          `process`+`context`), `relay/` (`channels`), `arc/` (`phys_mem`+
+          `heap`+`vmm`+`vmm_user`) con facade sottili; package
+          `velordor-kernel` → `velord` (run.sh, harness, AGENTS). Solo
+          spostamenti + path `crate::` (unita' file+dir mosse intere: i path
+          interni restano validi; `#[path]` rimosso), zero comportamento.
+          Bug di rotta: `#[path = "sched_rt/..."]` ereditato puntava alla
+          vecchia dir (fix: attributi rimossi, resolve naturale). Gate: 5/5 +
+          7/7 + 40/40 + 58/58, zero FAIL/PANIC/FAULT. Docs ai nuovi nomi in
+          R-final (questa voce + ADR-0040 fanno fede nel mentre).

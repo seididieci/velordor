@@ -2,27 +2,18 @@
 //!
 //! 32 livelli di priorita' (0 = idle, 31 = massima) con run queue per-priorita'
 //! O(1) tramite bitmask `u32` + `leading_zeros()`, piu' Constant Bandwidth
-//! Server (`cbs.rs`) per la bandwidth reservation. Esposto come `crate::sched`
-//! (vedi main.rs): i chiamanti (main/syscall/user_binary/process) usano
-//! `crate::sched::*` senza conoscere i dettagli RT.
+//! Server (`ordo::aegis`) per la bandwidth reservation. Esposto come
+//! `crate::ordo::sched` (vedi `ordo.rs`): i chiamanti usano quel path senza
+//! conoscere i dettagli RT.
 
-#[path = "sched_rt/queue.rs"]
 mod queue;
-#[path = "sched_rt/spawn.rs"]
 mod spawn;
-#[path = "sched_rt/tick.rs"]
 mod tick;
-#[path = "sched_rt/ipc.rs"]
 mod ipc;
-#[path = "sched_rt/ps.rs"]
 mod ps;
-#[path = "sched_rt/lifecycle.rs"]
 mod lifecycle;
-#[path = "sched_rt/ctx.rs"]
 mod ctx;
-#[path = "sched_rt/fork.rs"]
 mod fork;
-#[path = "sched_rt/exec.rs"]
 mod exec;
 
 pub use spawn::{init, spawn, create_user};

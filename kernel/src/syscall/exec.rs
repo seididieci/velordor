@@ -18,8 +18,8 @@ pub(super) fn sys_exec(img_ptr: u64, img_len: usize, args_ptr: u64, args_len: us
     if args_len as u64 > syscall_numbers::ARGS_MAX + 8 {
         return -1;
     }
-    if !crate::vmm_user::is_user_range(img_ptr, img_len)
-        || (args_len > 0 && !crate::vmm_user::is_user_range(args_ptr, args_len))
+    if !crate::arc::vmm_user::is_user_range(img_ptr, img_len)
+        || (args_len > 0 && !crate::arc::vmm_user::is_user_range(args_ptr, args_len))
     {
         crate::serial_println!("[syscall] exec: fuori dallo spazio user");
         return -1;
@@ -35,7 +35,7 @@ pub(super) fn sys_exec(img_ptr: u64, img_len: usize, args_ptr: u64, args_len: us
             unsafe { core::slice::from_raw_parts(args_ptr as *const u8, args_len) };
         Some(asrc.to_vec())
     };
-    match crate::sched::exec_current(&owned, args.as_deref()) {
+    match crate::ordo::sched::exec_current(&owned, args.as_deref()) {
         Ok(()) => 0,
         Err(()) => -1,
     }

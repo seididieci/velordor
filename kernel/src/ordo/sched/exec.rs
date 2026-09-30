@@ -146,7 +146,7 @@ pub fn exec_current(bytes: &[u8], args_block: Option<&[u8]>) -> Result<(), ()> {
     let (cr3, top, slot, old_text) = {
         let p = &sched.processes[me];
         // Solo processi user (CR3 propria, mai quella kernel).
-        if p.cr3 == crate::vmm_user::kernel_cr3() {
+        if p.cr3 == crate::arc::vmm_user::kernel_cr3() {
             return Err(());
         }
         (p.cr3, p.kernel_stack_top, p.tss_slot, p.text_id)
@@ -154,7 +154,7 @@ pub fn exec_current(bytes: &[u8], args_block: Option<&[u8]>) -> Result<(), ()> {
 
     // 2. Svuota la meta' user TENENDO il PML4 (stesso CR3, meta' kernel
     // intatta), poi TLB flush (entry vecchie stale sullo stesso CR3).
-    unsafe { crate::vmm_user::exec_clear_user(cr3); }
+    unsafe { crate::arc::vmm_user::exec_clear_user(cr3); }
     unsafe {
         let (frame, flags) = x86_64::registers::control::Cr3::read();
         x86_64::registers::control::Cr3::write(frame, flags);
@@ -162,10 +162,10 @@ pub fn exec_current(bytes: &[u8], args_block: Option<&[u8]>) -> Result<(), ()> {
     // 3. Reset bookkeeping: heap, VMA (+ref shm rilasciati), ring (i frame
     // verranno riallocati al primo handshake lazy), staging DMA (38.1: la
     // nuova immagine rialloca se serve), text image vecchia.
-    crate::vmm_user::set_heap_brk(me, 0);
-    crate::vmm_user::vma_clear(me);
-    crate::vmm_user::free_ring_pages(me);
-    crate::vmm_user::free_dma_pages(me);
+    crate::arc::vmm_user::set_heap_brk(me, 0);
+    crate::arc::vmm_user::vma_clear(me);
+    crate::arc::vmm_user::free_ring_pages(me);
+    crate::arc::vmm_user::free_dma_pages(me);
     if old_text != 0 {
         crate::text::release(old_text);
     }
@@ -175,12 +175,12 @@ pub fn exec_current(bytes: &[u8], args_block: Option<&[u8]>) -> Result<(), ()> {
     // `setup_user_stack` mappa e basta (le 3 parole argc=0 che scrive per lo
     // spawn vengono sovrascritte qui sotto: il layout parte da USER_STACK_TOP).
     let new_text = unsafe { crate::elf::load(cr3, bytes, &layout) };
-    let _ = unsafe { crate::vmm_user::setup_user_stack(cr3) };
+    let _ = unsafe { crate::arc::vmm_user::setup_user_stack(cr3) };
     let new_rsp = match &parsed {
-        Some(p) => unsafe { layout_argv(crate::vmm_user::USER_STACK_TOP, p) },
+        Some(p) => unsafe { layout_argv(crate::arc::vmm_user::USER_STACK_TOP, p) },
         None => unsafe {
             layout_argv(
-                crate::vmm_user::USER_STACK_TOP,
+                crate::arc::vmm_user::USER_STACK_TOP,
                 &ParsedArgs { argc: 0, envc: 0, payload: &[], arg_strs: alloc::vec::Vec::new(), env_strs: alloc::vec::Vec::new() },
             )
         },

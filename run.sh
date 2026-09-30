@@ -47,7 +47,7 @@ if [ "${ARCA_IMG:-0}" = "1" ]; then
     python3 ./scripts/build-arca-gpt.sh
 fi
 
-KERNEL=target/x86_64-unknown-none/release/velordor-kernel
+KERNEL=target/x86_64-unknown-none/release/velord
 DISPLAY="${RUN_DISPLAY:-none}"   # RUN_DISPLAY=gtk per vedere la VGA in locale
 
 # Boot diretto via protocollo PVH (ELF64 + nota XEN_ELFNOTE_PHYS32_ENTRY):

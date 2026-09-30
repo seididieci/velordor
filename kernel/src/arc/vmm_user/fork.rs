@@ -97,7 +97,7 @@ fn fork_pt(parent_cr3: u64, child_cr3: u64, pde: u64, i: usize, j: usize, k: usi
                 if !map_leaf_raw(child_cr3, va, phys, child_flags) {
                     return false; // OOM: niente inc, niente ghost ref
                 }
-                assert!(crate::phys_mem::ref_inc(phys), "fork: refcount saturo");
+                assert!(crate::arc::phys_mem::ref_inc(phys), "fork: refcount saturo");
             }
             None => {
                 match read_leaf(parent_cr3, va) {

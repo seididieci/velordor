@@ -16,7 +16,7 @@ pub(super) fn sys_service_register(service_disc: u64) -> i64 {
     };
     let me = current_id() as usize;
     if service != syscall_numbers::Service::Test {
-        let is_init_child = matches!(crate::sched::process_ps(me), Some(s) if s.parent == Some(1));
+        let is_init_child = matches!(crate::ordo::sched::process_ps(me), Some(s) if s.parent == Some(1));
         if !is_init_child {
             crate::serial_println!(
                 "[svc] register '{}' da pid={} rifiutato (non figlio di init)",
@@ -25,7 +25,7 @@ pub(super) fn sys_service_register(service_disc: u64) -> i64 {
             return -1;
         }
     }
-    match crate::channels::register(service, me) {
+    match crate::relay::channels::register(service, me) {
         Ok(()) => {
             crate::serial_println!(
                 "[svc] '{}' registrato da pid={}",
@@ -45,8 +45,8 @@ pub(super) fn sys_service_lookup(service_disc: u64) -> i64 {
         None => return -1,
     };
     let me = current_id() as usize;
-    match crate::channels::lookup(service) {
-        Some(owner) => match crate::channels::alloc(me, owner) {
+    match crate::relay::channels::lookup(service) {
+        Some(owner) => match crate::relay::channels::alloc(me, owner) {
             Some(chan) => chan as i64,
             None => -1,
         },
@@ -63,7 +63,7 @@ pub(super) fn sys_service_pid(service_disc: u64) -> i64 {
         Some(s) => s,
         None => return -1,
     };
-    match crate::channels::lookup(service) {
+    match crate::relay::channels::lookup(service) {
         Some(owner) => owner as i64,
         None => -1,
     }
@@ -77,14 +77,14 @@ pub(super) fn sys_service_pid(service_disc: u64) -> i64 {
 pub(super) fn sys_peer_pid(chan: usize) -> i64 {
     let me = current_id() as usize;
     let real = if chan == syscall_numbers::CHANNEL_PARENT as usize {
-        match crate::sched::parent_channel(me) {
+        match crate::ordo::sched::parent_channel(me) {
             Some(c) => c,
             None => return -1,
         }
     } else {
         chan
     };
-    match crate::channels::peer(real, me) {
+    match crate::relay::channels::peer(real, me) {
         Some(p) => p as i64,
         None => -1,
     }
@@ -99,18 +99,18 @@ pub(super) fn sys_peer_pid(chan: usize) -> i64 {
 pub(super) fn sys_peer_info(chan: usize) -> i64 {
     let me = current_id() as usize;
     let real = if chan == syscall_numbers::CHANNEL_PARENT as usize {
-        match crate::sched::parent_channel(me) {
+        match crate::ordo::sched::parent_channel(me) {
             Some(c) => c,
             None => return -1,
         }
     } else {
         chan
     };
-    let peer = match crate::channels::peer(real, me) {
+    let peer = match crate::relay::channels::peer(real, me) {
         Some(p) => p,
         None => return -1,
     };
-    match crate::sched::process_image_hash(peer) {
+    match crate::ordo::sched::process_image_hash(peer) {
         Some(h) => {
             unsafe {
                 let p = addr_of_mut!(PERCPU);
@@ -166,9 +166,9 @@ fn service_name(s: syscall_numbers::Service) -> &'static str {
 /// Coda comune di spawn (ADR-0008): canale di nascita tra parent e figlio.
 /// Ritorna il channel id o -1 a pool esaurito (mai panic a boot).
 pub(super) fn finish_spawn(parent: usize, pid: usize, log_name: &str) -> i64 {
-    match crate::channels::alloc(parent, pid) {
+    match crate::relay::channels::alloc(parent, pid) {
         Some(chan) => {
-            crate::sched::set_parent_chan(pid, Some(chan));
+            crate::ordo::sched::set_parent_chan(pid, Some(chan));
             crate::serial_println!("[spawn] '{}' → pid={} canale={}", log_name, pid, chan);
             chan as i64
         }

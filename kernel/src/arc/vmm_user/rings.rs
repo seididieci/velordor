@@ -39,8 +39,8 @@ pub fn alloc_ring_pages(pid: usize) -> Option<(u64, u64)> {
     // (mapping non-owned + nessun record); prima lo erano via walk owned.
     // Accettato: il path non si verifica mai, e semplifica il caso comune.
     if pid >= RING_MAX_PROCS {
-        let req = crate::phys_mem::alloc()?;
-        let resp = crate::phys_mem::alloc()?;
+        let req = crate::arc::phys_mem::alloc()?;
+        let resp = crate::arc::phys_mem::alloc()?;
         unsafe {
             core::ptr::write_bytes(crate::addr::phys_to_virt(req) as *mut u8, 0, 4096);
             core::ptr::write_bytes(crate::addr::phys_to_virt(resp) as *mut u8, 0, 4096);
@@ -58,8 +58,8 @@ pub fn alloc_ring_pages(pid: usize) -> Option<(u64, u64)> {
         }
     }
     let i = slot?;
-    let req = crate::phys_mem::alloc()?;
-    let resp = crate::phys_mem::alloc()?;
+    let req = crate::arc::phys_mem::alloc()?;
+    let resp = crate::arc::phys_mem::alloc()?;
     unsafe {
         core::ptr::write_bytes(crate::addr::phys_to_virt(req) as *mut u8, 0, 4096);
         core::ptr::write_bytes(crate::addr::phys_to_virt(resp) as *mut u8, 0, 4096);
@@ -82,10 +82,10 @@ pub(crate) fn free_ring_pages(pid: usize) {
         let req = unsafe { *core::ptr::addr_of!(RING_PHYS[base + i * 2]) };
         let resp = unsafe { *core::ptr::addr_of!(RING_PHYS[base + i * 2 + 1]) };
         if req != 0 {
-            crate::phys_mem::free(req);
+            crate::arc::phys_mem::free(req);
         }
         if resp != 0 {
-            crate::phys_mem::free(resp);
+            crate::arc::phys_mem::free(resp);
         }
         unsafe {
             *core::ptr::addr_of_mut!(RING_PHYS[base + i * 2]) = 0;

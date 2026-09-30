@@ -23,7 +23,7 @@ pub fn alloc_dma_pages(pid: usize, pages: usize) -> Option<(u64, usize)> {
     if base != 0 {
         return None; // single-slot: gia' allocata
     }
-    let phys = crate::phys_mem::alloc_contiguous(pages)?;
+    let phys = crate::arc::phys_mem::alloc_contiguous(pages)?;
     unsafe {
         core::ptr::write_bytes(crate::addr::phys_to_virt(phys) as *mut u8, 0, pages * 4096);
         *core::ptr::addr_of_mut!(DMA_PHYS[pid]) = (phys, pages as u64);
@@ -40,7 +40,7 @@ pub(crate) fn free_dma_pages(pid: usize) {
     }
     let (base, count) = unsafe { *core::ptr::addr_of!(DMA_PHYS[pid]) };
     if base != 0 {
-        crate::phys_mem::free_contiguous(base, count as usize);
+        crate::arc::phys_mem::free_contiguous(base, count as usize);
         unsafe {
             *core::ptr::addr_of_mut!(DMA_PHYS[pid]) = (0, 0);
         }

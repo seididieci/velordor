@@ -11,7 +11,7 @@ pub(super) fn sys_spawn(name_ptr: u64, name_len: usize) -> i64 {
         return -1;
     }
     // Validazione: il nome deve stare nello spazio user mappato (U=1).
-    if !crate::vmm_user::is_user_range(name_ptr, name_len) {
+    if !crate::arc::vmm_user::is_user_range(name_ptr, name_len) {
         crate::serial_println!("[syscall] spawn: nome fuori dallo spazio user");
         return -1;
     }
@@ -66,8 +66,8 @@ pub(super) fn sys_spawn_image(img_ptr: u64, img_len: usize, meta_ptr: u64, meta_
     if meta_len != core::mem::size_of::<SpawnMeta>() {
         return -1;
     }
-    if !crate::vmm_user::is_user_range(img_ptr, img_len)
-        || !crate::vmm_user::is_user_range(meta_ptr, meta_len)
+    if !crate::arc::vmm_user::is_user_range(img_ptr, img_len)
+        || !crate::arc::vmm_user::is_user_range(meta_ptr, meta_len)
     {
         crate::serial_println!("[syscall] spawn_image: fuori dallo spazio user");
         return -1;
@@ -95,7 +95,7 @@ pub(super) fn sys_spawn_image(img_ptr: u64, img_len: usize, meta_ptr: u64, meta_
         return -1;
     }
     let prio = match meta.prio {
-        1..=31 => crate::sched::Priority(meta.prio),
+        1..=31 => crate::ordo::sched::Priority(meta.prio),
         _ => return -1, // mai 0 (idle) ne' oltre 31
     };
     for (s, e) in meta.io_ranges[..meta.io_count as usize].iter() {
@@ -131,8 +131,8 @@ pub(super) fn sys_spawn_image(img_ptr: u64, img_len: usize, meta_ptr: u64, meta_
 /// canale)` (il figlio usa il canale 0 = `CHANNEL_PARENT`). -1 se non c'e' un
 /// PID libero, il pool canali e' esaurito o l'OOM colpisce il walk/stack/TSS.
 pub(super) fn sys_fork() -> i64 {
-    match crate::sched::fork_current() {
-        Some((pid, chan)) => super::dispatch::apply_ipc(crate::sched::IpcResult {
+    match crate::ordo::sched::fork_current() {
+        Some((pid, chan)) => super::dispatch::apply_ipc(crate::ordo::sched::IpcResult {
             rax: pid as i64,
             rdi: chan as u64,
             rsi: 0,
