@@ -488,7 +488,7 @@ pub fn t_diskboot() -> bool {
     for path in [
         "/fat/bin/gpu.bin",
         "/fat/bin/uptime.bin",
-        "/fat/bin/devfs.bin",
+        "/fat/bin/vela.bin",
         "/fat/bin/kbd.bin",
         "/fat/bin/tty.bin",
         "/fat/bin/shell.bin",
@@ -504,7 +504,7 @@ pub fn t_diskboot() -> bool {
     for svc in [
         libr::Service::Gpu,
         libr::Service::Fs,
-        libr::Service::Devfs,
+        libr::Service::Vela,
         libr::Service::Kbd,
         libr::Service::Tty,
         libr::Service::Disk,

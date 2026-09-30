@@ -119,7 +119,7 @@ pub use syscall_numbers::{
     FS_BUF_REG, FS_NOTIFY, FS_REGISTER, INIT_BOUNCE, KBD_NOTIFY, SVC_READY, TEST_DONE,
 };
 /// Tag DEV_* op + device type (DocsD): stesso pattern, prima duplicati in
-/// userfs/userdisk/devfs/console/kbd/tty.
+/// userfs/block/vela/gpu/kbd/tty.
 pub use syscall_numbers::{
     DEV_CLOSE, DEV_KBD, DEV_KEYBOARD, DEV_CONSOLE, DEV_NULL, DEV_OPEN, DEV_READ,
     DEV_READDIR, DEV_WRITE, DEV_ZERO,

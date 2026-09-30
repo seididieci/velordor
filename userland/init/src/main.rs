@@ -31,7 +31,7 @@ fn expected_hash(bin: &[u8]) -> Option<u64> {
     match bin {
         b"gpu" => Some(HASH_GPU),
         b"useruptime" => Some(HASH_USERUPTIME),
-        b"userdevfs" => Some(HASH_USERDEVFS),
+        b"vela" => Some(HASH_VELA),
         b"kbd" => Some(HASH_KBD),
         b"usertty" => Some(HASH_USERTTY),
         b"userposix" => Some(HASH_USERPOSIX),
@@ -50,7 +50,7 @@ fn expected_blake(bin: &[u8]) -> Option<[u8; 32]> {
     match bin {
         b"gpu" => Some(BLAKE_GPU),
         b"useruptime" => Some(BLAKE_USERUPTIME),
-        b"userdevfs" => Some(BLAKE_USERDEVFS),
+        b"vela" => Some(BLAKE_VELA),
         b"kbd" => Some(BLAKE_KBD),
         b"usertty" => Some(BLAKE_USERTTY),
         b"userposix" => Some(BLAKE_USERPOSIX),
@@ -289,7 +289,7 @@ fn spawn_entry(meta: &SvcMeta) -> Option<i64> {
 /// segnali la fine (IPC TEST_DONE sul canale di nascita). I test girano in
 /// SEQUENZA: condividono la ramfs di userfs (path e file di lavoro) e la
 /// sequenza rende output e PID deterministici.
-/// Gestisce anche le morti dei servizi supervisionati (es. t27 uccide devfs a
+/// Gestisce anche le morti dei servizi supervisionati (es. t27 uccide vela a
 /// suite in corso): senza, il restart arriverebbe solo dopo la suite.
 fn run_test(meta: &SvcMeta, supervised: &mut [Supervised]) {
     let Some(chan) = spawn_entry(meta) else {
@@ -364,7 +364,7 @@ fn handle_child_death(supervised: &mut [Supervised], pid: i64, code: i64) {
 
 /// Servizio supervisionato da init (Fase 14, init-restart): alla morte viene
 /// riavviato dalla sua sorgente (embedded o disco, Fase 21). Solo
-/// console/disk/fs/devfs/kbd/tty; gli altri figli (uptime/shell/test) sono
+/// gpu/disk/fs/vela/kbd/tty; gli altri figli (uptime/shell/test) sono
 /// loggati ma non riavviati.
 struct Supervised {
     meta: &'static SvcMeta,
@@ -384,7 +384,7 @@ struct Supervised {
 /// supervisore. La notifica di morte e' consumata qui, il chiamante riprova.
 /// Le EXIT_NOTIFY di ALTRI figli (una morte durante un restart) NON si
 /// scartano: vanno nello stash e il chiamante le processa (sotto). Scartarle
-/// perde restart (osservato t32: userdisk morto durante il restart di devfs
+/// perde restart (osservato t32: userdisk morto durante il restart di vela
 /// → mai riavviato → cascata fino al panic di init).
 fn wait_ready(chan: i64) -> bool {
     let t0 = libr::get_ticks();
@@ -501,9 +501,9 @@ const SVC_UPTIME: SvcMeta = SvcMeta {
     prio: 1,
     io: &[],
 };
-const SVC_DEVFS: SvcMeta = SvcMeta {
-    bin: b"userdevfs",
-    path: Some("/fat/bin/devfs.bin"),
+const SVC_VELA: SvcMeta = SvcMeta {
+    bin: b"vela",
+    path: Some("/fat/bin/vela.bin"),
     obj: None,
     prio: 16,
     io: &[],
@@ -589,7 +589,7 @@ fn real_main(_sp: u64) -> ! {
     // Spawna i servizi user. Fase 57: log+disk in PARALLELO (log non aspetta
     // nessuno — prova che il chicken-egg e' morto; disk fa detection). Poi
     // fs (serve Disk registrato), time (serve /fat), FLUSH a userlog (dopo
-    // time: backdate/re-key), console (prima di kbd), uptime, devfs, kbd,
+    // time: backdate/re-key), gpu (prima di kbd), uptime, vela, kbd,
     // tty, posix. A boot ogni spawn mancato e' FAIL LOUD (exit → panic).
     // userlog PRIMA di userfs per disegno (ADR-0039): assorbe tutto in RAM e
     // riversa alla FLUSH; userdisk fa READY subito dopo detection +
@@ -640,12 +640,12 @@ fn real_main(_sp: u64) -> ! {
     let _ = libr::log::log(b"init", b"console ready");
     // uptime: nessuna attesa (solo informativo, come prima).
     boot_svc(&SVC_UPTIME, false);
-    let Some(devfs_chan) = boot_svc(&SVC_DEVFS, true) else {
-        println!("[init] boot FAILED (devfs), panic");
+    let Some(vela_chan) = boot_svc(&SVC_VELA, true) else {
+        println!("[init] boot FAILED (vela), panic");
         libr::exit(1);
     };
-    let _ = devfs_chan;
-    let _ = libr::log::log(b"init", b"devfs ready");
+    let _ = vela_chan;
+    let _ = libr::log::log(b"init", b"vela ready");
     // 4. kbd + attesa READY (Fase 15: registra Kbd + mount /dev/kbd; Fs
     //    garantito dal passo 2, quindi riesce subito a boot).
     if boot_svc(&SVC_KBD, true).is_none() {
@@ -668,11 +668,11 @@ fn real_main(_sp: u64) -> ! {
     }
     let _ = libr::log::log(b"init", b"posix ready");
 
-    // Tabella supervisione (Fase 14, init-restart): console/fs/devfs/kbd/tty/
+    // Tabella supervisione (Fase 14, init-restart): gpu/fs/vela/kbd/tty/
     // disk/posix/time/log vengono riavviati alla morte (dalla loro sorgente: embedded per
     // disk/fs, disco per gli altri — Fase 21); gli altri figli solo loggati.
     // Costruita prima dei test cosi' anche run_test supervisiona (t27 uccide
-    // devfs a suite in corso). NOTA: un restart di userfs wipa la ramfs
+    // vela a suite in corso). NOTA: un restart di userfs wipa la ramfs
     // (fixture dei test) — in suite solo t28 lo uccide (Fase 14.12) e
     // ricostruisce la fixture al restart.
     //
@@ -684,7 +684,7 @@ fn real_main(_sp: u64) -> ! {
         Supervised { meta: &SVC_CONSOLE, svc: libr::Service::Gpu, chan: -1, pid: -1, restarts: 0, window_start: 0, held: false },
         Supervised { meta: &META_DISK, svc: libr::Service::Disk, chan: -1, pid: -1, restarts: 0, window_start: 0, held: false },
         Supervised { meta: &META_FS, svc: libr::Service::Fs, chan: -1, pid: -1, restarts: 0, window_start: 0, held: false },
-        Supervised { meta: &SVC_DEVFS, svc: libr::Service::Devfs, chan: -1, pid: -1, restarts: 0, window_start: 0, held: false },
+        Supervised { meta: &SVC_VELA, svc: libr::Service::Vela, chan: -1, pid: -1, restarts: 0, window_start: 0, held: false },
         Supervised { meta: &SVC_KBD, svc: libr::Service::Kbd, chan: -1, pid: -1, restarts: 0, window_start: 0, held: false },
         Supervised { meta: &SVC_TTY, svc: libr::Service::Tty, chan: -1, pid: -1, restarts: 0, window_start: 0, held: false },
         Supervised { meta: &SVC_POSIX, svc: libr::Service::Posix, chan: -1, pid: -1, restarts: 0, window_start: 0, held: false },

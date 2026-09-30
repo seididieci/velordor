@@ -309,7 +309,7 @@ fn service_by_name(name: &str) -> Option<libr::Service> {
     match name {
         "gpu" => Some(libr::Service::Gpu),
         "fs" => Some(libr::Service::Fs),
-        "devfs" => Some(libr::Service::Devfs),
+        "vela" => Some(libr::Service::Vela),
         "init" => Some(libr::Service::Init),
         "kbd" => Some(libr::Service::Kbd),
         "tty" => Some(libr::Service::Tty),

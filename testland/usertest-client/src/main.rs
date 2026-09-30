@@ -45,7 +45,7 @@
 //!                 open+write+close di /dev/null alla massima velocita',
 //!                 finche' il parent manda T_STOP (controllato ogni 64 op via
 //!                 `recv_poll`). Intenzionalmente SENZA throttling: riproduce la
-//!                 tempesta di open che affamava la registrazione di devfs
+//!                 tempesta di open che affamava la registrazione di vela
 //!                 (lezione t27: /dev smontato → open veloci falliti in loop).
 //!                 Termina via T_STOP con T_DONE(w0=1, w1=ops).
 //!   - 12 NEST:     (Fase 22, t40) genitore intermedio: spawna due KILLME (uno

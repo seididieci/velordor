@@ -53,7 +53,7 @@ pub const SYS_SBRK: u64 = 25;
 pub const SYS_RING_ALLOC: u64 = 26;
 /// Mappa `count` pagine fisiche a partire da `phys` all'indirizzo virtuale
 /// `virt` nello spazio del processo `pid` (usato da userfs per mappare la
-/// pagina del client in un driver remoto — devfs/console — a `USER_FS_BUFFER`).
+/// pagina del client in un driver remoto (hub `vela`, `gpu`, ...) a `USER_FS_BUFFER`).
 pub const SYS_MAP_IN: u64 = 27;
 /// Crea un server CBS (budget, period) → id o -1 (admission control).
 pub const SYS_CBS_CREATE: u64 = 28;
@@ -243,12 +243,12 @@ pub const JOB_CANCEL: u64 = 0x43;
 pub const SVC_READY: u64 = 0x7D;
 pub const TEST_DONE: u64 = 0x7E;
 pub const INIT_BOUNCE: u64 = 0x7F;
-// ── Protocollo DEV_* (userfs→driver: devfs/console/kbd/tty/disk, DocsD) ───
+// ── Protocollo DEV_* (userfs→driver: vela/gpu/kbd/tty/block, DocsD) ───
 // Single source of truth dei tag e dei device type (w0 di DEV_OPEN): prima
-// duplicati in userfs/userdisk/devfs/console/kbd/tty. userfs instrada per
+// duplicati in userfs/block/vela/gpu/kbd/tty. userfs instrada per
 // prefix al server e inoltra l'op; il driver risponde sul relay.
 // - OPEN/READ/WRITE/CLOSE/READDIR: op sui nodi device (raw o sintetizzati).
-// - Type: NULL/ZERO (devfs), KEYBOARD (tty, `/dev/input`), CONSOLE (console,
+// - Type: NULL/ZERO (vela), KEYBOARD (tty, `/dev/input`), CONSOLE (gpu,
 //   `/dev/console`), KBD (kbd, `/dev/kbd`); userdisk usa handle disco<<16|sub.
 pub const DEV_OPEN: u64 = 0x20;
 pub const DEV_READ: u64 = 0x21;
@@ -571,8 +571,8 @@ pub enum Service {
     Gpu = 0,
     /// File system server (userfs): tutti i client FS lo risolvono per nome.
     Fs = 1,
-    /// Device file server (devfs, prefix `/dev`).
-    Devfs = 2,
+    /// Hub `/dev` (vela, prefix `/dev`; pseudo-device null/zero).
+    Vela = 2,
     /// Processo init (root della process tree). Non registra attivamente, ma
     /// lo slot esiste per chi deve raggiungerlo (es. test suite).
     Init = 3,

@@ -37,7 +37,7 @@ use libr::{DEV_CLOSE, DEV_KBD, DEV_OPEN, DEV_READ, DEV_READDIR, DEV_WRITE};
 /// Single source in `syscall-numbers` (DocsB), via `libr`.
 use libr::KBD_NOTIFY;
 
-// ── Ring I/O (Fase 10.2, stesso pattern di devfs) ───────────────────
+// ── Ring I/O (Fase 10.2, stesso pattern di vela) ───────────────────
 // La response del client va nella finestra CLI_RESP_VA (mappata da userfs
 // con i ring del client a ogni relay DEV).
 
@@ -149,7 +149,7 @@ fn drain_hw(q: &mut ScanQueue) {
 // Frame helper response (A2): single source in `libr` (prima identica qui).
 use libr::resp_frame_write;
 
-/// Assicura il mount "/dev/kbd" presso userfs (stesso pattern di devfs,
+/// Assicura il mount "/dev/kbd" presso userfs (stesso pattern di vela,
 /// `ensure_mounted`): attende Fs via soli lookup, poi UN tentativo; se
 /// fallisce ricomincia. Unbounded: senza Fs il driver e' comunque inutile.
 fn ensure_mounted() {
@@ -176,7 +176,7 @@ fn real_main(_sp: u64) -> ! {
     println!("[kbd] registered /dev/kbd with userfs");
 
     // Avvisa il parent (init) di essere pronto (SVC_READY fire-and-forget,
-    // come devfs: a boot init aspetta, su restart nessuno — mai sync).
+    // come vela: a boot init aspetta, su restart nessuno — mai sync).
     libr::signal_ready(1);
 
     let mut queue = ScanQueue::new();
@@ -191,7 +191,7 @@ fn real_main(_sp: u64) -> ! {
         // il drain e' comunque avvenuto.
         match libr::recv() {
             Ok(m) => {
-                // userfs morto e rinato: re-mount (come devfs, t28). Mai reply.
+                // userfs morto e rinato: re-mount (come vela, t28). Mai reply.
                 if m.tag == libr::EXIT_NOTIFY {
                     println!("[kbd] peer morto, re-mount /dev/kbd");
                     ensure_mounted();

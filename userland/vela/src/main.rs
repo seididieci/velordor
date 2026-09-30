@@ -1,4 +1,4 @@
-//! userdevfs — Device file server (Fase 9.3 + 9.6).
+//! vela — Hub `/dev` (Fase 9.3 + 9.6, R5).
 //!
 //! Gestisce `/dev/null` e `/dev/zero`. Si registra presso userfs all'avvio con
 //! la IPC FS_REGISTER (prefix="/dev/null" + "/dev/zero", via `libr::fs_register`). userfs instrada
@@ -79,22 +79,22 @@ fn ensure_mounted() {
 
 libr::entry!(real_main);
 fn real_main(_sp: u64) -> ! {
-    println!("[userdevfs] starting, pid={}", libr::getpid());
+    println!("[vela] starting, pid={}", libr::getpid());
 
     // Registra il servizio Devfs per nome (ADR-0008).
-    if libr::service_register(libr::Service::Devfs).is_ok() {
-        println!("[userdevfs] registered as service Devfs");
+    if libr::service_register(libr::Service::Vela).is_ok() {
+        println!("[vela] registered as service Vela");
     }
 
     // Registra i prefix "/dev/null" + "/dev/zero" presso userfs (unbounded:
     // senza Fs il driver e' comunque inutile; init ha gia' atteso userfs
     // pronto, quindi riesce subito a boot).
     ensure_mounted();
-    println!("[userdevfs] registered /dev/null + /dev/zero with userfs");
+    println!("[vela] registered /dev/null + /dev/zero with userfs");
 
     // Avvisa il parent (init) di essere pronto (SVC_READY, come userfs):
     // serve al supervisore init-restart per l'attesa prontezza (Fase 14).
-    // Fire-and-forget in `libr` (A3): a boot init non aspetta devfs → una
+    // Fire-and-forget in `libr` (A3): a boot init non aspetta vela → una
     // send sync resterebbe bloccata per sempre. Retry bounded, mai hang.
     libr::signal_ready(1);
 
@@ -109,7 +109,7 @@ fn real_main(_sp: u64) -> ! {
         // userfs morto e rinato (t28): re-mount. L'unico peer mortale e'
         // userfs: ricontrolla incondizionato (idempotente). Mai reply.
         if msg.tag == libr::EXIT_NOTIFY {
-            println!("[userdevfs] peer morto, re-mount /dev/null + /dev/zero");
+            println!("[vela] peer morto, re-mount /dev/null + /dev/zero");
             ensure_mounted();
             continue;
         }
@@ -182,6 +182,6 @@ fn real_main(_sp: u64) -> ! {
 
 #[panic_handler]
 fn panic(_info: &core::panic::PanicInfo) -> ! {
-    println!("[userdevfs] panic");
+    println!("[vela] panic");
     libr::exit(1)
 }

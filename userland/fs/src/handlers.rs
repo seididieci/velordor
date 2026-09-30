@@ -22,7 +22,7 @@ pub fn handle_open(
     let trunc = flags & libr::O_TRUNC != 0;
     let append = flags & libr::O_APPEND != 0;
 
-    // Cerca nei mount point registrati (devfs, console, userdisk, futuri driver).
+    // Cerca nei mount point registrati (vela, console, userdisk, futuri driver).
     if let Some((driver_chan, rel)) = mount_legacy::resolve_mount(path, mounts) {
         // (Ramo device invariato: gli errori dei driver restano opachi —
         // nessun dominio attribuibile senza interrogarli.)

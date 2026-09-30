@@ -226,7 +226,7 @@ pub fn resolve_local(mounts_fat: &[mount::FsMount], path: &str) -> Option<FsKind
     }
 }
 
-/// Converte device name in tipo devfs (w0 di DEV_OPEN).
+/// Converte device name in tipo vela (w0 di DEV_OPEN).
 pub fn dev_type(name: &str) -> Option<u64> {
     match name {
         "null" => Some(DEV_NULL),

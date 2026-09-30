@@ -1896,3 +1896,9 @@
           `vela::gpu`. Bug di rotta: t39/t58 hardcodano il dest FAT
           (`/fat/bin/console.bin` → `gpu.bin`). Gate: 5/5 + 7/7 + 40/40 +
           58/58, zero FAIL/PANIC/FAULT. Docs ai nuovi nomi in R-final.
+    - [x] R5 (rename a fasi, ADR-0040): `userdevfs`→`vela` hub (dir, package,
+          bin `vela.bin` + dest FAT, display, `Service::Devfs`→`Service::Vela`,
+          manifest, init, shell, test t15/t27/t30/t51 + fn `t_vela_*`, dest
+          FAT nei test). Prefix `/dev` e nomi device invariati (namespace
+          device ≠ nomi servizi); tag `DEV_*` invariati. Gate: 5/5 + 7/7 +
+          40/40 + 58/58, zero FAIL/PANIC/FAULT. Docs ai nuovi nomi in R-final.

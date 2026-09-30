@@ -371,7 +371,7 @@ pub fn t_client_death_purge() -> bool {
     true
 }
 
-/// t27 — init-restart di devfs (Fase 14). Bounce via init (`init_bounce`:
+/// t27 — init-restart di vela (Fase 14). Bounce via init (`init_bounce`:
 /// init e' parent e riavvia per la via normale) e attesa: prima sparizione dallo slot,
 /// poi ricomparsa, poi /dev/null di nuovo operativo. Bound: la sparizione e'
 /// solo registry (1000 tick larghi); la ricomparsa include il RELOAD DA DISCO
@@ -381,7 +381,7 @@ pub fn t_client_death_purge() -> bool {
 /// userfs non viene mai toccato (il canale FS del test resta vivo).
 /// NOTA: non confronta pid vecchio/nuovo (il riuso PID puo' ridare lo stesso
 /// numero); osserva sparizione → ricomparsa.
-pub fn t_devfs_restart() -> bool {
+pub fn t_vela_restart() -> bool {
     helpers::drain_stray();
     let Ok(fd) = libr::open("/dev/null", 0) else {
         println!("[usertests] t27: baseline open /dev/null FAILED");
@@ -390,34 +390,34 @@ pub fn t_devfs_restart() -> bool {
     let _ = libr::close(fd);
     // Fase 35 (hardening): i servizi supervisionati si uccidono tramite init
     // (bounce: init e' parent e riavvia per la via normale). Il kill diretto
-    // e' parent-scoped e qui fallirebbe (devfs e' figlio di init, non nostro).
-    let p1 = match libr::init_bounce(libr::Service::Devfs) {
+    // e' parent-scoped e qui fallirebbe (vela e' figlio di init, non nostro).
+    let p1 = match libr::init_bounce(libr::Service::Vela) {
         Ok(p) => p,
         Err(_) => {
-            println!("[usertests] t27: bounce devfs FAILED");
+            println!("[usertests] t27: bounce vela FAILED");
             return false;
         }
     };
     // Fase A: attendi sparizione dallo slot (morte osservata dal registry).
     // Poll throttled (Livello 1, buon vicinato): vedi `libr::poll_wait`.
     if !libr::poll_wait(1000, libr::POLL_PERIOD_TICKS, || {
-        libr::service_pid(libr::Service::Devfs).is_err()
+        libr::service_pid(libr::Service::Vela).is_err()
     }) {
-        println!("[usertests] t27: devfs mai sparito (timeout)");
+        println!("[usertests] t27: vela mai sparito (timeout)");
         return false;
     }
     // Fase B: attendi ricomparsa (init ha riavviato + registrato).
     // Bound 2000 (vedi sopra: include il reload da disco sotto carico).
     let p2 = match libr::poll_value(2000, libr::POLL_PERIOD_TICKS, || {
-        libr::service_pid(libr::Service::Devfs).ok()
+        libr::service_pid(libr::Service::Vela).ok()
     }) {
         Some(p) => p,
         None => {
-            println!("[usertests] t27: devfs mai riapparso (timeout)");
+            println!("[usertests] t27: vela mai riapparso (timeout)");
             return false;
         }
     };
-    println!("[usertests] t27: devfs riavviato (pid {} -> {})", p1, p2);
+    println!("[usertests] t27: vela riavviato (pid {} -> {})", p1, p2);
     // Fase C: operativita' — open finche' riesce (bound come sopra: il driver
     // puo' aver registrato lo slot ma non ancora i mount).
     // Throttled via `libr::open_wait` (igiene Livello 1, buon vicinato).
@@ -505,7 +505,7 @@ pub fn t_userfs_restart() -> bool {
     println!("[usertests] t28: userfs riavviato (pid {} -> {})", p1, p2);
     // Fixture fresh (re-handshake trasparente via NOHANDSHAKE se serve).
     // Throttled (lezione t27/t28): martellare userfs in busy-loop affama la
-    // re-registrazione dei driver (devfs/console ricreano il mount proprio
+    // re-registrazione dei driver (vela/console ricreano il mount proprio
     // su questo userfs).
     if !libr::poll_wait(1000, libr::POLL_PERIOD_TICKS, || {
         libr::mkdir("/td28").is_ok()
@@ -570,7 +570,7 @@ pub fn t_userfs_restart() -> bool {
         return false;
     }
     // Driver re-registrati: /dev/null operativo. Retry con bound (throttled):
-    // devfs ricrea il mount in modo asincrono su EXIT_NOTIFY e puo' laggare
+    // vela ricrea il mount in modo asincrono su EXIT_NOTIFY e puo' laggare
     // dietro il fresh userfs; un singolo tentativo darebbe falsi FAIL.
     let Ok(fd2) = libr::open_wait("/dev/null", 0, 1000, libr::POLL_PERIOD_TICKS) else {
         println!("[usertests] t28: /dev/null post-restart FAILED");

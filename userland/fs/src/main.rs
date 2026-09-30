@@ -7,7 +7,7 @@
 //!     ATA locale; Fase 16 via IPC `DISK_*`; Fase 16c resolve nome→handle
 //!     lato driver; **scrivibile dalla Fase 20**: overwrite/crescita/`O_CREAT`,
 //!     niente unlink)
-//!   - devfs/console remoti via IPC per device `/dev/*` (Fase 9.3)
+//!   - vela/console remoti via IPC per device `/dev/*` (Fase 9.3)
 //!
 //! Trasferimento dati (Fase 10.2): ogni client ha DUE pagine ring SPSC
 //! (request + response) allocate dalla syscall 26 (`SYS_RING_ALLOC`). Il client
@@ -97,7 +97,7 @@ include!(env!("VELORDOR_TEST_POLICY"));
 
 const MAX_PATH: usize = 256;
 
-// ── IPC tags verso i driver remoti (devfs/console/kbd/tty/disk): op DEV_*
+// ── IPC tags verso i driver remoti (vela/console/kbd/tty/disk): op DEV_*
 // e device types importati sopra da `syscall-numbers` (DocsD) ──────────
 
 #[panic_handler]

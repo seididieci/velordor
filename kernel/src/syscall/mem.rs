@@ -313,7 +313,7 @@ pub(super) fn sys_dma_alloc(pages: usize) -> i64 {
 /// map_in(chan, phys, virt, count): mappa `count` pagine fisiche a partire da
 /// `phys` all'indirizzo virtuale `virt` nello spazio del PEER del canale
 /// `chan` (ADR-0008). Mapper generico cross-process: usato da userfs per
-/// iniettare la response ring del client in un driver remoto (devfs/console).
+/// iniettare la response ring del client in un driver remoto (hub `vela`, `gpu`).
 ///
 /// Validazione: il peer deve essere un processo user, phys allineata a pagina,
 /// virt nello spazio user, count <= 16. Ritorna 0 o -1.

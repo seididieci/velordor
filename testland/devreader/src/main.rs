@@ -1,5 +1,5 @@
 //! userdevreader — riproduttore: legge ripetutamente 4096 byte da `/dev/zero`
-//! (device remoto via devfs) mentre `userhogheap` genera page-fault demand-zero.
+//! (device remoto via vela) mentre `userhogheap` genera page-fault demand-zero.
 //! Se il lost-wakeup si manifesta, il reader si blocca in attesa di una reply
 //! che non arriva e smette di stampare progressi.
 
@@ -12,7 +12,7 @@ libr::entry!(real_main);
 fn real_main(_sp: u64) -> ! {
     let _ = libr::print_string(b"[devreader] starting\n");
 
-    // Retry finche' devfs non ha registrato /dev (race di boot).
+    // Retry finche' vela non ha registrato /dev (race di boot).
     let fd = loop {
         if let Ok(fd) = libr::open("/dev/zero", 0) {
             break fd;

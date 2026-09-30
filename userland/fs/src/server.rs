@@ -11,7 +11,7 @@ use super::*;
 fn driver_name_of(chan: u64) -> &'static str {
     match libr::peer_info(chan) {
         Ok(h) if h == HASH_GPU => "gpu",
-        Ok(h) if h == HASH_USERDEVFS => "userdevfs",
+        Ok(h) if h == HASH_VELA => "vela",
         Ok(h) if h == HASH_USERDISK => "userdisk",
         Ok(h) if h == HASH_KBD => "kbd",
         Ok(h) if h == HASH_USERLOG => "userlog",
@@ -140,7 +140,7 @@ fn real_main(_sp: u64) -> ! {
     println!("[userfs] starting");
 
     // Registra il servizio Fs SUBITO (ADR-0008): il mount FAT32 e' lento, e i
-    // client (devfs, testfs) risolvono Fs per nome appena partono. Registrarsi
+    // client (vela, testfs) risolvono Fs per nome appena partono. Registrarsi
     // prima del mount evita che chi spawa dopo aspetti inutilmente.
     // (L'ACK READY a init parte invece DOPO il populate, prima del loop:
     // READY significa "davvero pronto".)
@@ -313,7 +313,7 @@ fn real_main(_sp: u64) -> ! {
                 let caller = libr::peer_pid(chan).unwrap_or(-1);
                 let init_child = caller >= 0
                     && matches!(libr::ps_info(caller as u32), Some(e) if e.parent == Some(1));
-                // Payload = uno o piu' prefix NUL-separati (Fase 16d): devfs
+                // Payload = uno o piu' prefix NUL-separati (Fase 16d): vela
                 // registra "/dev/null\0/dev/zero" con UNA sola IPC, cosi' non
                 // esiste una finestra in cui un mount e' forwardable mentre il
                 // driver e' ancora bloccato in un secondo register sincrono.
@@ -534,7 +534,7 @@ fn real_main(_sp: u64) -> ! {
         }
 
         // R_WRITE verso un device remoto: NON consumare il request frame. Il
-        // payload resta nel request ring del client e il driver (console/devfs),
+        // payload resta nel request ring del client e il driver (console/vela),
         // che ha i ring del client iniettati via map_in, lo legge direttamente e
         // avanza la tail di (20 + w1) esatti. Qui scriviamo solo il result frame.
         if op_tag == R_WRITE && ftable.get_remote(chan, w0 as u32).is_some() {

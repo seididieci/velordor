@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Build dei binari userspace in modalita' freestanding.
 #
-# Qui stanno SOLO i servizi utente (userland/): init, console, fs, devfs,
+# Qui stanno SOLO i servizi utente (userland/): init, gpu, fs, vela,
 # disk, shell, uptime, kbd, tty, posix, time, log — i binari "ad uso utente" dell'OS. I binari della test suite
 # (testland/) sono compilati da scripts/build-tests.sh.
 #
@@ -35,7 +35,7 @@ if [ "${RUN_BENCH:-0}" = "1" ]; then
 fi
 
 build_one userland/disk    userland/disk/src/disk.ld       userdisk.bin    userdisk
-build_one userland/devfs   userland/devfs/src/devfs.ld     userdevfs.bin   userdevfs
+build_one userland/vela    userland/vela/src/vela.ld       vela.bin        vela
 build_one userland/gpu     userland/gpu/src/gpu.ld         gpu.bin         gpu
 build_one userland/kbd     userland/kbd/src/kbd.ld         kbd.bin         kbd
 build_one userland/tty     userland/tty/src/tty.ld         usertty.bin     usertty

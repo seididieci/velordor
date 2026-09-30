@@ -4,7 +4,7 @@
 //! prima della shell). Copre: syscall core, heap lazy demand-zero, ramfs,
 //! device file (/dev/null, /dev/zero), map_physical (aliasing su pagina
 //! scratch kernel), IPC sincrono mono/multi-client (reply_target, fix 9.2.2),
-//! devfs remoto concorrente + churn heap (regressione lost-wakeup/overlap) e
+//! vela remoto concorrente + churn heap (regressione lost-wakeup/overlap) e
 //! scheduler (preemption ring-3, priorita').
 //!
 //! Reporting: riga `[usertests] PASS N/N` (o FAIL) + righe per singolo test.
@@ -61,7 +61,7 @@ fn real_main(_sp: u64) -> ! {
     helpers::report(&mut total, &mut ok, "t12 map_physical aliasing", t_basic::t_map_alias());
     helpers::report(&mut total, &mut ok, "t13 IPC single echo", t_ipc_sched::t_ipc_echo());
     helpers::report(&mut total, &mut ok, "t14 IPC multi-client", t_ipc_sched::t_ipc_multiclient());
-    helpers::report(&mut total, &mut ok, "t15 devfs conc + heap churn", t_ipc_sched::t_devfs_concurrent_churn());
+    helpers::report(&mut total, &mut ok, "t15 vela conc + heap churn", t_ipc_sched::t_vela_concurrent_churn());
     helpers::report(&mut total, &mut ok, "t16 sched preempt ring3", t_ipc_sched::t_sched_preempt());
     helpers::report(&mut total, &mut ok, "t17 sched priority", t_ipc_sched::t_sched_priority());
     helpers::report(&mut total, &mut ok, "t18 cbs admission", t_ipc_sched::t_cbs_admission());
@@ -73,7 +73,7 @@ fn real_main(_sp: u64) -> ! {
     helpers::report(&mut total, &mut ok, "t24 server death notify", t_lifecycle::t_server_death_notify());
     helpers::report(&mut total, &mut ok, "t25 driver death mount purge", t_lifecycle::t_driver_death_mount());
     helpers::report(&mut total, &mut ok, "t26 client death purge", t_lifecycle::t_client_death_purge());
-    helpers::report(&mut total, &mut ok, "t27 devfs kill + init restart", t_lifecycle::t_devfs_restart());
+    helpers::report(&mut total, &mut ok, "t27 vela kill + init restart", t_lifecycle::t_vela_restart());
     helpers::report(&mut total, &mut ok, "t28 userfs kill + full recovery", t_lifecycle::t_userfs_restart());
     helpers::report(&mut total, &mut ok, "t29 map flap isolation", t_mapflap::t_mapflap());
     helpers::report(&mut total, &mut ok, "t30 neighbor under flood", t_mapflap::t_neighbor());

@@ -81,7 +81,7 @@ pub fn t_mapflap() -> bool {
 
 /// t30 — fairness dello scheduler sotto carico IPC (gate anti-regressione).
 /// Un helper FLOOD martella open+write+close di /dev/null a flood stabilizzato
-/// (warm-up 3000 op) mentre devfs viene killato e riavviato da init (come
+/// (warm-up 3000 op) mentre vela viene killato e riavviato da init (come
 /// t27). Verdetto: /dev/null deve tornare operativo entro 300 tick.
 /// Il flood crea transizioni runnable/blocked continue tra N processi: se la
 /// rotazione dello scheduler si rompe (es. il bug di parita' del round-robin,
@@ -140,10 +140,10 @@ pub fn t_neighbor() -> bool {
         helpers::stop_flooder(fchan);
         return false;
     }
-    let p1 = match libr::init_bounce(libr::Service::Devfs) {
+    let p1 = match libr::init_bounce(libr::Service::Vela) {
         Ok(p) => p,
         Err(_) => {
-            println!("[usertests] t30: bounce devfs FAILED");
+            println!("[usertests] t30: bounce vela FAILED");
             helpers::stop_flooder(fchan);
             return false;
         }
@@ -151,18 +151,18 @@ pub fn t_neighbor() -> bool {
     // Sparizione + ricomparsa (poll throttled, come t27; il riuso PID puo'
     // ridare lo stesso numero: si osserva sparizione → ricomparsa).
     if !libr::poll_wait(1000, libr::POLL_PERIOD_TICKS, || {
-        libr::service_pid(libr::Service::Devfs).is_err()
+        libr::service_pid(libr::Service::Vela).is_err()
     }) {
-        println!("[usertests] t30: devfs mai sparito (timeout)");
+        println!("[usertests] t30: vela mai sparito (timeout)");
         helpers::stop_flooder(fchan);
         return false;
     }
     match libr::poll_value(1000, libr::POLL_PERIOD_TICKS, || {
-        libr::service_pid(libr::Service::Devfs).ok()
+        libr::service_pid(libr::Service::Vela).ok()
     }) {
-        Some(p2) => println!("[usertests] t30: devfs riavviato (pid {} -> {})", p1, p2),
+        Some(p2) => println!("[usertests] t30: vela riavviato (pid {} -> {})", p1, p2),
         None => {
-            println!("[usertests] t30: devfs mai riapparso (timeout)");
+            println!("[usertests] t30: vela mai riapparso (timeout)");
             helpers::stop_flooder(fchan);
             return false;
         }

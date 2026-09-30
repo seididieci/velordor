@@ -331,7 +331,7 @@ pub fn t_disk() -> bool {
 /// fratello (non suo figlio) e a registrare un servizio di sistema (`Init`):
 /// entrambi rifiutati. (B) usertests prova a mappare RAM del kernel con
 /// `map_physical`: rifiutato. (C) usertests prova a killare un servizio che
-/// non e' suo figlio (devfs): rifiutato (il servizio resta vivo).
+/// non e' suo figlio (vela): rifiutato (il servizio resta vivo).
 pub fn t_hardening() -> bool {
     helpers::drain_stray();
     // Vittima: un KILLME parcheggiato, figlio di usertests (fratello
@@ -375,9 +375,9 @@ pub fn t_hardening() -> bool {
         let _ = helpers::wait_exit(b_chan);
         return false;
     }
-    // (C) kill di un servizio non-figlio (devfs, figlio di init) rifiutato.
-    if let Ok(devfs_pid) = libr::service_pid(libr::Service::Devfs) {
-        if libr::kill(devfs_pid, 0).is_ok() {
+    // (C) kill di un servizio non-figlio (vela, figlio di init) rifiutato.
+    if let Ok(vela_pid) = libr::service_pid(libr::Service::Vela) {
+        if libr::kill(vela_pid, 0).is_ok() {
             println!("[usertests] t50: kill di un servizio non-figlio NON rifiutato!");
             let _ = libr::kill(b_pid as i64, 0);
             let _ = helpers::wait_exit(b_chan);
@@ -410,7 +410,7 @@ pub fn t_identity() -> bool {
     // (A) hash dal kernel == manifest di build, per due servizi da disco.
     for (svc, expected, name) in [
         (libr::Service::Gpu, crate::HASH_GPU, "Gpu"),
-        (libr::Service::Devfs, crate::HASH_USERDEVFS, "Devfs"),
+        (libr::Service::Vela, crate::HASH_VELA, "Vela"),
     ] {
         let chan = match libr::service_lookup(svc) {
             Ok(c) => c as u64,

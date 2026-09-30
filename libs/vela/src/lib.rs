@@ -8,7 +8,7 @@
 
 #![no_std]
 
-/// Hub `/dev` (server `vela`, ex-devfs): registry dei prefix driver +
+/// Hub `/dev` (server `vela`): registry dei prefix driver +
 /// pseudo-device (`null`, `zero`). Il mount resta in userfs/cardo.
 pub mod hub;
 

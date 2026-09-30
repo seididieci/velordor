@@ -304,7 +304,7 @@ pub fn print_string(s: &[u8]) -> i64 {
 /// `map_in(chan, phys, virt, count)`: mappa `count` pagine fisiche a partire
 /// da `phys` all'indirizzo virtuale `virt` nello spazio del PEER del canale
 /// `chan` (ADR-0008). Usato da userfs per iniettare la response ring del client
-/// in un driver remoto (devfs/console).
+/// in un driver remoto (vela/console).
 #[inline]
 pub fn map_in(chan: u64, phys: u64, virt: u64, count: usize) -> Result<(), Error> {
     let r = unsafe { syscall4(SYS_MAP_IN, chan, phys, virt, count as u64) };

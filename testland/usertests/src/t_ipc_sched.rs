@@ -70,7 +70,7 @@ pub fn t_ipc_multiclient() -> bool {
     ok_done && reqs == n_clients * rounds
 }
 
-pub fn t_devfs_concurrent_churn() -> bool {
+pub fn t_vela_concurrent_churn() -> bool {
     helpers::drain_stray();
     let mut chans = Vec::new();
     // Buffer FS per-processo (Fase 9.6): ogni client ha la propria pagina, non

@@ -24,7 +24,7 @@ pub const CLI_REQ_VA: u64 = 0x0000_4000_0022_0000;
 pub const CLI_RESP_VA: u64 = 0x0000_4000_0023_0000;
 /// Capacita' dati per ring (4088 byte; gli ultimi 8 byte della pagina
 /// 4KiB = head + tail a 0xFF8/0xFFC, fuori dall'area dati).
-/// Single source (A1): prima duplicata in userfs/userdisk/devfs/console/tty/kbd.
+/// Single source (A1): prima duplicata in userfs/block/vela/gpu/tty/kbd.
 pub const RING_DATA_CAP: usize = 4088;
 /// Dimensione massima di un payload dati in un singolo frame del ring.
 /// Il response frame occupa 16 B di header: il payload utile massimo e'
@@ -83,7 +83,7 @@ pub(crate) unsafe fn ring_read_at(ring_va: u64, tail: u32, dst: &mut [u8], count
 }
 
 // ── Frame helpers lato server (A2) ─────────────────────────────────
-// Prima identici in devfs/console/tty/kbd/disk: operano sulla response/
+// Prima identici in vela/gpu/tty/kbd/block: operano sulla response/
 // request ring DEL CLIENT (VA parametrica, mappata da userfs via `map_in`).
 // Formato response `[len:8][0:8][payload]`, request `[tag:4][w0:8][w1:8]
 // [payload]` (header 20 B). Diversi dai frame FS di userfs (`[result:8]

@@ -14,7 +14,7 @@ IMG="userland/fs/fat.img"
 mmd -i "$IMG" ::/bin ::/test || exit 1
 mcopy -i "$IMG" userland/build/gpu.bin ::/bin/gpu.bin || exit 1
 mcopy -i "$IMG" userland/build/useruptime.bin  ::/bin/uptime.bin  || exit 1
-mcopy -i "$IMG" userland/build/userdevfs.bin   ::/bin/devfs.bin   || exit 1
+mcopy -i "$IMG" userland/build/vela.bin      ::/bin/vela.bin   || exit 1
 mcopy -i "$IMG" userland/build/kbd.bin     ::/bin/kbd.bin     || exit 1
 mcopy -i "$IMG" userland/build/usertty.bin     ::/bin/tty.bin     || exit 1
 mcopy -i "$IMG" userland/build/usershell.bin   ::/bin/shell.bin   || exit 1
