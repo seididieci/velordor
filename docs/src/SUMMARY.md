@@ -66,3 +66,4 @@
 - [ADR-0036: segnali nativi cooperativi (disegno Fase 44b)](./adr/0036-signals.md)
 - [ADR-0037: policy su identita' + sandbox build (Fase 45)](./adr/0037-policy-identity-sandbox.md)
 - [ADR-0038: Provider trait per filesystem (Fase 46)](./adr/0038-provider-trait.md)
+- [ADR-0039: Logging L1 nativo (Fase 57)](./adr/0039-logging-l1.md)

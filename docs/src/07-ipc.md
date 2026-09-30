@@ -146,11 +146,13 @@ Fase 12 il kernel espone un **registry di servizi** e indirizza i messaggi per
 
 - **`enum Service`** nel crate `syscall-numbers` (`Console=0`, `Fs=1`,
   `Devfs=2`, `Init=3`, `Test=4`, `Kbd=5`, `Tty=6`, `Disk=7`, `Posix=8` dalla
-  Fase 39, `Time=9` dalla Fase 50): ogni servizio di sistema occupa uno slot
-  (tabella nel kernel, `channels.rs`, 16 slot dalla Fase 39 — discriminant
-  storici stabili, slot 10-15 liberi). `Time` (usertime, Fase 50) serve
-  `TIME_NOW` (0x60): reply `w0` = secondi epoch UTC, `w1` = centesimi
-  (CMOS all'avvio + monotono PIT).
+  Fase 39, `Time=9` dalla Fase 50, `Log=10` dalla Fase 57): ogni servizio di
+  sistema occupa uno slot (tabella nel kernel, `channels.rs`, 16 slot dalla
+  Fase 39 — discriminant storici stabili, slot 11-15 liberi). `Time`
+  (usertime, Fase 50) serve `TIME_NOW` (0x60): reply `w0` = secondi epoch
+  UTC, `w1` = centesimi (CMOS all'avvio + monotono PIT). `Log` (userlog,
+  Fase 57, ADR-0039) serve `LOG_*` (0x61-0x66): gateway RAM-first con flush
+  su bucket `log` nativo, bucket per identita' del chiamante.
   `service_register(service)` (31) lo occupa;
   `service_lookup(service)` (32) risolve il nome in un canale verso l'owner.
 - **`Channel`**: coppia bidirezionale tra due processi. `spawn` crea il
@@ -316,6 +318,7 @@ nei test).
 | `R_*` | 0x10-0x2F | op FS nei frame (`OPEN/READ/WRITE/CLOSE/READDIR/MKDIR/MOUNT/UMOUNT/DELETE/STAT/RIGHTS_*`, `LSEEK/DUP_*/PIPE_CREATE`, `DISK_LIST/INFO` Fase 51, `SYNC/STATVFS` Fase 52, `GET_HASH` Fase 54, `OBJ_PUT/OBJ_GET` Fase 55: object store nativo ArcaFS, `SNAP_CREATE/DELETE/ROLLBACK/CLONE` + `OBJ_GET_ID/STAT_ID/DELETE/STAT` Fase 56.1: versioni e snapshot, `ARCA_DEBUG` Fase 56.2a (sub-op formato/allocatore, casa `arcafs/`) |
 | `DISK_*` | 0x50-0x58 | data-plane userfs↔userdisk (`HELLO/OPEN/READ/CLOSE/RESOLVE/WRITE`, `LIST/INFO` Fase 51: topologia dischi, `FLUSH` Fase 52: barriera write-cache) |
 | `TIME_NOW` | 0x60 | data/ora (client→usertime: reply `w0` = sec epoch, `w1` = centesimi, Fase 50) |
+| `LOG_*` | 0x61-0x66 | logging L1 (client→userlog, Fase 57/ADR-0039: `REG` handshake ring + hash-bucket, `APPEND` sync-su-RAM, `READ` own-bucket, `SEAL` snapshot, `STATS` contatori, `FLUSH` solo parent) |
 | `DEV_*` | 0x20-0x24 | op userfs↔driver (`OPEN/READ/WRITE/CLOSE/READDIR`; DocsD: prima duplicati in 6 file) |
 | `DEV_*` type (`w0` di `DEV_OPEN`) | 0-4 | `NULL/ZERO` (devfs), `KEYBOARD` (tty), `CONSOLE` (console), `KBD` (kbd) |
 | `EXIT_NOTIFY` | 0x7C | morte peer (kernel→tutti i peer, `w0` = code, `w1` = pid) |

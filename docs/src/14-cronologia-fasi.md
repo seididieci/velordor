@@ -1742,7 +1742,7 @@
          snapshot/GC, `sys.content_hash` come xattr (oggi re-hash vs
          manifest). Gate: 5/5 + 7/7 + 13/13 + 58/58, zero FAIL/PANIC/FAULT;
          boot produzione (ARCA_IMG=0, due drive) pulito.
-    - [ ] Fase 56 (A2, in corso: 56.1 + 56.2a + 56.2b fatti).
+     - [x] Fase 56 (A2, chiuso sotto: 56.1 + 56.2a + 56.2b fatti, poi 56.2c).
          56.1 — store versionato in RAM: ogni PUT = nuova versione (offset
          0 da zero, offset > 0 clone+patch COW); `object_id` monotonico mai
          riusato + indice inverso; snapshot per-bucket con pin a copie
@@ -1839,5 +1839,33 @@
       (sempre << 16 KiB), commit 2.4–3.7K. Taglia invariata al byte (241616,
       92.2%: LTO-fat aveva gia' fuso il fondibile). Gate 5/6 verdi + 1 rosso
       isolato su test 29 (1 op su 240, mai crash/hang): flake raro da timing
-      TCG, non regressione (rimozione attributi non cambia la semantica;
-      storia op deterministica + single-client escludono il bug logico).
+       TCG, non regressione (rimozione attributi non cambia la semantica;
+       storia op deterministica + single-client escludono il bug logico).
+    - [x] Fase 57 (L1 logging nativo, ADR-0039; L0 cancellato senza
+          implementarlo: la ragione — ArcaFS non esisteva — e' estinta).
+          `userlog` (`Service::Log` = 10, boot-TCB embedded come disk/fs,
+          spawn parallelo a disk prima di fs + `wait_any` in init): RAM-first
+          a zero dipendenze, `LOG_FLUSH` di init dopo fs+time (handshake FS +
+          backdate/re-key pre-Time + riversamento 4/giro + dual-write),
+          bucket per identita' (`peer_info`, chiavi `<hash>/<giorno>/<seq>`),
+          `!idx` per la latest post-restart, seal via snapshot, client
+          `libr::log` (tag cosmetico, regola non-POSIX verificabile con `rg`).
+          `testsarca` 33→40 (registrato, append+latest own-bucket, 1024B,
+          rifiuti+giorno-ignoto, seal+delete, stats con flush-proof,
+          bounce+rewarm). Bug veri trovati e fissati: (1) `obj_*` senza
+          cancello ring: primo uso senza FS faultava su VA non mappate (#PF
+          userlog al primo APPEND; fix sistematico `fs_gate()` negli `obj_*`
+          + anelli pronti pre-READY); (2) deadlock di boot: `/dev/null` per
+          la prontezza richiedeva devfs (non ancora nato) — round-trip su
+          path ramfs inesistente, poi rimosso del tutto (avvio zero-FS);
+          (3) hang da chicken-egg: binario su /fat prima di userfs — userlog
+          embedded nel kernel (come disk: in manifest, senza ciclo);
+          (4) cross-talk ring (IL bug di fase): due coppie per processo si
+          mappano sulle STESSE VA — la seconda alloc rimappava la prima e i
+          frame LOG/FS si incrociavano (resync userfs + load falliti a boot
+          parallelo); fix: UNA coppia condivisa in sequenza + `fs_rings()`
+          (alloc senza handshake) + `fs_light_gate()` (rifiuta su
+          fork/async-in-volo invece di corrompere). Lezione: il kernel mappa
+          ogni coppia sulle stesse VA fisse — "una coppia in piu'" non e'
+          mai gratis. Gate: 5/5 + 7/7 + 40/40 + 58/58, zero FAIL/PANIC/FAULT;
+          boot produzione pulito. Prossimo: 58+ (A3 quota/subvolumi, ...).

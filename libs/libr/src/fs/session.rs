@@ -224,11 +224,15 @@ pub(crate) fn fs_send(tag: u64, w0: u64, w1: u64) -> Result<IpcReply, Error> {
     ipc::send(c2 as u64, tag, w0, w1).map_err(|_| Error::NotReady)
 }
 
-/// Inizializza (una sola volta) i ring buffer del processo: li alloca col
-/// kernel e li registra presso userfs con l'handshake `FS_BUF_REG`.
-/// Ritorna false se userfs non e' ancora pronto (il chiamante ritentera').
-pub(crate) fn fs_init() -> bool {
-    if FS_INITED.load(Ordering::Relaxed) {
+/// Alloca (una sola volta) la coppia di ring del processo SENZA handshake
+/// (Fase 57): la syscall mappa gia' le pagine a `REQ/RESP_RING_VA`, i fisici
+/// restano in `REQ_PHYS`/`RESP_PHYS`. Serve al client LOG (anelli condivisi
+/// col FS in sequenza, mai due coppie: il kernel mappa OGNI coppia sulle
+/// STESSE VA e una seconda allocazione rimapperebbe la prima, incrociando i
+/// frame — osservato: resync userfs + load falliti a boot parallelo).
+/// Ritorna false se la syscall fallisce.
+pub(crate) fn fs_rings() -> bool {
+    if REQ_PHYS.load(Ordering::Relaxed) != 0 {
         return true;
     }
     // syscall SYS_RING_ALLOC: ritorna (req_phys, rdi=resp_phys)
@@ -238,13 +242,40 @@ pub(crate) fn fs_init() -> bool {
     if rax < 0 {
         return false;
     }
-    let req_phys = rax as u64;
-    let resp_phys = rdi;
+    REQ_PHYS.store(rax as u64, Ordering::Relaxed);
+    RESP_PHYS.store(rdi, Ordering::Relaxed);
+    true
+}
+
+/// Cancello leggero per il client LOG (Fase 57): come `fs_gate` ma SENZA
+/// handshake FS (il log funziona pre-FS e senza userfs: gli anelli bastano,
+/// la registrazione LOG viaggia su `LOG_REG` presso userlog). Rifiuta su
+/// fork (aliasing) e su async-FS in volo (un frame LOG interleavato
+/// corromperebbe il ring condiviso — il formato non ha lunghezze).
+pub(crate) fn fs_light_gate() -> Result<(), Error> {
+    if fs_forked() {
+        return Err(Error::Denied);
+    }
+    if !fs_rings() {
+        return Err(Error::NotReady);
+    }
+    if fs_async_pending() {
+        return Err(Error::Pending);
+    }
+    Ok(())
+}
+pub(crate) fn fs_init() -> bool {
+    if FS_INITED.load(Ordering::Relaxed) {
+        return true;
+    }
+    if !fs_rings() {
+        return false;
+    }
+    let req_phys = REQ_PHYS.load(Ordering::Relaxed);
+    let resp_phys = RESP_PHYS.load(Ordering::Relaxed);
     // Registra entrambi gli indirizzi fisici presso userfs
     match fs_send(FS_BUF_REG, req_phys, resp_phys) {
         Ok(_) => {
-            REQ_PHYS.store(req_phys, Ordering::Relaxed);
-            RESP_PHYS.store(resp_phys, Ordering::Relaxed);
             FS_INITED.store(true, Ordering::Relaxed);
             true
         }

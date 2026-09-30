@@ -13,7 +13,7 @@ nulla da solo.
 
 ## Stato (completate 1-55)
 
-Gate: `[testfs] PASS 5/5` + `[testfat] PASS 7/7` + `[testsarca] PASS 33/33` +
+Gate: `[testfs] PASS 5/5` + `[testfat] PASS 7/7` + `[testsarca] PASS 40/40` +
 `[usertests] PASS 58/58` + shell, zero FAIL/PANIC/FAULT.
 
 | Fase | Descrizione | Stato |
@@ -101,10 +101,17 @@ Voci con scope e vittoria dichiarati (non date).
        restano rinviati.
        Vittoria conseguita: rollback vero (persistente, sopravvive al kill);
        retention log implementabile (sblocco 57).
-- [ ] **57 (L0/L1) logging** (L0 prima di 55, L1 dopo 56; `arcafs.md` §15): L0
-      convenzione `/var/log` su FAT + rotazione nel servizio; L1 bucket
-      `log` nativo (seal + `R_SYNC` Group + retention via snapshot+GC).
-      Vittoria L0: log ruotati su FAT; L1: bucket nativo con retention.
+- [x] **57 (L1) logging** (chiusa, ADR-0039; L0 cancellato senza implementarlo:
+      la ragione — ArcaFS non esisteva — e' estinta): `userlog`
+      (`Service::Log` = 10, embedded boot-TCB, spawn parallelo a disk prima
+      di fs) RAM-first con `LOG_FLUSH` di init (handshake FS + backdate/re-key
+      pre-Time + riversamento incrementale + dual-write), bucket per identita'
+      (`peer_info`, mai dichiarato), `!idx` per la latest post-restart, seal
+      via snapshot, client `libr::log` su anelli condivisi (cancello leggero,
+      mai handshake FS), regola non-POSIX. testsarca 33→40 (registrato,
+      append+latest own-bucket, 1024B, rifiuti, seal+delete, stats con
+      flush-proof, bounce+rewarm).
+      Vittoria conseguita: log persistenti nativi con retention via snapshot+GC.
 - [ ] **58+ (A3–A8, V1, B1)** (dopo 56, come da `arcafs.md` §13): quota,
       ABAC engine, device-awareness, RAID, tool completo, rete; servizio
       vettoriale e backend VM/block fuori dal FS, mai dentro.

@@ -96,7 +96,8 @@ velordor/
 ├── run.sh              # build userland + testland + kernel + QEMU (PVH)
 ├── userland/           # SOLO binari ad uso utente: init, console server,
 │   │                   #   fs server, devfs, shell, uptime, kbd/tty (Fase 15),
-│   │                   #   disk server (Fase 16), time (Fase 50), arca (P5);
+│   │                   #   disk server (Fase 16), time (Fase 50), arca (P5),
+│   │                   #   log gateway L1 (Fase 57, boot-TCB embedded);
 │   │                   #   futuri: utility (Fase 18)
 │   └── build/          # output .bin dei servizi utente
 ├── blake2s/            # BLAKE2s-256 proprio (RFC 7693, no_std) — P5
@@ -121,7 +122,7 @@ velordor/
 
 ## Stato corrente
 
-Gate: `[testfs] PASS 5/5` + `[testfat] PASS 7/7` + `[testsarca] PASS 33/33` + `[usertests] PASS 58/58` + shell, zero FAIL/PANIC/FAULT (vedi `docs/src/11-testing.md`).
+Gate: `[testfs] PASS 5/5` + `[testfat] PASS 7/7` + `[testsarca] PASS 40/40` + `[usertests] PASS 58/58` + shell, zero FAIL/PANIC/FAULT (vedi `docs/src/11-testing.md`).
 
 - **Stato e futuro**: `ROADMAP.md` (sorgente unica: tabella completate 1-55, Pianificate, Parcheggiate).
 - **Storia dettagliata**: `docs/src/14-cronologia-fasi.md` (log per fase: decisioni, bug trovati, lezioni, validazioni).
@@ -317,10 +318,10 @@ rg '\[bench\]' /tmp/bench-run1.log /tmp/bench-run2.log /tmp/bench-run3.log
 # Suite di regressione (boot): 4 righe PASS attese e ZERO FAIL/PANIC
 #   [testfs] PASS 5/5
 #   [testfat] PASS 7/7
-#   [testsarca] PASS 33/33
+#   [testsarca] PASS 40/40
 #   [usertests] PASS 58/58
 timeout 150 ./run-tests.sh > /tmp/boot.log
-rg '\[testfs\] PASS 5/5|\[testfat\] PASS 7/7|\[testsarca\] PASS 33/33|\[usertests\] PASS 58/58' /tmp/boot.log
+rg '\[testfs\] PASS 5/5|\[testfat\] PASS 7/7|\[testsarca\] PASS 40/40|\[usertests\] PASS 58/58' /tmp/boot.log
 test "$(rg -c 'FAIL|PANIC|#.* FAULT' /tmp/boot.log)" = "0"
 ```
 

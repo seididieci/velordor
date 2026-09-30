@@ -4,7 +4,7 @@
 //! Chunking automatico: GET > RING_MAX_PAYLOAD → loop client con offset++.
 
 use super::ring::{req_ring_write, resp_ring_read_payload, resp_ring_consume, RING_MAX_PAYLOAD};
-use crate::{fs_notify_result, fs_reply_check, Error, FS_NOTIFY};
+use crate::{fs_gate, fs_notify_result, fs_reply_check, Error, FS_NOTIFY};
 use arcafs::proto::{
     R_OBJ_GET, R_OBJ_PUT, R_SNAP_CREATE, R_SNAP_DELETE, R_SNAP_ROLLBACK, R_SNAP_CLONE,
     R_OBJ_GET_ID, R_OBJ_STAT_ID, R_OBJ_DELETE, R_OBJ_STAT,
@@ -17,6 +17,9 @@ use alloc::vec::Vec;
 /// Ritorna il blob completo o Error (`Invalid` a bucket/chiave oltre bound,
 /// mai troncamento silenzioso).
 pub fn obj_get(bucket: &[u8], key: &[u8]) -> Result<Vec<u8>, Error> {
+    // Cancello ring (Fase 57): senza, un processo che non ha mai fatto FS
+    // scriverebbe su VA mai mappate (#PF) o interleaverebbe un async in volo.
+    fs_gate()?;
     let mut offset = 0usize;
     let mut result = Vec::new();
 
@@ -73,6 +76,8 @@ pub fn obj_get(bucket: &[u8], key: &[u8]) -> Result<Vec<u8>, Error> {
 /// PUT un oggetto in ArcaFS. Ritorna size scritta o Error (`Invalid` a
 /// bucket/chiave oltre bound, mai troncamento silenzioso).
 pub fn obj_put(bucket: &[u8], key: &[u8], data: &[u8]) -> Result<u64, Error> {
+    // Cancello ring (Fase 57): vedi `obj_get`.
+    fs_gate()?;
     // Valida i nomi una volta sola (il PUT vuoto salta il loop: senza,
     // nomi oltre bound passerebbero con Ok(0)).
     if wire::obj_prefix(bucket, key).is_none() {
@@ -141,6 +146,9 @@ fn build_put_payload(bucket: &[u8], key: &[u8], data: &[u8]) -> Option<Vec<u8>> 
 /// Invia una richiesta object/snap e ritorna (w0, w1) della reply.
 /// Il frame risposta (header 16 B, niente payload dedicato) e' consumato.
 fn obj_request(tag: u32, w0: u64, w1: u64, payload: &[u8]) -> Result<(u64, u64), Error> {
+    // Cancello ring (Fase 57): copre snap_*/obj_delete/get_id/stat* (un solo
+    // punto invece di N bracci: tutte le scalari passano di qui).
+    fs_gate()?;
     let frame = || req_ring_write(tag, w0, w1, payload);
     if !frame() {
         return Err(Error::RingFull);
@@ -189,6 +197,8 @@ pub fn snap_clone(snap_id: u64, dst: &[u8]) -> Result<u64, Error> {
 
 /// GET per object_id (chunking automatico come `obj_get`).
 pub fn obj_get_id(id: u64) -> Result<Vec<u8>, Error> {
+    // Cancello ring (Fase 57): vedi `obj_get`.
+    fs_gate()?;
     let mut offset = 0usize;
     let mut result = Vec::new();
     let payload = id.to_le_bytes();
@@ -232,6 +242,8 @@ pub fn obj_get_id(id: u64) -> Result<Vec<u8>, Error> {
 
 /// Stat per (bucket,key): (id, size head, versioni, mtime head).
 pub fn obj_stat(bucket: &[u8], key: &[u8]) -> Result<(u64, u64, u64, u64), Error> {
+    // Cancello ring (Fase 57): vedi `obj_get`.
+    fs_gate()?;
     let prefix = wire::obj_prefix(bucket, key).ok_or(Error::Invalid)?;
     let frame = || req_ring_write(R_OBJ_STAT, prefix.len() as u64, 0, &prefix);
     if !frame() {
@@ -263,6 +275,8 @@ pub fn obj_stat(bucket: &[u8], key: &[u8]) -> Result<(u64, u64, u64, u64), Error
 
 /// Stat per object_id: (size head, versioni, mtime head).
 pub fn obj_stat_id(id: u64) -> Result<(u64, u64, u64), Error> {
+    // Cancello ring (Fase 57): vedi `obj_get`.
+    fs_gate()?;
     let payload = id.to_le_bytes();
     let frame = || req_ring_write(R_OBJ_STAT_ID, payload.len() as u64, 0, &payload);
     if !frame() {
@@ -309,6 +323,8 @@ use arcafs::proto::{
 /// Invia un sub-op debug: ritorna (w0, w1, len) della reply SENZA consumare
 /// (il chiamante consuma dopo aver controllato i registri).
 fn arca_request(sub: u8, payload: &[u8]) -> Result<(u64, u64, usize), Error> {
+    // Cancello ring (Fase 57): copre tutti i debug `arca_*` (scaffold test).
+    fs_gate()?;
     let mut p = Vec::with_capacity(1 + payload.len());
     p.push(sub);
     p.extend_from_slice(payload);

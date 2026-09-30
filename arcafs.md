@@ -9,8 +9,9 @@ Stato: sessione guidata A0 completata (decisioni T0–T10) + piano OS-first
 P1–P5 chiuso (Fasi 50–54) + A1+N0 chiuso (Fase 55: object store, mount
 MBR/GPT, `sys` seedato, init dual-mode) + A2/56 CHIUSA (56.1 versioni in RAM;
 56.2a formato+allocatore; 56.2b B+tree COW + commit su disco; 56.2c
-recovery/orphan-GC + snapshot persistenti + sys-dal-volume). Prossimo: 57
-(L0/L1 logging) e 58+ (A3 quota/subvolumi, A4 ABAC, ...). Packing S1/S2,
+recovery/orphan-GC + snapshot persistenti + sys-dal-volume) + 57/Logging-L1
+CHIUSA (userlog RAM-first, bucket per identita', ADR-0039; L0 cancellato).
+Prossimo: 58+ (A3 quota/subvolumi, A4 ABAC, ...). Packing S1/S2,
 `R_OBJ_MGET` e marker dir persistenti (56.3) restano rinviati.
 
 > Nota sui gate: i numeri citati altrove sono snapshot storici; il gate

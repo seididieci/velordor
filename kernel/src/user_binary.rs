@@ -20,16 +20,19 @@ macro_rules! user_binary {
 // Ogni macro viene espansa DENTRO il suo modulo: nessuna collisione tra i
 // binari.
 //
-// Fase 21 (servizi da disco): il kernel embedda SOLO lo storage-TCB
-// (init/disk/fs, caricati prima che il FS esista); tutto il resto vive in
-// `/bin` e `/test` su /fat e parte via `spawn_image` (syscall 38).
+// Fase 21 (servizi da disco): il kernel embedda SOLO il boot-TCB
+// (init/disk/fs/log, caricati prima che il FS esista — log per primo per
+// disegno ADR-0039); tutto il resto vive in `/bin` e `/test` su /fat e parte
+// via `spawn_image` (syscall 38).
 mod init_bin { user_binary!(userinit_elf, "/../userland/build/userinit.bin"); }
 mod fs_bin { user_binary!(userfs_elf, "/../userland/build/userfs.bin"); }
 mod disk_bin { user_binary!(userdisk_elf, "/../userland/build/userdisk.bin"); }
+mod log_bin { user_binary!(userlog_elf, "/../userland/build/userlog.bin"); }
 
 use init_bin::userinit_elf;
 use fs_bin::userfs_elf;
 use disk_bin::userdisk_elf;
+use log_bin::userlog_elf;
 
 /// Spawna un processo user (gira in ring 3) dal binario ELF `elf`. `io_ranges`
 /// = porte I/O (inclusive) consentite a ring 3 (TSS per-processo, ADR-0006);
@@ -136,12 +139,14 @@ const KBD_PS2_RANGES: &[(u16, u16)] = &[(0x60, 0x64)];
 use crate::sched::Priority;
 
 /// I binari embedded spawabili per nome dalla syscall `spawn`. Fase 21: SOLO
-/// lo storage-TCB (init/disk/fs) — il resto parte da disco via `spawn_image`.
+/// lo storage-TCB (init/disk/fs) — Fase 57: +log (boot-TCB: deve partire prima
+/// che il FS esista, ADR-0039). Il resto parte da disco via `spawn_image`.
 /// I processi di servizio (fs) sono `Normal`.
 const NAMED_BINARIES: &[NamedBinary] = &[
     NamedBinary { name: "userfs",      elf: userfs_elf,      io_ranges: &[], priority: Priority::Normal },
     NamedBinary { name: "userdisk",    elf: userdisk_elf,    io_ranges: ATA_PIO_RANGES, priority: Priority::Normal },
     NamedBinary { name: "userinit",    elf: userinit_elf,    io_ranges: &[], priority: Priority::Normal },
+    NamedBinary { name: "userlog",     elf: userlog_elf,     io_ranges: &[], priority: Priority::Normal },
 ];
 
 /// Crea un nuovo processo dal binario embedded chiamato `name`. `parent` e'

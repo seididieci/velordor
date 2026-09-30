@@ -267,6 +267,43 @@ pub const DEV_KBD: u64 = 4;
 // - NOW (0x60): richiesta data/ora; reply `w0` = secondi epoch (UTC),
 //   `w1` = centesimi di secondo nel secondo corrente (0..99).
 pub const TIME_NOW: u64 = 0x60;
+// ── Protocollo LOG_* (client→userlog, Fase 57/L1, ADR-0039) ───────────
+// Single source of truth dei tag. Il servizio `Log` e' il gateway centrale
+// di logging (bucket `log` nativo + coda RAM quando il volume manca):
+// - REG (0x61): handshake register-only "i miei ring sono req=w0, resp=w1"
+//   (stampo FS_BUF_REG; niente frame). Il server archivia (chan→phys) +
+//   peer_pid/peer_info per attribuzione. Reply (0,0).
+// - APPEND (0x62): il client ha scritto un frame `[level:1][taglen:1][tag][msg]`
+//   (livello+formato in `libr::log`; il tag e' solo hint leggibile, il bucket
+//   e' DERIVATO dal server dall'identita' del chiamante) nel proprio ring LOG
+//   e notifica con w0 = payload-len (expect, come R_OBJ_GET); il server mappa
+//   il ring via `map_physical` (stampo `map_client_req_ring` di userfs), timbra
+//   tick+epoch e accoda in RAM (+ volume dopo la FLUSH). Reply (seq, durable).
+// - READ (0x63): payload `[giorno:8][seq:8]` sul bucket PROPRIO del chiamante
+//   (seq=0 → latest); risposta nel response ring del client (stampo DEV) +
+//   reply (len, seq). Niente nomi sul wire (ADR-0039).
+// - SEAL (0x64): snapshot esplicito del bucket `log` (retention via
+//   snapshot+GC esistenti); reply (snap_id, 0). Niente R_SYNC: commit per-op.
+// - STATS (0x65): contatori (appended, evicted); reply (appended, evicted) +
+//   frame `[durable:8][last_seal:8]`. Solo registri+frame, mai blocco.
+// - FLUSH (0x66): solo dal parent (init, dopo fs+time): handshake FS +
+//   backdate/re-key RAM + riversamento incrementale + dual-write da li'.
+//   Gli altri ricevono ERR. Reply (0,0) = accettato.
+pub const LOG_REG: u64 = 0x61;
+pub const LOG_APPEND: u64 = 0x62;
+pub const LOG_READ: u64 = 0x63;
+pub const LOG_SEAL: u64 = 0x64;
+pub const LOG_STATS: u64 = 0x65;
+pub const LOG_FLUSH: u64 = 0x66;
+/// Bound protocollo LOG (Fase 57, ADR-0039): sorgente 1..=32 B (niente `/`
+/// ne' NUL: e' un segmento di chiave oggetto), messaggio 1..=1024 B (il
+/// record `[tick:8][epoch:8][level:1][srclen:1][src][msg]` resta in un frame).
+pub const LOG_SRC_MAX: usize = 32;
+pub const LOG_MSG_MAX: usize = 1024;
+/// Coda RAM del servizio `userlog` (Fase 57): ultimi N record sempre leggibili
+/// anche senza volume (degrado RAM-only); oltre si butta il piu' vecchio e si
+/// conta in `evicted` (drop ammesso e contato, mai wedge il chiamante).
+pub const LOG_RAM_TAIL: usize = 128;
 /// Tag kernel→parent: un figlio e' terminato (exit o kill). Il kernel lo invia
 /// sul canale di nascita con `w0` = exit code e `w1` = pid del figlio morto
 /// (Fase 14, ADR-0010). Non e' una richiesta: il parent non deve rispondere.
@@ -566,12 +603,16 @@ pub enum Service {
     /// legge il CMOS all'avvio (epoch) e serve `TIME_NOW` (epoch + monotono
     /// PIT). Supervisionato da init come gli altri driver.
     Time = 9,
+    /// Gateway centrale di logging L1 (Fase 57, `userlog`, ADR-0039): append
+    /// nel bucket `log` nativo (+ coda RAM senza volume), lettura, seal via
+    /// snapshot, contatori. Supervisionato da init dopo `Time`.
+    Log = 10,
 }
 
 /// Massimo numero di servizi conosciuti = dimensione del registro kernel.
 /// Fase 39: 8→16 (slot liberi per futuri servizi senza ritoccare il
 /// kernel; discriminant storici intoccati, ABI stabile). Fase 50: slot 9
-/// assegnato a `Time`; liberi 10-15.
+/// assegnato a `Time`; Fase 57: slot 10 assegnato a `Log`; liberi 11-15.
 
 /// Massimo numero di servizi conosciuti = dimensione del registro kernel.
 pub const SERVICE_COUNT: usize = 16;

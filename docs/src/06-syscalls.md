@@ -279,6 +279,15 @@ Come la Fase 39, nessun numero nuovo: `service_register`/`lookup`/`send`/
 `service_name`; slot 10-15 restano liberi). Il protocollo `TIME_NOW` vive
 nei registri IPC (non nei frame): vedi [IPC](./07-ipc.md).
 
+### Fase 57 — servizio `Log` (nessuna syscall nuova)
+
+Stesso pattern: `send`/`recv` esistenti + `Service::Log = 10` (bracci in
+`service_from_disc`/`service_name`; slot 11-15 liberi). Il protocollo
+`LOG_*` (0x61-0x66) vive in registri + ring LOG del client (stampo FS):
+vedi [IPC](./07-ipc.md) e [ADR-0039](./adr/0039-logging-l1.md). Nota: il
+kernel embedda anche `userlog` (boot-TCB con init/disk/fs: deve partire
+prima che il FS esista).
+
 ### I/O
 
 | Syscall | Numero | Descrizione |

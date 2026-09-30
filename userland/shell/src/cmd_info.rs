@@ -314,6 +314,9 @@ fn service_by_name(name: &str) -> Option<libr::Service> {
         "kbd" => Some(libr::Service::Kbd),
         "tty" => Some(libr::Service::Tty),
         "disk" => Some(libr::Service::Disk),
+        "posix" => Some(libr::Service::Posix),
+        "time" => Some(libr::Service::Time),
+        "log" => Some(libr::Service::Log),
         _ => None,
     }
 }

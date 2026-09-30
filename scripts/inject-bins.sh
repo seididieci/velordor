@@ -22,6 +22,8 @@ mcopy -i "$IMG" userland/build/usershell.bin   ::/bin/shell.bin   || exit 1
 mcopy -i "$IMG" userland/build/userposix.bin   ::/bin/posix.bin   || exit 1
 # Fornitore di data/ora (Fase 50, P1 orologio).
 mcopy -i "$IMG" userland/build/usertime.bin    ::/bin/time.bin    || exit 1
+# Gateway centrale di logging L1 (Fase 57, ADR-0039).
+mcopy -i "$IMG" userland/build/userlog.bin     ::/bin/log.bin     || exit 1
 mcopy -i "$IMG" userland/build/userrunhello.bin ::/bin/runhello.bin || exit 1
 # Tool guest ArcaFS (Fase 54, P5): `list`/`stat`.
 mcopy -i "$IMG" userland/build/userarca.bin   ::/bin/arca.bin    || exit 1

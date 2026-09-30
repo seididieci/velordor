@@ -125,9 +125,9 @@ pub(super) fn sys_peer_info(chan: usize) -> i64 {
 
 /// Converti un discriminant in un `Service` valido.
 /// Match esplicito (mai transmute): con SERVICE_COUNT > numero di varianti
-/// (slot 10-15 liberi; 9 assegnato a Time in Fase 50) il transmute di un
-/// discriminant libero sarebbe UB (valore senza variante). Solo gli slot
-/// assegnati risolvono.
+/// (slot 11-15 liberi; 9 assegnato a Time in Fase 50, 10 a Log in Fase 57)
+/// il transmute di un discriminant libero sarebbe UB (valore senza variante).
+/// Solo gli slot assegnati risolvono.
 fn service_from_disc(disc: u64) -> Option<syscall_numbers::Service> {
     use syscall_numbers::Service::*;
     match disc {
@@ -141,6 +141,7 @@ fn service_from_disc(disc: u64) -> Option<syscall_numbers::Service> {
         7 => Some(Disk),
         8 => Some(Posix),
         9 => Some(Time),
+        10 => Some(Log),
         _ => None,
     }
 }
@@ -158,6 +159,7 @@ fn service_name(s: syscall_numbers::Service) -> &'static str {
         syscall_numbers::Service::Disk => "disk",
         syscall_numbers::Service::Posix => "posix",
         syscall_numbers::Service::Time => "time",
+        syscall_numbers::Service::Log => "log",
     }
 }
 

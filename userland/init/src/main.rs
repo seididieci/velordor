@@ -37,6 +37,7 @@ fn expected_hash(bin: &[u8]) -> Option<u64> {
         b"userposix" => Some(HASH_USERPOSIX),
         b"usershell" => Some(HASH_USERSHELL),
         b"usertime" => Some(HASH_USERTIME),
+        b"userlog" => Some(HASH_USERLOG),
         _ => None,
     }
 }
@@ -55,6 +56,7 @@ fn expected_blake(bin: &[u8]) -> Option<[u8; 32]> {
         b"userposix" => Some(BLAKE_USERPOSIX),
         b"usershell" => Some(BLAKE_USERSHELL),
         b"usertime" => Some(BLAKE_USERTIME),
+        b"userlog" => Some(BLAKE_USERLOG),
         _ => None,
     }
 }
@@ -92,6 +94,39 @@ fn wait_msg(chan: i64, tag: u64) {
     }
 }
 
+/// Attende il tag `tag` su TUTTI i canali `chans` (spawn parallelo, Fase 57):
+/// loop `recv` finche' ogni canale ha mandato il suo READY (consumati senza
+/// reply, fire-and-forget); la morte di un atteso e' FAIL LOUD con nome.
+fn wait_any(chans: &[i64], tag: u64) {
+    let mut seen = [false; 4];
+    loop {
+        let mut done = true;
+        for (i, _) in chans.iter().enumerate() {
+            if !seen[i] {
+                done = false;
+            }
+        }
+        if done {
+            return;
+        }
+        match libr::recv() {
+            Ok(m) if m.tag == tag => {
+                for (i, c) in chans.iter().enumerate() {
+                    if *c as u64 == m.channel {
+                        seen[i] = true;
+                    }
+                }
+            }
+            Ok(m) if m.tag == libr::EXIT_NOTIFY => {
+                println!("[init] boot FAILED (morte pre-ready pid={})", m.w1);
+                libr::exit(1);
+            }
+            Ok(_) => {}
+            Err(_) => {}
+        }
+    }
+}
+
 /// Spawna un binario embedded per nome e logga il canale figlio ottenuto.
 /// Ritorna il channel id se lo spawn e' riuscito, altrimenti None.
 fn spawn_child(name: &[u8]) -> Option<i64> {
@@ -110,7 +145,8 @@ fn spawn_child(name: &[u8]) -> Option<i64> {
 }
 
 /// Metadati di un servizio avviabile da disco (Fase 21): `path=None` = binario
-/// embedded (spawn per nome, solo disk/fs restano embedded); `path=Some` =
+/// embedded (spawn per nome, solo disk/fs/log restano embedded — log per
+/// primo per disegno ADR-0039); `path=Some` =
 /// file da leggere via FS e spawnare con `spawn_image`. `io`/`prio` servono
 /// solo al path da disco (l'embedded li prende dalla tabella kernel).
 struct SvcMeta {
@@ -510,12 +546,28 @@ const SVC_TIME: SvcMeta = SvcMeta {
     prio: 16,
     io: TIME_CMOS_RANGES,
 };
+/// Gateway centrale di logging L1 (Fase 57, ADR-0039): EMBEDDED come
+/// disk/fs (deve partire prima che il FS esista — spawn per nome, mai da
+/// disco). Primo dopo init, supervisionato con restart come gli altri driver.
+const SVC_LOG: SvcMeta = SvcMeta {
+    bin: b"userlog",
+    path: None,
+    obj: None,
+    prio: 16,
+    io: &[],
+};
 const TEST_FS: SvcMeta = SvcMeta { bin: b"usertestfs", path: Some("/fat/test/testfs.bin"), obj: None, prio: 16, io: &[] };
 const TEST_FAT: SvcMeta = SvcMeta { bin: b"usertestfat", path: Some("/fat/test/testfat.bin"), obj: None, prio: 16, io: &[] };
 const TEST_ARCA: SvcMeta = SvcMeta { bin: b"usertestsarca", path: Some("/fat/test/testarca.bin"), obj: None, prio: 16, io: &[] };
 const TESTS: SvcMeta = SvcMeta { bin: b"usertests", path: Some("/fat/test/tests.bin"), obj: None, prio: 16, io: &[] };
 #[cfg(feature = "bench")]
 const TEST_BENCH: SvcMeta = SvcMeta { bin: b"userbench", path: Some("/fat/test/bench.bin"), obj: None, prio: 16, io: &[] };
+
+/// Spawna dal manifest SENZA attesa (spawn parallelo, Fase 57): il chiamante
+/// sincronizza con `wait_any`. Fallimento = None (fail loud al chiamante).
+fn boot_svc_nowait(meta: &'static SvcMeta) -> Option<i64> {
+    spawn_entry(meta)
+}
 
 /// Spawna dal manifest e attende SVC_READY se richiesto. A boot il fallimento
 /// e' FAIL LOUD (panic via exit: senza servizi il sistema e' inutilizzabile e
@@ -534,38 +586,47 @@ fn real_main(_sp: u64) -> ! {
     let my_pid = libr::getpid();
     println!("[init] up, pid={}", my_pid);
 
-    // Spawna i servizi user. Ordine importante + attesa prontezza (SVC_READY
-    // fire-and-forget, consumato senza reply). Fase 21: disk/fs sono gli UNICI
-    // embedded (storage-TCB: spawn per nome prima che il FS esista); la
-    // console NON puo' piu' essere prima (da disco: caricarla richiede userfs
-    // gia' pronto — prima era prima solo perche' embedded). Resta comunque
-    // prima di kbd, che risolve `Console` per nome:
-    // 1. userdisk + attesa READY e userfs SUBITO DOPO + attesa READY.
-    // 1b. usertime + attesa READY (Fase 50: serve /fat, quindi dopo userfs).
-    // 2. userconsole da disco + attesa READY + uptime.
-    // 3. devfs + attesa READY, kbd + attesa READY, tty + attesa READY,
-    //    posix + attesa READY (skeleton 40.3: nessuna dipendenza).
-    // A boot ogni spawn mancato e' FAIL LOUD (exit → panic kernel): un
-    // sistema senza servizi e' inutilizzabile, mai degradato silenzioso.
-    // userdisk PRIMA di userfs (Fase 16): userfs monta /fat via IPC DISK a
-    // boot e il suo HELLO richiede Disk gia' registrato. userdisk fa READY
-    // subito dopo detection + service_register (prima del mount dei nodi,
-    // che aspetta Fs): nessun deadlock. Attesa READY su entrambi (come
-    // prima): chi usa il FS parte solo dopo che userfs e' pronto.
+    // Spawna i servizi user. Fase 57: log+disk in PARALLELO (log non aspetta
+    // nessuno — prova che il chicken-egg e' morto; disk fa detection). Poi
+    // fs (serve Disk registrato), time (serve /fat), FLUSH a userlog (dopo
+    // time: backdate/re-key), console (prima di kbd), uptime, devfs, kbd,
+    // tty, posix. A boot ogni spawn mancato e' FAIL LOUD (exit → panic).
+    // userlog PRIMA di userfs per disegno (ADR-0039): assorbe tutto in RAM e
+    // riversa alla FLUSH; userdisk fa READY subito dopo detection +
+    // service_register (prima del mount dei nodi, che aspetta Fs).
+    let Some(log_chan) = boot_svc_nowait(&SVC_LOG) else {
+        println!("[init] boot FAILED (log spawn), panic");
+        libr::exit(1);
+    };
     let Some(disk_chan) = spawn_child(b"userdisk") else {
         println!("[init] boot FAILED (disk), panic");
         libr::exit(1);
     };
-    wait_msg(disk_chan, SVC_READY);
+    wait_any(&[log_chan, disk_chan], SVC_READY);
+    let _ = libr::log::log(b"init", b"log ready");
+    let _ = libr::log::log(b"init", b"disk ready");
+
+    // userfs SUBITO DOPO disk (serve Disk registrato: resta dopo per non
+    // spendere il bound HELLO — il mount aspetterebbe comunque il disco).
+    // Chi usa il FS parte solo dopo che userfs e' pronto (READY = pronto).
     let Some(fs_chan) = spawn_child(b"userfs") else {
         println!("[init] boot FAILED (fs), panic");
         libr::exit(1);
     };
     wait_msg(fs_chan, SVC_READY);
+    let _ = libr::log::log(b"init", b"fs ready");
     // Time da disco (Fase 50, P1 orologio): registra Time + ack; chi serve
-    // data/ora (userfs per mtime, log futuri) lo risolve per nome.
+    // data/ora (userfs per mtime, userlog per i timbri) lo risolve per nome.
     if boot_svc(&SVC_TIME, true).is_none() {
         println!("[init] boot FAILED (time), panic");
+        libr::exit(1);
+    }
+    let _ = libr::log::log(b"init", b"time ready");
+    // FLUSH a userlog (Fase 57, ADR-0039): dopo fs (backend) + time (epoch
+    // per backdate/re-key). Da qui dual-write RAM+volume; il pre-boot resta
+    // anche su seriale (duplicazione dichiarata, non perdita).
+    if libr::log::log_flush().is_err() {
+        println!("[init] boot FAILED (log flush), panic");
         libr::exit(1);
     }
     // Console da disco (Fase 21): registra Console + ack subito dopo la
@@ -576,6 +637,7 @@ fn real_main(_sp: u64) -> ! {
         libr::exit(1);
     };
     let _ = console_chan;
+    let _ = libr::log::log(b"init", b"console ready");
     // uptime: nessuna attesa (solo informativo, come prima).
     boot_svc(&SVC_UPTIME, false);
     let Some(devfs_chan) = boot_svc(&SVC_DEVFS, true) else {
@@ -583,27 +645,31 @@ fn real_main(_sp: u64) -> ! {
         libr::exit(1);
     };
     let _ = devfs_chan;
+    let _ = libr::log::log(b"init", b"devfs ready");
     // 4. userkbd + attesa READY (Fase 15: registra Kbd + mount /dev/kbd; Fs
     //    garantito dal passo 2, quindi riesce subito a boot).
     if boot_svc(&SVC_KBD, true).is_none() {
         println!("[init] boot FAILED (kbd), panic");
         libr::exit(1);
     }
+    let _ = libr::log::log(b"init", b"kbd ready");
     // 5. usertty + attesa READY (Fase 15: registra /dev/input; /dev/kbd e
     //    /dev/console garantiti dai passi precedenti, riesce subito a boot).
     if boot_svc(&SVC_TTY, true).is_none() {
         println!("[init] boot FAILED (tty), panic");
         libr::exit(1);
     }
+    let _ = libr::log::log(b"init", b"tty ready");
     // 6. userposix + attesa READY (Fase 40.3, P1): skeleton senza dipendenze
     //    (registra solo il servizio e resta in recv), riesce subito a boot.
     if boot_svc(&SVC_POSIX, true).is_none() {
         println!("[init] boot FAILED (posix), panic");
         libr::exit(1);
     }
+    let _ = libr::log::log(b"init", b"posix ready");
 
     // Tabella supervisione (Fase 14, init-restart): console/fs/devfs/kbd/tty/
-    // disk/posix/time vengono riavviati alla morte (dalla loro sorgente: embedded per
+    // disk/posix/time/log vengono riavviati alla morte (dalla loro sorgente: embedded per
     // disk/fs, disco per gli altri — Fase 21); gli altri figli solo loggati.
     // Costruita prima dei test cosi' anche run_test supervisiona (t27 uccide
     // devfs a suite in corso). NOTA: un restart di userfs wipa la ramfs
@@ -623,6 +689,7 @@ fn real_main(_sp: u64) -> ! {
         Supervised { meta: &SVC_TTY, svc: libr::Service::Tty, chan: -1, pid: -1, restarts: 0, window_start: 0, held: false },
         Supervised { meta: &SVC_POSIX, svc: libr::Service::Posix, chan: -1, pid: -1, restarts: 0, window_start: 0, held: false },
         Supervised { meta: &SVC_TIME, svc: libr::Service::Time, chan: -1, pid: -1, restarts: 0, window_start: 0, held: false },
+        Supervised { meta: &SVC_LOG, svc: libr::Service::Log, chan: -1, pid: -1, restarts: 0, window_start: 0, held: false },
     ];
     for e in supervised.iter_mut() {
         e.pid = libr::service_pid(e.svc).unwrap_or(-1);

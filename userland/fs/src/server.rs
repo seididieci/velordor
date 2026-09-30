@@ -14,6 +14,7 @@ fn driver_name_of(chan: u64) -> &'static str {
         Ok(h) if h == HASH_USERDEVFS => "userdevfs",
         Ok(h) if h == HASH_USERDISK => "userdisk",
         Ok(h) if h == HASH_USERKBD => "userkbd",
+        Ok(h) if h == HASH_USERLOG => "userlog",
         Ok(h) if h == HASH_USERSHELL => "usershell",
         Ok(h) if h == HASH_USERTTY => "usertty",
         Ok(h) if h == HASH_USERUPTIME => "useruptime",
