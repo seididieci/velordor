@@ -16,7 +16,7 @@ mcopy -i "$IMG" userland/build/gpu.bin ::/bin/gpu.bin || exit 1
 mcopy -i "$IMG" userland/build/useruptime.bin  ::/bin/uptime.bin  || exit 1
 mcopy -i "$IMG" userland/build/vela.bin      ::/bin/vela.bin   || exit 1
 mcopy -i "$IMG" userland/build/kbd.bin     ::/bin/kbd.bin     || exit 1
-mcopy -i "$IMG" userland/build/usertty.bin     ::/bin/tty.bin     || exit 1
+mcopy -i "$IMG" userland/build/porta.bin       ::/bin/porta.bin     || exit 1
 mcopy -i "$IMG" userland/build/usershell.bin   ::/bin/shell.bin   || exit 1
 # Server di personalita' POSIX (Fase 40.3, P1): skeleton supervisionato.
 mcopy -i "$IMG" userland/build/userposix.bin   ::/bin/posix.bin   || exit 1

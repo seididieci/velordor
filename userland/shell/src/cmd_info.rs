@@ -312,7 +312,7 @@ fn service_by_name(name: &str) -> Option<libr::Service> {
         "vela" => Some(libr::Service::Vela),
         "init" => Some(libr::Service::Init),
         "kbd" => Some(libr::Service::Kbd),
-        "tty" => Some(libr::Service::Tty),
+        "porta" => Some(libr::Service::Porta),
         "block" => Some(libr::Service::Block),
         "posix" => Some(libr::Service::Posix),
         "time" => Some(libr::Service::Time),

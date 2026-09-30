@@ -213,15 +213,15 @@ pub fn t_neighbor() -> bool {
 /// t31 — presenza keyboard stack in userspace (Fase 15, gate leggero).
 /// Verifica che i servizi Kbd/Tty siano registrati e i device apribili:
 /// /dev/kbd (scancode raw da kbd) e /dev/input/keyboard (byte cotti da
-/// usertty, stesso path di prima). Niente digitazione reale (serve QMP).
+/// porta, stesso path di prima). Niente digitazione reale (serve QMP).
 pub fn t_kbd_presence() -> bool {
     helpers::drain_stray();
     if libr::service_pid(libr::Service::Kbd).is_err() {
         println!("[usertests] t31: service Kbd non registrato");
         return false;
     }
-    if libr::service_pid(libr::Service::Tty).is_err() {
-        println!("[usertests] t31: service Tty non registrato");
+    if libr::service_pid(libr::Service::Porta).is_err() {
+        println!("[usertests] t31: service Porta non registrato");
         return false;
     }
     let Ok(fk) = libr::open_wait("/dev/kbd/kbd", 0, 1000, libr::POLL_PERIOD_TICKS) else {

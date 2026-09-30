@@ -1,4 +1,4 @@
-//! usertty — Terminal server in userspace (Fase 15, raw in 43b).
+//! porta — Terminale in userspace (Fase 15, raw in 43b, R9: ex-tty).
 //!
 //! Legge scancode raw (Set 1) da `/dev/kbd` (driver `kbd`), li decodifica
 //! con `pc_keyboard` (layout US) e serve i byte ai client sul device
@@ -162,7 +162,7 @@ impl Tty {
     /// Stampa SEMPRE: un reset inatteso deve essere visibile (lo stallo
     /// silenzioso di Fase 15 e' costato un giorno di diagnosi).
     fn reset_to_lookup(&mut self) {
-        println!("[usertty] reset boot SM (phase={:?})", self.phase as u8);        libr::fs_abort_pending();
+        println!("[porta] reset boot SM (phase={:?})", self.phase as u8);        libr::fs_abort_pending();
         self.pending = None;
         self.phase = Phase::LookupFs;
         self.kbd_fd = -1;
@@ -178,7 +178,7 @@ impl Tty {
         // che ce ne accorgessimo (nessun EXIT a noi: non siamo suoi peer):
         // dopo 50 errori consecutivi riparti dal lookup (riapre i peer).
         if self.err_streak >= 50 {
-            println!("[usertty] streak errori, riapro i peer");
+            println!("[porta] streak errori, riapro i peer");
             self.reset_to_lookup();
         }
     }
@@ -326,7 +326,7 @@ impl Tty {
                     Ok(0) => {
                         self.err_streak = 0;
                         self.phase = Phase::Steady;
-                        println!("[usertty] registered /dev/input with cardo");
+                        println!("[porta] registered /dev/input with cardo");
                     }
                     _ => {
                         self.note_error();
@@ -471,12 +471,12 @@ impl Tty {
 
 libr::entry!(real_main);
 fn real_main(_sp: u64) -> ! {
-    println!("[usertty] starting, pid={}", libr::getpid());
+    println!("[porta] starting, pid={}", libr::getpid());
 
     // Registra il servizio Tty per nome (supervisione init-restart; i client
     // usano il FS, nessuno risolve questo nome per parlare).
-    if libr::service_register(libr::Service::Tty).is_ok() {
-        println!("[usertty] registered as service Tty");
+    if libr::service_register(libr::Service::Porta).is_ok() {
+        println!("[porta] registered as service Porta");
     }
 
     let mut tty = Tty::new();
@@ -546,7 +546,7 @@ impl Tty {
         if m.tag == libr::EXIT_NOTIFY {
             // cardo morto e rinato (o altro peer): riparte il boot async
             // (riapre i peer, ri-registra). Mai reply.
-            println!("[usertty] peer morto, riparto dal lookup");
+            println!("[porta] peer morto, riparto dal lookup");
             self.reset_to_lookup();
             return;
         }
@@ -607,6 +607,6 @@ impl Tty {
 
 #[panic_handler]
 fn panic(_info: &core::panic::PanicInfo) -> ! {
-    println!("[usertty] panic");
+    println!("[porta] panic");
     libr::exit(1)
 }

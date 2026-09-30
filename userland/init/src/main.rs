@@ -33,7 +33,7 @@ fn expected_hash(bin: &[u8]) -> Option<u64> {
         b"useruptime" => Some(HASH_USERUPTIME),
         b"vela" => Some(HASH_VELA),
         b"kbd" => Some(HASH_KBD),
-        b"usertty" => Some(HASH_USERTTY),
+        b"porta" => Some(HASH_PORTA),
         b"userposix" => Some(HASH_USERPOSIX),
         b"usershell" => Some(HASH_USERSHELL),
         b"usertime" => Some(HASH_USERTIME),
@@ -52,7 +52,7 @@ fn expected_blake(bin: &[u8]) -> Option<[u8; 32]> {
         b"useruptime" => Some(BLAKE_USERUPTIME),
         b"vela" => Some(BLAKE_VELA),
         b"kbd" => Some(BLAKE_KBD),
-        b"usertty" => Some(BLAKE_USERTTY),
+        b"porta" => Some(BLAKE_PORTA),
         b"userposix" => Some(BLAKE_USERPOSIX),
         b"usershell" => Some(BLAKE_USERSHELL),
         b"usertime" => Some(BLAKE_USERTIME),
@@ -515,9 +515,9 @@ const SVC_KBD: SvcMeta = SvcMeta {
     prio: 16,
     io: KBD_PS2_RANGES,
 };
-const SVC_TTY: SvcMeta = SvcMeta {
-    bin: b"usertty",
-    path: Some("/fat/bin/tty.bin"),
+const SVC_PORTA: SvcMeta = SvcMeta {
+    bin: b"porta",
+    path: Some("/fat/bin/porta.bin"),
     obj: None,
     prio: 16,
     io: &[],
@@ -653,9 +653,9 @@ fn real_main(_sp: u64) -> ! {
         libr::exit(1);
     }
     let _ = libr::vestigia::log(b"init", b"kbd ready");
-    // 5. usertty + attesa READY (Fase 15: registra /dev/input; /dev/kbd e
+    // 5. porta + attesa READY (Fase 15: registra /dev/input; /dev/kbd e
     //    /dev/console garantiti dai passi precedenti, riesce subito a boot).
-    if boot_svc(&SVC_TTY, true).is_none() {
+    if boot_svc(&SVC_PORTA, true).is_none() {
         println!("[init] boot FAILED (tty), panic");
         libr::exit(1);
     }
@@ -686,7 +686,7 @@ fn real_main(_sp: u64) -> ! {
         Supervised { meta: &META_FS, svc: libr::Service::Cardo, chan: -1, pid: -1, restarts: 0, window_start: 0, held: false },
         Supervised { meta: &SVC_VELA, svc: libr::Service::Vela, chan: -1, pid: -1, restarts: 0, window_start: 0, held: false },
         Supervised { meta: &SVC_KBD, svc: libr::Service::Kbd, chan: -1, pid: -1, restarts: 0, window_start: 0, held: false },
-        Supervised { meta: &SVC_TTY, svc: libr::Service::Tty, chan: -1, pid: -1, restarts: 0, window_start: 0, held: false },
+        Supervised { meta: &SVC_PORTA, svc: libr::Service::Porta, chan: -1, pid: -1, restarts: 0, window_start: 0, held: false },
         Supervised { meta: &SVC_POSIX, svc: libr::Service::Posix, chan: -1, pid: -1, restarts: 0, window_start: 0, held: false },
         Supervised { meta: &SVC_TIME, svc: libr::Service::Time, chan: -1, pid: -1, restarts: 0, window_start: 0, held: false },
         Supervised { meta: &SVC_VESTIGIA, svc: libr::Service::Vestigia, chan: -1, pid: -1, restarts: 0, window_start: 0, held: false },

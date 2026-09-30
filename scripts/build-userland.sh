@@ -38,7 +38,7 @@ build_one userland/block   userland/block/src/block.ld     block.bin       block
 build_one userland/vela    userland/vela/src/vela.ld       vela.bin        vela
 build_one userland/gpu     userland/gpu/src/gpu.ld         gpu.bin         gpu
 build_one userland/kbd     userland/kbd/src/kbd.ld         kbd.bin         kbd
-build_one userland/tty     userland/tty/src/tty.ld         usertty.bin     usertty
+build_one userland/porta   userland/porta/src/porta.ld     porta.bin       porta
 build_one userland/uptime  userland/uptime/src/uptime.ld   useruptime.bin  useruptime
 # Server di personalita' POSIX (Fase 40.3, P1): skeleton supervisionato, prima
 # di gen-service-hashes cosi' il manifest Strato 2 lo copre (HASH_USERPOSIX).

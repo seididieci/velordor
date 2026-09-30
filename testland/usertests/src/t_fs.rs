@@ -481,7 +481,7 @@ pub fn t_stat() -> bool {
 
 /// t39 — servizi da disco (Fase 21): i binari in `/bin` e `/test` (iniettati
 /// a build via mcopy) esistono e sono non vuoti, e tutti i servizi sono up
-/// per nome (= il boot da disco ha funzionato: console/kbd/tty/shell non
+/// per nome (= il boot da disco ha funzionato: gpu/kbd/porta/shell non
 /// sono piu' embedded ma girano).
 pub fn t_diskboot() -> bool {
     let mut st = libr::Stat { size: 0, kind: 0, readonly: false, mtime: 0 };
@@ -490,7 +490,7 @@ pub fn t_diskboot() -> bool {
         "/fat/bin/uptime.bin",
         "/fat/bin/vela.bin",
         "/fat/bin/kbd.bin",
-        "/fat/bin/tty.bin",
+        "/fat/bin/porta.bin",
         "/fat/bin/shell.bin",
         "/fat/test/testfs.bin",
         "/fat/test/testfat.bin",
@@ -506,7 +506,7 @@ pub fn t_diskboot() -> bool {
         libr::Service::Cardo,
         libr::Service::Vela,
         libr::Service::Kbd,
-        libr::Service::Tty,
+        libr::Service::Porta,
         libr::Service::Block,
     ] {
         if libr::service_lookup(svc).is_err() {

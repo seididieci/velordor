@@ -3,7 +3,7 @@
 //! Possiede le porte 0x60/0x64 (via `io_ranges`, TSS per-processo ADR-0006) e
 //! pubblica gli scancode raw (Set 1) sul device `/dev/kbd`, registrato presso
 //! cardo come gli altri driver (FS_REGISTER). La decodifica resta fuori: sara'
-//! `usertty` a leggere `/dev/kbd` e a servire i byte cotti (Fase 15.3).
+//! `porta` a leggere `/dev/kbd` e a servire i byte cotti (Fase 15.3).
 //!
 //! Risveglio: il kernel su IRQ1 fa solo routing + EOI e sveglia l'owner del
 //! servizio `Kbd` per nome. Il loop e' un `recv` bloccante: il wake IRQ lo
@@ -182,7 +182,7 @@ fn real_main(_sp: u64) -> ! {
     let mut queue = ScanQueue::new();
     let mut next_fd: u32 = 1;
     // Canale verso tty per KBD_NOTIFY (lookup pigro + re-lookup se tty muore).
-    let mut tty_chan: i64 = -1;
+    let mut porta_chan: i64 = -1;
     let mut last_notify_tick: i64 = 0;
 
     loop {
@@ -218,7 +218,7 @@ fn real_main(_sp: u64) -> ! {
                         }
                         DEV_READ => {
                             // Consegna subito il disponibile (anche 0 con frame
-                            // vuoto, pattern /dev/null). Il lettore (usertty,
+                            // vuoto, pattern /dev/null). Il lettore (porta,
                             // notify-driven) riprova alla prossima notify. Niente
                             // reply differite: le VA map_in verrebbero rimappate
                             // da altri nel mentre.
@@ -251,16 +251,16 @@ fn real_main(_sp: u64) -> ! {
         if queue.len() > 0 {
             let now = libr::get_ticks();
             if had == 0 || now.wrapping_sub(last_notify_tick) >= 2 {
-                if tty_chan < 0 {
-                    tty_chan = libr::service_lookup(libr::Service::Tty)
+                if porta_chan < 0 {
+                    porta_chan = libr::service_lookup(libr::Service::Porta)
                         .unwrap_or(-1);
                 }
-                if tty_chan >= 0 {
-                    if libr::send_async(tty_chan as u64, KBD_NOTIFY, queue.len() as u64, 0).is_ok() {
+                if porta_chan >= 0 {
+                    if libr::send_async(porta_chan as u64, KBD_NOTIFY, queue.len() as u64, 0).is_ok() {
                         last_notify_tick = now;
                     } else {
                         // tty riavviato (canale morto): re-lookup al prossimo giro.
-                        tty_chan = -1;
+                        porta_chan = -1;
                     }
                 }
             }

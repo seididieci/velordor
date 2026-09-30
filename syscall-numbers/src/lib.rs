@@ -225,7 +225,7 @@ pub const FS_NOTIFY: u64 = 0x32;
 //   R_REGISTER nel request ring, letto da cardo).
 // - FS_BUF_REG (0x31): handshake register-only "i miei ring sono req=w0,
 //   resp=w1" (client e driver verso cardo).
-// - KBD_NOTIFY (0x40): kbd → usertty, scancode in coda (w0 = count).
+// - KBD_NOTIFY (0x40): kbd → porta, scancode in coda (w0 = count).
 // - JOB_CANCEL (0x43): parent → figlio, cancel cooperativo job control
 //   (Fase 44b: Ctrl-C della shell; w0 = 2/SIGINT, informativo). Il figlio
 //   puo' gestirlo (cleanup + exit a sua scelta) o ignorarlo (il parent
@@ -586,10 +586,10 @@ pub enum Service {
     /// scancode raw sul device `/dev/kbd`. Il kernel (IRQ1) risolve questo
     /// servizio per nome e sveglia l'owner (routing + EOI, mai lettura porte).
     Kbd = 5,
-    /// Terminal server in userspace (Fase 15, `usertty`): decodifica i tasti,
+    /// Soglia d'ingresso in userspace (Fase 15, `porta`, R9): decodifica i tasti,
     /// fa echo e serve `/dev/input/keyboard`. Registrato per la supervisione
     /// init (restart); nessun altro lo risolve per nome (i client usano il FS).
-    Tty = 6,
+    Porta = 6,
     /// Driver ATA a blocchi in userspace (Fase 16, `block`, R6): rileva i dischi,
     /// espone `/dev/sdX` (+`/dev/sdXn` per le partizioni MBR). cardo lo
     /// risolve per nome per il data-plane `DISK_*`; init lo supervisiona.

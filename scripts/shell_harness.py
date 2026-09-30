@@ -21,7 +21,7 @@ FAT2_DFLT = "userland/fs/fat2.img"
 # Nomi sendkey VERIFICATI su QEMU 10.2.2 ('period' NON esiste: il punto e'
 # 'dot'; MAIUSCOLE come combo 'shift-x'; '>' e '<' = shift-dot/shift-comma;
 # nomi parser Fase 41 sondati live in smoke41.py; '\\' e '|' richiedono il
-# fix Us104Fix in usertty).
+# fix Us104Fix in porta).
 KEYMAP = {" ": "spc", ".": "dot", "-": "minus", "/": "slash", "&": "shift-7",
           ">": "shift-dot", "<": "shift-comma", "!": "shift-1",
           "'": "apostrophe", '"': "shift-apostrophe",

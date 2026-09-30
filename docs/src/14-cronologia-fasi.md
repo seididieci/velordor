@@ -1921,3 +1921,9 @@
           shell, test 34-40). Tag `LOG_*` e bucket `log` invariati
           (precedente `TIME_NOW`). Gate: 5/5 + 7/7 + 40/40 + 58/58, zero
           FAIL/PANIC/FAULT. Docs ai nuovi nomi in R-final.
+    - [x] R9 (rename a fasi, ADR-0040): `usertty`→`porta` (dir, package, bin
+          `porta.bin` + dest FAT, display, `Service::Tty`→`Service::Porta`,
+          manifest, init, shell, kbd lookup, test t31/t39). Device path
+          `/dev/input/*` e tag `KBD_NOTIFY` invariati; resta fuori Vela (line
+          discipline autonoma). Gate: 5/5 + 7/7 + 40/40 + 58/58, zero
+          FAIL/PANIC/FAULT. Docs ai nuovi nomi in R-final.

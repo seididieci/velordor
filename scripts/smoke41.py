@@ -8,7 +8,7 @@ KEYMAP che auto-calibra i nomi QEMU (validita' da reply monitor, consegna da
 eco quotato nel guest).
 
 Fix driver coperto qui (indagine completa): pc-keyboard 0.7 mappa 0x2B su
-Oem7 ma Us104Key non lo gestisce -> usertty usa Us104Fix (Oem7 = \\ / |).
+Oem7 ma Us104Key non lo gestisce -> porta usa Us104Fix (Oem7 = \\ / |).
 Senza, '\\' e '|' non arrivano mai (nomi QEMU validi ma byte persi).
 
 Uso: python3 scripts/smoke41.py [--probe-only]

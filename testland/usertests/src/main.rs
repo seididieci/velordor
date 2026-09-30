@@ -77,7 +77,7 @@ fn real_main(_sp: u64) -> ! {
     helpers::report(&mut total, &mut ok, "t28 cardo kill + full recovery", t_lifecycle::t_cardo_restart());
     helpers::report(&mut total, &mut ok, "t29 map flap isolation", t_mapflap::t_mapflap());
     helpers::report(&mut total, &mut ok, "t30 neighbor under flood", t_mapflap::t_neighbor());
-    helpers::report(&mut total, &mut ok, "t31 kbd/tty presence", t_mapflap::t_kbd_presence());
+    helpers::report(&mut total, &mut ok, "t31 kbd/porta presence", t_mapflap::t_kbd_presence());
     helpers::report(&mut total, &mut ok, "t32 disk kill + init restart", t_stable::t_disk());
     helpers::report(&mut total, &mut ok, "t33 mount/umount espliciti", t_fs::t_mount());
     helpers::report(&mut total, &mut ok, "t35 resolve nome->handle lato driver", t_fs::t_resolve());

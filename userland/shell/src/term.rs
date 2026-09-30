@@ -29,7 +29,7 @@ fn spin_esc() {
 }
 
 pub(crate) fn term_init() -> bool {
-    // Il mount /dev/input viene registrato da usertty al suo avvio:
+    // Il mount /dev/input viene registrato da porta al suo avvio:
     // ritenta se l'open iniziale fallisce (race di boot).
     for _ in 0..100 {
         if let Ok(fd) = libr::open(KEYBOARD_PATH, 0) {
