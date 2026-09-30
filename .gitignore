@@ -34,3 +34,7 @@ docs/book/
 *~
 *.swp
 .DS_Store
+
+# Python bytecode (harness di test)
+__pycache__/
+*.pyc

@@ -147,10 +147,10 @@ Fase 12 il kernel espone un **registry di servizi** e indirizza i messaggi per
 - **`enum Service`** nel crate `syscall-numbers` (`Console=0`, `Fs=1`,
   `Devfs=2`, `Init=3`, `Test=4`, `Kbd=5`, `Tty=6`, `Disk=7`, `Posix=8` dalla
   Fase 39, `Time=9` dalla Fase 50, `Log=10` dalla Fase 57): ogni servizio di
-  sistema occupa uno slot (tabella nel kernel, `channels.rs`, 16 slot dalla
+  sistema occupa uno slot (tabella nel kernel, `relay/channels.rs` (R1), 16 slot dalla
   Fase 39 — discriminant storici stabili, slot 11-15 liberi). `Time`
   (usertime, Fase 50) serve `TIME_NOW` (0x60): reply `w0` = secondi epoch
-  UTC, `w1` = centesimi (CMOS all'avvio + monotono PIT). `Log` (userlog,
+  UTC, `w1` = centesimi (CMOS all'avvio + monotono PIT). `Vestigia` (vestigia,
   Fase 57, ADR-0039) serve `LOG_*` (0x61-0x66): gateway RAM-first con flush
   su bucket `log` nativo, bucket per identita' del chiamante.
   `service_register(service)` (31) lo occupa;
@@ -168,8 +168,8 @@ Fase 12 il kernel espone un **registry di servizi** e indirizza i messaggi per
   del messaggio, senza toccare i registri di ritorno.
 - **Migrazione**: fs/console/devfs/disk/kbd/tty si registrano per nome;
   `libr` risolve `Fs` per nome (`fs_chan` con retry bounded); il driver
-  userspace `userkbd` risolve `Console` per nome; init sincronizza il boot
-  attendendo l'ACK "Fs pronto" da userfs. Le demo storiche
+  userspace `kbd` risolve `Gpu` per nome; init sincronizza il boot
+  attendendo l'ACK "Fs pronto" da cardo. Le demo storiche
   srv/cli (basate su PID dedotto) sono state rimosse dal catalogo binari.
 
 Vedi [ADR-0008](./adr/0008-ipc-by-name-channels.md) per la decisione completa.
@@ -191,7 +191,7 @@ in volo, mantenendo **intatto** il percorso sincrono (rete di sicurezza).
   target: se e' `BlockedOnReply` (client sincrono bloccato in `send`) →
   comportamento attuale (`reply_slot`); se non e' bloccato (client async) →
   accoda un messaggio-risposta con `req_id = -reply_req` nella sua `msg_queue`.
-  Trasparente ai server (userfs/console/devfs non cambiano).
+  Trasparente ai server (cardo/gpu/vela non cambiano).
 - **`send_async`** (33): come `send` ma il mittente **non si blocca**: il kernel
   prova ad accodare al peer (`try_push`); coda piena (backpressure) o canale
   morto → -1 senza consegnare nulla. Ritorna il `req_id` assegnato.
@@ -227,16 +227,16 @@ let m = libr::wait_reply(req)?;                    // blocca finche' arriva
 
 - kernel: `PendingMsg.req_id`, `Process.req_next`/`reply_req`,
   `MsgQueue::try_push`, `ipc_send_async`/`ipc_recv_nonblock`, reply async in
-  `ipc_reply` (in `sched_rt.rs`, esposto come `crate::sched`).
+  `ipc_reply` (in `ordo/sched.rs`, esposto come `crate::ordo::sched`).
 - userland: usertestcli modalita' "server echo" (MODE_SRV) per i test;
   usertests t20 (FS async) e t21 (IPC async + backpressure).
 - **FS async generalizzato nonbloccante** (Fase 15, per driver-server come
-  `usertty`): `fs_op_async` (tag IPC parametrico: `FS_NOTIFY` per le op,
+  `porta`): `fs_op_async` (tag IPC parametrico: `FS_NOTIFY` per le op,
   `FS_REGISTER` per la registrazione), `write_async`/`open_async`/
   `fs_register_async`/`fs_buf_reg_async`, `fs_collect_msg` (collect su
   messaggio gia' ricevuto via poll, mai bloccante), `fs_abort_pending`.
   Regola: un server che risponde a relay sincrone non emette mai IPC FS
-  sincrone (ciclo userfs↔driver), dorme in `recv()` e si sveglia su
+  sincrone (ciclo cardo↔driver), dorme in `recv()` e si sveglia su
   notify/relay/reply (event-driven). Dettagli in
   [ADR-0011](./adr/0011-userspace-keyboard-terminal.md).
 
@@ -291,40 +291,40 @@ bound provabile); `reclaim_one` le notifica DOPO il teardown fisico.
   Caveat write at-least-once documentato. `service_pid(service)` (syscall 36)
   espone il pid owner per supervisione/diagnostica.
 - **Cleanup per-peer nei server** (Fase 14.11): ogni server purga il proprio
-  stato per-canale alla morte del peer. userfs (l'hub: tutto il traffico
+  stato per-canale alla morte del peer. cardo (l'hub: tutto il traffico
   passa da lui) rimuove `rings[chan]`, tutti gli fd di `ftable` per quel
   canale (inoltra `DEV_CLOSE` ai driver best-effort, così restano puliti
   anche loro) e i mount il cui `driver_chan` è morto (altrimenti lo stale,
   primo in lista per `resolve_mount`, avvelenerebbe il routing anche dopo
-  re-registrazione). console/devfs non hanno stato per-client (tabella fd
-  globale in devfs, buffer unico in console: tutto il traffico arriva
-  multiplexato dall'unico canale userfs↔driver) → skip esplicito senza reply.
+  re-registrazione). gpu/vela non hanno stato per-client (tabella fd
+  globale in vela, buffer unico in gpu: tutto il traffico arriva
+  multiplexato dall'unico canale cardo↔driver) → skip esplicito senza reply.
   Se in futuro un driver avrà peer diretti con stato per-client, ricavarne
-  la tabella per `(chan, fd)` e purgarla come userfs.
+  la tabella per `(chan, fd)` e purgarla come cardo.
 
 ## Tag di protocollo (single source in `syscall-numbers`, via `libr`)
 
 Tutti i tag sotto vivono in `syscall-numbers` e sono riesportati da `libr`
 (i server/test usano i path `libr::`, mai i valori). Centralizzazione DocsB:
-prima `FS_REGISTER`/`FS_BUF_REG` vivevano in `libr`+userfs+userdisk,
+prima `FS_REGISTER`/`FS_BUF_REG` vivevano in `libr`+cardo+block,
 `SVC_READY`/`TEST_DONE` in init, `KBD_NOTIFY` in tty+kbd (piu' letterali
 nei test).
 
 | Tag | Valore | Uso |
 |-----|--------|-----|
-| `FS_REGISTER` | 0x30 | handshake registrazione driver presso userfs |
-| `FS_BUF_REG` | 0x31 | handshake ring client presso userfs |
+| `FS_REGISTER` | 0x30 | handshake registrazione driver presso cardo |
+| `FS_BUF_REG` | 0x31 | handshake ring client presso cardo |
 | `FS_NOTIFY` | 0x32 | notifica operazione FS nel request ring |
 | `R_*` | 0x10-0x2F | op FS nei frame (`OPEN/READ/WRITE/CLOSE/READDIR/MKDIR/MOUNT/UMOUNT/DELETE/STAT/RIGHTS_*`, `LSEEK/DUP_*/PIPE_CREATE`, `DISK_LIST/INFO` Fase 51, `SYNC/STATVFS` Fase 52, `GET_HASH` Fase 54, `OBJ_PUT/OBJ_GET` Fase 55: object store nativo ArcaFS, `SNAP_CREATE/DELETE/ROLLBACK/CLONE` + `OBJ_GET_ID/STAT_ID/DELETE/STAT` Fase 56.1: versioni e snapshot, `ARCA_DEBUG` Fase 56.2a (sub-op formato/allocatore, casa `arcafs/`) |
-| `DISK_*` | 0x50-0x58 | data-plane userfs↔userdisk (`HELLO/OPEN/READ/CLOSE/RESOLVE/WRITE`, `LIST/INFO` Fase 51: topologia dischi, `FLUSH` Fase 52: barriera write-cache) |
+| `DISK_*` | 0x50-0x58 | data-plane cardo↔block (`HELLO/OPEN/READ/CLOSE/RESOLVE/WRITE`, `LIST/INFO` Fase 51: topologia dischi, `FLUSH` Fase 52: barriera write-cache) |
 | `TIME_NOW` | 0x60 | data/ora (client→usertime: reply `w0` = sec epoch, `w1` = centesimi, Fase 50) |
-| `LOG_*` | 0x61-0x66 | logging L1 (client→userlog, Fase 57/ADR-0039: `REG` handshake ring + hash-bucket, `APPEND` sync-su-RAM, `READ` own-bucket, `SEAL` snapshot, `STATS` contatori, `FLUSH` solo parent) |
-| `DEV_*` | 0x20-0x24 | op userfs↔driver (`OPEN/READ/WRITE/CLOSE/READDIR`; DocsD: prima duplicati in 6 file) |
+| `LOG_*` | 0x61-0x66 | logging L1 (client→vestigia, Fase 57/ADR-0039: `REG` handshake ring + hash-bucket, `APPEND` sync-su-RAM, `READ` own-bucket, `SEAL` snapshot, `STATS` contatori, `FLUSH` solo parent) |
+| `DEV_*` | 0x20-0x24 | op cardo↔driver (`OPEN/READ/WRITE/CLOSE/READDIR`; DocsD: prima duplicati in 6 file) |
 | `DEV_*` type (`w0` di `DEV_OPEN`) | 0-4 | `NULL/ZERO` (devfs), `KEYBOARD` (tty), `CONSOLE` (console), `KBD` (kbd) |
 | `EXIT_NOTIFY` | 0x7C | morte peer (kernel→tutti i peer, `w0` = code, `w1` = pid) |
-| `KBD_NOTIFY` | 0x40 | scancode pronti (userkbd→usertty) |
-| `IRQ_NOTIFY_KBD` | 0x41 | bridge interrupt→IPC (kernel→userkbd) |
-| `IRQ_NOTIFY_DISK` | 0x42 | bridge interrupt→IPC (kernel→userdisk, Fase 38 ATA DMA) |
+| `KBD_NOTIFY` | 0x40 | scancode pronti (kbd→porta) |
+| `IRQ_NOTIFY_KBD` | 0x41 | bridge interrupt→IPC (kernel→kbd) |
+| `IRQ_NOTIFY_DISK` | 0x42 | bridge interrupt→IPC (kernel→block, Fase 38 ATA DMA) |
 | `SVC_READY` | 0x7D | servizio pronto (fire-and-forget a init sul canale di nascita) |
 | `TEST_DONE` | 0x7E | fine test (sul canale di nascita verso init) |
 | `CHANNEL_PARENT` | 0 | alias canale di nascita verso il parent |

@@ -28,10 +28,10 @@ A livello di meccanismo:
 - IRQ timer (PIT, 100 Hz) richiama `sched::on_tick()`, che forza lo switch a
   fine quantum (2 tick = 20 ms) e contabilizza il budget CBS
 - IRQ keyboard (Fase 15): il kernel fa solo routing + EOI e sveglia il driver
-  userspace `userkbd` via `IRQ_NOTIFY_KBD` (messaggio in coda — senza, un
+  userspace `kbd` via `IRQ_NOTIFY_KBD` (messaggio in coda — senza, un
   driver in `recv()` a coda vuota si ri-bloccherebbe senza mai leggere
-  l'hardware); `userkbd` (ring 3, porte 0x60-0x64) drena l'i8042 e pubblica
-  gli scancode su `/dev/kbd`, `usertty` li decodifica (v. ADR-0011)
+  l'hardware); `kbd` (ring 3, porte 0x60-0x64) drena l'i8042 e pubblica
+  gli scancode su `/dev/kbd`, `porta` li decodifica (v. ADR-0011)
 - l'`idle process` (priorita' **Idle** = 0) esegue `hlt` quando nulla e' pronto
 - scheduling timer-driven + switch volontari nei path IPC/exit (`ipc_send`,
   `ipc_recv`, `terminate` commutano senza aspettare il tick); la priorita'
@@ -52,10 +52,10 @@ durante il passaggio.
 La preemption e' verificata: un processo busy-loop viene sospeso forzatamente
 dal timer e altri processi continuano a girare.
 
-File: `context.rs` (`CpuContext`, `switch_to`, preparazione stack),
-`process.rs` (PCB con stack dedicato e stati), `sched_rt.rs` (schedule,
-pick_next, on_tick, block_current, wake — esposto come `crate::sched`),
-`idle.rs`, `cbs.rs` (bandwidth reservation).
+File: `ordo/context.rs` (`CpuContext`, `switch_to`, preparazione stack),
+`ordo/process.rs` (PCB con stack dedicato e stati), `ordo/sched.rs` (schedule,
+pick_next, on_tick, block_current, wake — esposto come `crate::ordo::sched`),
+`idle.rs`, `ordo/aegis.rs` (bandwidth reservation, R1: prima `cbs.rs`).
 
 ## Process Control Block (PCB)
 
@@ -71,7 +71,7 @@ pub enum State {
 
 pub struct Process {
     pub id: usize,
-    pub priority: crate::sched::Priority,  // u8 0-31, costante alias
+    pub priority: crate::ordo::sched::Priority,  // u8 0-31, costante alias
     pub state: State,
     pub stack_base: u64,                   // base PHYS dello stack kernel
     pub saved: CpuContext,                 // registri salvati al context switch
@@ -143,7 +143,7 @@ non vanno salvati. Vedi `kernel/src/context.rs`.
 La Fase 5 introdusse il primo scheduler preemptive: 3 priorita'
 (`High`/`Normal`/`Low`) con bitmask `u64` per livello e `pick_next` O(1). Con
 la Fase 11 e' stato scritto da zero uno scheduler RT a 32 priorita' + CBS
-(`sched_rt.rs`); dopo la validazione sulla suite completa lo scheduler a 3
+(`ordo/sched.rs`); dopo la validazione sulla suite completa lo scheduler a 3
 priorita' e' stato **rimosso** e RT e' l'unico scheduler (ADR-0007). La
 struttura del PCB e il meccanismo di context switch descritti sopra sono
 invariati rispetto alla Fase 5.

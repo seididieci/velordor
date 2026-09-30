@@ -37,10 +37,10 @@ User mode (ring 3) e entry syscall sono sviluppati nelle sotto-fasi della Fase 6
   via la syscall `spawn` (20), registrandoli come figli (campo `parent` nel PCB).
   La process tree e' radicata in init. (Da Fase 12 spawn ritorna un canale di
   nascita e i servizi si registrano per nome.)
-- **Fase 8.2 — Console server**: `userconsole` e' un processo user
+- **Fase 8.2 — Console server**: `gpu` e' un processo user
   che mappa il frame buffer VGA (`0xB8000`) a `USER_VGA` (`0x4000_0010_0000`)
   tramite la syscall `map_physical` (21). Da Fase 15 e' solo rendering:
-  pubblica `/dev/console` (DEV_WRITE disegna); tastiera in `userkbd`/`usertty`
+  pubblica `/dev/console` (DEV_WRITE disegna); tastiera in `kbd`/`porta`
   (sotto). `sys_write(fd=1)` stampa solo su seriale.
 
 **Completate** le sotto-fasi **6.1** (infrastruttura: segmenti GDT user, TSS `RSP0`
@@ -58,9 +58,9 @@ demo server (`usersrv`) + client (`usercli`) in ring 3 che scambiano richieste/r
 in loop (vedi [`07-ipc.md`](./07-ipc.md)). **Completata anche la Fase 8.1 — init +
 syscall `spawn`** (numero 20): il kernel crea `init` come unico processo user; init
 spawna tutti i servizi via `spawn(name)`, ogni figlio ha `parent = init`.
-**Completata anche la Fase 8.2 — console server**: `userconsole`
+**Completata anche la Fase 8.2 — console server**: `gpu`
 mappa VGA via `map_physical` (syscall 21) a `USER_VGA` (da Fase 15 solo
-rendering su `/dev/console`; tastiera in `userkbd`/`usertty`). **Completata
+rendering su `/dev/console`; tastiera in `kbd`/`porta`). **Completata
 anche la Fase 8.3 — uptime
 in userspace**: il processo `uptime` e' stato spostato dal kernel in userspace
 come `useruptime` (syscall `get_ticks`, numero 22). Da Fase 15 il kernel non ha
@@ -274,24 +274,20 @@ in `/bin` e `/test` su `/fat` e parte via `spawn_image` (38).
 (ADR-0008) `spawn` crea il **canale di nascita** tra init e il figlio (il figlio
 lo usa come canale 0 = parent) e ritorna il channel id. Dalla **Fase 21** i
 servizi non-TCB partono da disco via `spawn_image` (38) da manifest
-(path/prio/porte). L'ordine di boot resta importante: `userdisk` embedded
-(+ attesa READY), poi `userfs` embedded (+ attesa READY), poi `userconsole`
-da disco (+ attesa READY: richiede Fs pronto), uptime, `userdevfs`
-(+ attesa READY), `userkbd` (+ attesa READY, Fase 15), `usertty`
-(+ attesa READY), i test in sequenza e la shell
+(path/prio/porte). L'ordine di boot resta importante (Fase 57/R1-R9): `vestigia`+`block` in parallelo (+ `wait_any` sui READY), poi `cardo` embedded (+ attesa READY), poi `time`, FLUSH a vestigia, `gpu` da disco (+ attesa READY), uptime, `vela` (+ attesa READY), `kbd` (+ attesa READY, Fase 15), `porta` (+ attesa READY), i test in sequenza e la shell
 per ultima. I READY sono fire-and-forget via `send_async` (consumati senza
 reply): una `send` sync resterebbe bloccata perché a boot init non aspetta
-console/devfs (e usertty registra `/dev/input` solo dopo userfs: attendere
+gpu/vela (e porta registra `/dev/input` solo dopo cardo: attendere
 dopo sarebbe deadlock).
 
-Dalla **Fase 14 (init-restart)** init è anche **supervisore**: console, disk,
-fs, devfs, kbd e tty vengono riavviati alla morte (tabella bin/servizio/chan/pid + loop su
+Dalla **Fase 14 (init-restart)** init è anche **supervisore**: gpu, block,
+cardo, vela, kbd e porta vengono riavviati alla morte (tabella bin/servizio/chan/pid + loop su
 `EXIT_NOTIFY`, condiviso con l'attesa dei test così i restart funzionano anche
 a suite in corso). Backoff anti spawn-storm (20 tick prima di ogni tentativo;
 oltre 3 restart in 300 tick → hold + log). Shell/uptime/test: log-only.
 L'attesa READY non scarta le morti altrui: le `EXIT_NOTIFY` viste durante
 `wait_ready` vanno in uno stash e vengono processate dai loop (altrimenti un
-restart perso a cascata uccide il sistema — osservato Fase 21 con userdisk).
+restart perso a cascata uccide il sistema — osservato Fase 21 con block).
 
 Dalla **Fase 22** (emendamento ADR-0010 §6) un figlio spawnato con flag
 `SPAWN_FLAG_DETACH` non partecipa alla cascata di morte: alla morte del parent
@@ -308,7 +304,7 @@ kbd → tty → test in sequenza → shell. Lezione Fase 21: il reload costa ~48
 round-trip DISK per un binario da 30 KB (OPEN per settore + find per read);
 sotto carico ogni handoff attende i quanti degli spinner a pari priorità —
 perciò gli helper sacrificali dormono in `recv` (mai spin), i load usano chunk
-da 4000 B e userfs cachera FileInfo per-fd + valida l'handle DISK una volta
+da 4000 B e cardo cachera FileInfo per-fd + valida l'handle DISK una volta
 per connessione (vedi [File System](./09-filesystem.md)).
 
 ## Differenze Ring 0 vs Ring 3
@@ -332,36 +328,36 @@ esteso cosi' (dettagli in `AGENTS.md` e ADR):
   (ognuno sul suo canale, DOPO il teardown — il parent e' un peer come gli
   altri: init la usa per riavviare i servizi) e cascata sulla discendenza.
 - **Fase 15 — Keyboard + Terminal server in userspace** (implementata,
-  [ADR-0011](./adr/0011-userspace-keyboard-terminal.md)): `userkbd` (driver PS/2
+  [ADR-0011](./adr/0011-userspace-keyboard-terminal.md)): `kbd` (driver PS/2
   in ring 3, `io_ranges 0x60-0x64`, `/dev/kbd`, servizio `Kbd` svegliato da
-  IRQ1) + `usertty` (decode raw in 43b — frecce→ESC, niente echo —,
-  `/dev/input/keyboard`, servizio `Tty`, client FS puramente async ed
+  IRQ1) + `porta` (decode raw in 43b — frecce→ESC, niente echo —,
+  `/dev/input/keyboard`, servizio `Porta`, client FS puramente async ed
   event-driven); console ridotto a rendering (`/dev/console`) + `ESC[D/C/K`
   (43b); echo ed editing nella readline della shell. Regole: mai IPC
   sincrone servendo, mai spinner, boot async senza attese di wake,
   handshake per canale.
 - **Fase 16 — Disk/ATA server in userspace** (implementata,
-  [ADR-0012](./adr/0012-userspace-disk-driver.md)): `userdisk` (driver ATA in
+  [ADR-0012](./adr/0012-userspace-disk-driver.md)): `block` (driver ATA in
   ring 3, canale primario via `io_ranges` — il secondario e' probato ma non
   concesso: sda/sdb sono master+slave sullo stesso canale; enumerazione
-  IDENTIFY + MBR, `/dev/sdX`, servizio `Disk`) + `userfs` senza porte ne'
+  IDENTIFY + MBR, `/dev/sdX`, servizio `Block`) + `cardo` senza porte ne'
   codice ATA (parser FAT32 generico su `BlockSource`, client `DISK_*` con
   riconnessione lazy). Regole: mai sync incrociate tra server
   (registrazione async), mai throttle senza waker, consumer SPSC a `tail`,
   `ring_alloc` a coppie fresche.
   Fase 16c: mappa nome→handle di proprieta' del driver (`DISK_RESOLVE` 0x54,
-  tag centralizzati in `syscall-numbers`) — userfs chiede, non indovina;
-  userdisk unico owner di `Disk` (SATA futuro come backend interno).
+  tag centralizzati in `syscall-numbers`) — cardo chiede, non indovina;
+  block unico owner di `Block` (SATA futuro come backend interno).
   Fase 16d: identità stabile `UUID=`/`LABEL=` (seriale/label FAT) + nodi
   `/dev/disk/by-*` + listing dei padri sintetizzato dai prefix + registrazione
   multi-prefix atomica (`fs_register_multi`, evita il deadlock register/forward).
 - **Fase 17 — Diritti per-canale lato server** ([ADR-0014](./adr/0014-channel-rights-serverside.md)):
-  tabella `chan → {ops, subtree}` in userfs, solo riduzione (DROP shrink-only,
+  tabella `chan → {ops, subtree}` in cardo, solo riduzione (DROP shrink-only,
   mai widen), fd come capability pure, diritti effimeri (purge alla morte).
 - **Fase 18 — Shell + utility utente** (builtin: ls/cat/touch/mkdir/echo/clear/
   wc/hexdump/kill/cd/pwd/cp/mv/rm/rmdir/mount/umount/ps, v. [Utilities](./12-utilities.md)).
 - **Fase 19 — Introspezione + metadati**: `ps` tabellare via syscall 37,
-  `stat` lato userfs (frame `R_STAT`, zero kernel).
+  `stat` lato cardo (frame `R_STAT`, zero kernel).
 - **Fase 20 — FAT32 scrivibile** ([ADR-0016](./adr/0016-fat-writable.md)):
   `DISK_WRITE`, overwrite + crescita con allocazione, `O_CREAT` su /fat.
 - **Fase 21 — Servizi da disco** ([ADR-0017](./adr/0017-servizi-da-disco.md)):

@@ -99,6 +99,11 @@ e titoli restano `Velordor`.
   non personaggi).
 - `Cardo` e' l'unico nome nuovo fuori dallo schema iniziale: giustificato
   dal ruolo (perno, non filesystem — quello e' Arca).
+- Omonimia dichiarata `block`: e' sia il driver ATA/R6 sia il **tipo di
+  bucket** ArcaFS (`object` vs `block`, `arcafs.md` §12). Namespace
+  diversi (servizio/`/dev/sdX` vs stringa di tipo nel FS): nessuna
+  collisione nel codice; il tipo di bucket e' spec, rinominabile a costo
+  zero se servisse.
 
 ## Alternatives Considered
 

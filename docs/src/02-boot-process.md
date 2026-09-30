@@ -5,7 +5,7 @@
 Velordor usa il **protocollo PVH**: il kernel è un ELF64 con una nota speciale
 (`XEN_ELFNOTE_PHYS32_ENTRY`) che dice al loader di QEMU dove si trova il punto
 di ingresso in protected mode a 32 bit. Niente GRUB, niente crate bootloader:
-`qemu -kernel velordor-kernel` è tutto ciò che serve.
+`qemu -kernel velord` è tutto ciò che serve.
 
 Il kernel è linkato **alto** (`-2G+1M`, ADR-0020) ma caricato **basso** (VMA ≠
 LMA, `AT()` nel linker script): lo stub parte in PM 32-bit alle LMA, attiva

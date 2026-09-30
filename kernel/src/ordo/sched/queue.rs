@@ -1,4 +1,4 @@
-// Split from sched_rt.rs (byte-identical move; see facade).
+// Split from ordo/sched.rs (byte-identical move; see facade).
 use super::*;
 use crate::*;
 use alloc::vec::Vec;

@@ -137,7 +137,7 @@ con zero-fill lazy (stesso contratto di `sbrk`: VA subito, frame al fault).
 - `is_user_range` esteso alle VMA vive: ogni syscall con buffer user
   (spawn, write, …) accetta memoria mappata senza cambi puntuali.
 - Solo RW in 28 (`prot` diverso = `-1`); niente split, niente file-backed
-  (page-in su fault verso userfs e' deadlock-prone: sua fase propria).
+  (page-in su fault verso cardo e' deadlock-prone: sua fase propria).
 - `libr::mmap` / `mmap_fixed` / `munmap`; `sbrk`/heap/scratch invariati.
 
 ## Protezioni di memoria (Fase 29)

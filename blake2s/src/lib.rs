@@ -2,12 +2,12 @@
 //!
 //! Reimplementazione propria, auditabile (~250 righe, solo `u32`, niente
 //! `alloc`, niente heap: tutto lo stato vive nel chiamante). Usata da
-//! userfs (`R_GET_HASH`), guest `arca` e `testsarca`. RFC 7693, non-keyed
+//! cardo (`R_GET_HASH`), guest `arca` e `testsarca`. RFC 7693, non-keyed
 //! (key_length = 0: la chiave e' un attributo futuro, mai silenzioso).
 //!
 //! Cancelli in-place rispettati (vedi P5 in ROADMAP): build freestanding
 //! `no_std` senza alloc; il binario che la linka resta entro
-//! `SPAWN_IMAGE_MAX` (userfs ~181 KiB + ~3 KiB qui); vettori di riferimento
+//! `SPAWN_IMAGE_MAX` (cardo ~181 KiB + ~3 KiB qui); vettori di riferimento
 //! generati da due implementazioni indipendenti (Python `hashlib` +
 //! OpenSSL, coincidenti) nei `#[cfg(test)]`; niente heap nel per-op
 //! (`Hasher` sta in stack/caller, `update`/`finalize` non allocano mai).

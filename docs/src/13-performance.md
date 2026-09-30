@@ -29,7 +29,7 @@
 
 ## 24 — cosa ha funzionato
 
-- **24.1 (solo userfs, nessun cambio di protocollo)**: memo dell'ultimo
+- **24.1 (solo cardo, nessun cambio di protocollo)**: memo dell'ultimo
   settore FAT (invalidata a `set_fat_entry`, azzerata a ogni epoca) +
   letture a settori mirati (`read_file` per span, `read_dir` con stop al
   terminatore 0x00 invece dell'intero cluster). Da sola: small FAT 8.5x.
@@ -44,7 +44,7 @@
 A metà 24.2 i bench crollavano progressivamente (write ramfs 25 µs →
 2 ms) in proporzione alle op FAT precedenti — con gate verde e risultati
 corretti. Diagnosi (strumento temporaneo `libr::heap::heap_stats`,
-mantenuto): la free-list first-fit di userfs cresceva di ~1 blocco a op
+mantenuto): la free-list first-fit di cardo cresceva di ~1 blocco a op
 FAT (temp `Vec` 4K/512 B liberati tra blocchi vivi, mai coalescibili) e
 ogni allocazione paga O(n) + O(n²) di `coalesce()` su tutte le op
 successive, anche ramfs. Cura: hot path FAT zero-alloc — parse dir
@@ -71,11 +71,11 @@ mai allocazioni heap nel percorso per-op** (solo a setup/mount).
 Peggioramento > 10% su una qualunque riga (stesso host KVM, media 3 run)
 = fail. Rivalutare la baseline solo a parità di hardware e versione QEMU.
 
-## 25 — cache settoriale write-through in userdisk (ADR-0018)
+## 25 — cache settoriale write-through in block (ADR-0018)
 
 Un solo strato di cache a blocchi nel driver (`userland/disk/src/cache.rs`:
 256 entry, chiave fisica `(disco, lba)`, CLOCK, write-through, zero heap nel
-per-op); `fat_memo` (24.1) rimosso da `userfs`. Protocollo `DISK_*` invariato.
+per-op); `fat_memo` (24.1) rimosso da `cardo`. Protocollo `DISK_*` invariato.
 
 Confronto A/B **sullo stesso host** (KVM, media 3 run, TSC ~1.6 GHz;
 la tabella 24 sopra e' di un altro host e NON e' confrontabile):
@@ -102,7 +102,7 @@ Gate invariato (5/5 + 7/7 + 44/44 + shell 30/30).
 
 ## 38 — ATA DMA + IRQ (ADR-0029)
 
-Motore Bus-Master PIIX in `userdisk` (staging 1 pagina via `SYS_DMA_ALLOC`,
+Motore Bus-Master PIIX in `block` (staging 1 pagina via `SYS_DMA_ALLOC`,
 PRD split 64K, `READ/WRITE DMA EXT` UDMA2, fallback PIO per-op; protocollo
 `DISK_*` invariato, DEV relay resta PIO) + attesa event-driven del
 completamento (IRQ14/15 → notify, wakeup-preemption centrale in `notify_irq`,
@@ -127,7 +127,7 @@ nessun miracolo — le op sono device-bound e il guadagno è altrove:
 - **CPU non più bruciata in poll** (per costruzione): il poll 38.1c spinnava
   ~device-time a transfer a priorità Normal; l'event-driven dorme in `recv`
   e si sveglia via IRQ con switch diretto. Misura diretta (`ticks_used` di
-  userdisk ogni 512 xfers): su questo host (IO cached, device ~50 µs) le due
+  block ogni 512 xfers): su questo host (IO cached, device ~50 µs) le due
   versioni sono indistinguibili (+17–19 tick/512 in entrambi — il costo
   dominante resta memcpy/handling/ring, identico); il risparmio scala col
   tempo-device e conta sotto carico o su device lenti. Dichiarato il bounds,
@@ -172,7 +172,7 @@ Metodologia (lezioni apprese incluse):
   (hot=cold in RAM, niente DISK/cache). Iter decrescenti con la size.
 - Audit CAP single-source: `RING_DATA_CAP=4088` + `RING_MAX_PAYLOAD=4000`
   restano l'unica sorgente in `libr` (unico straggler trovato e fissato:
-  `usertty` clippava a letterale `4000`). Bound distinti intoccati: server
+  `porta` clippava a letterale `4000`). Bound distinti intoccati: server
   `expect` 4096 (scratch per-op), `DISK_MAX_SECTORS` 7×512=3584 (fit ring),
   DEV relay 4096 (pre-esistente).
 

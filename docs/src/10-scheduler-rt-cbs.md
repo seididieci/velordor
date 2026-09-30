@@ -36,21 +36,23 @@ flag (vedi ADR-0007).
 
 ```
 kernel/src/
-├── sched_rt.rs     scheduler RT (32 priorita' + CBS)   ← l'unico scheduler
-├── cbs.rs          struttura CbsServer + pool (sempre compilato)
-└── process.rs      PCB con campo cbs_server (sempre presente)
+├── ordo/           Ordo (R1): `sched.rs` (RT 32 prio + CBS, unico), `aegis.rs` (CBS), `process.rs`/`context.rs`
+├── relay/          Relay (R1): `channels.rs` registry + channel IPC
+└── arc/            Arc (R1): `heap.rs`, `phys_mem.rs`, `vmm.rs`, `vmm_user/`
 ```
 
-In `main.rs` e' esposto come `crate::sched`:
+In `ordo.rs` i moduli sono esposti come `crate::ordo::*` (R1: prima i file
+piatti `sched_rt.rs`/`cbs.rs`/`process.rs` in `kernel/src/`):
 
 ```rust
-#[path = "sched_rt.rs"]
-mod sched;                      // l'unico scheduler, esposto come crate::sched
-mod cbs;
+pub mod aegis;    // CBS (R1: prima `cbs.rs`)
+pub mod context;
+pub mod process;
+pub mod sched;    // l'unico scheduler (R1: prima `#[path = "sched_rt.rs"]`)
 ```
 
 Tutti i chiamanti (main, syscall, user_binary, process) usano
-`crate::sched::*`:
+`crate::ordo::sched::*` (R1: prima `crate::sched::*`):
 
 `init` · `spawn` · `create_user` · `on_tick` · `block_current` · `wake` ·
 `ipc_send` · `ipc_recv` · `ipc_reply` · `exit_current` · `process_of` ·
@@ -68,7 +70,7 @@ cargo build --release
 Il tipo `Priority` e' un newtype `u8` 0-31 con costanti alias:
 
 ```rust
-// sched_rt.rs — u8 0-31 con costanti alias
+// ordo/sched.rs — u8 0-31 con costanti alias
 pub struct Priority(pub u8);
 pub const High: Priority   = Priority(31);   // massima
 pub const Normal: Priority = Priority(16);   // servizi interattivi
@@ -150,7 +152,7 @@ allocazione, nessuna scansione di liste.
 > tra sottoinsiemi diversi NON e' un round-robin equo. Con cicli IPC
 > deterministici il contatore si aggancia in fase con la sequenza dei
 > sottoinsiemi e un membro non viene mai scelto: osservato sotto KVM (pid 7,
-> userkbd, mai scelto in ~1900 pick tra {4,7}/{7,8}/{7,9} → tastiera muta dopo
+> kbd, mai scelto in ~1900 pick tra {4,7}/{7,8}/{7,9} → tastiera muta dopo
 > i primi tasti), mentre TCG — piu' lento — rompeva la fase con i pick dei
 > quanti e mascherava il bug. Il cursore per-livello garantisce che ogni membro
 > dell'insieme persistente venga scelto entro N pick, a qualunque velocita'.
@@ -175,7 +177,7 @@ La promessa del CBS e':
 A differenza della priorita' fissa (che limita solo l'ordine), il CBS limita
 anche il **consumo massimo** degli altri task.
 
-### Struttura (`kernel/src/cbs.rs`)
+### Struttura (`kernel/src/ordo/aegis.rs`, R1: prima `cbs.rs`)
 
 ```rust
 pub const MAX_CBS_SERVERS: usize = 8;
@@ -285,7 +287,7 @@ loop {
 
 ## Verifica
 
-**Stato attuale**: CBS implementato nel kernel (`cbs.rs` + integrazione
+**Stato attuale**: CBS implementato nel kernel (`ordo/aegis.rs` + integrazione
 `on_tick`), syscall 28-30 e wrappers libr completi, test specifici CBS (t18
 admission + t19 bandwidth) implementati e verdi. Lo scheduler RT e' l'unico
 scheduler (il classico a 3 priorita' e' stato rimosso dopo la validazione) —
@@ -351,5 +353,5 @@ boot pulito + [testfs] PASS 5/5 + [testfat] PASS 7/7
 
 - ADR: [0007](./adr/0007-rt-scheduler-cbs.md)
 - Implementazione: `AGENTS.md` — Fase 11
-- File: `kernel/src/sched_rt.rs`, `kernel/src/cbs.rs`, `kernel/src/process.rs`
+- File: `kernel/src/ordo/` (`sched.rs`, `aegis.rs`, `process.rs`, `context.rs`)
 - Strutture dati Fase 10: bitmask `pick_next` (10.1.3), coda IPC ring (10.1.2)

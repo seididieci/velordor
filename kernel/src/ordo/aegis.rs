@@ -146,7 +146,7 @@ pub fn release_pid(pid: usize) {
 /// Contabilita' budget: decrementa il budget del server associato al
 /// processo `pid`. Ritorna `true` se il budget e' esaurito (throttled).
 ///
-/// Chiamato da `sched_rt::on_tick` a ogni tick del processo corrente.
+/// Chiamato da `ordo::sched::on_tick` a ogni tick del processo corrente.
 pub fn tick_budget(pid: usize) -> bool {
     let mut pool = CBS_POOL.lock();
     for slot in pool.iter_mut() {
@@ -163,7 +163,7 @@ pub fn tick_budget(pid: usize) -> bool {
 /// Replenishment: controlla se qualche server ha la deadline scaduta e
 /// resetta il budget. Ritorna i PID da rimettere in ready queue.
 ///
-/// Chiamato da `sched_rt::on_tick` PRIMA del decrement budget, cosi' un
+/// Chiamato da `ordo::sched::on_tick` PRIMA del decrement budget, cosi' un
 /// processo throttled ha la possibilita' di tornare schedulabile nello
 /// stesso tick in cui viene riapprovvigionato.
 ///

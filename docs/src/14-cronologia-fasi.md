@@ -1927,3 +1927,15 @@
           `/dev/input/*` e tag `KBD_NOTIFY` invariati; resta fuori Vela (line
           discipline autonoma). Gate: 5/5 + 7/7 + 40/40 + 58/58, zero
           FAIL/PANIC/FAULT. Docs ai nuovi nomi in R-final.
+    - [x] R-final (rename a fasi, ADR-0040): sweep dei docs correnti ai nuovi
+          nomi (01-13, SUMMARY, AGENTS, ROADMAP, arcafs.md): pantheon
+          Velord/Ordo/Aegis/Relay/Arc/Arca/Cardo/Vela/Vestigia/Porta + percorsi
+          `crate::ordo|relay|arc`, comandi `qemu -kernel velord`. Residui
+          intenzionali: `14-cronologia-fasi.md` e `adr/*` sono snapshot
+          storici; in `10-scheduler-rt-cbs.md` restano annotazioni "R1: prima
+          `sched_rt.rs`/`cbs.rs`" (accurate). Sweep prosa nei sorgenti
+          (`[sched_rt]`→`[ordo]`, "Split from ordo/sched.rs", blake2s
+          `cardo`). Gate: 5/5 + 7/7 + 40/40 + 58/58 zero FAIL/PANIC/FAULT +
+          shell suite sequenziale `base run redirect 41 42 source 43 43b 44
+          44b` verde (flake con `--jobs` solo da carico host: stessi test
+          verdi in seq). Rename R0-R9 + R-final: chiuso.

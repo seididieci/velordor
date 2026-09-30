@@ -5,7 +5,7 @@
 Velordor ha una **shell interattiva** (`usershell`) con comandi built-in e vari
 **servizi userspace** che eseguono in Ring 3. Tutti usano `libr` come libreria
 condivisa. POSIX e' API di `libr`, non ABI del sistema ([ADR-0015](./adr/0015-posix-api-libr-protocollo-interno.md)):
-i builtin usano nomi POSIX ma il protocollo userfs sottostante e' interno.
+i builtin usano nomi POSIX ma il protocollo cardo sottostante e' interno.
 
 > **Fase 18 completata**: builtin utente (18.1: echo/clear/wc/hexdump/kill +
 > cwd; 18.2: rm/cp/mv/rmdir via `R_DELETE` + `O_CREAT` POSIX + contratto
@@ -117,7 +117,7 @@ Connettori consecutivi: vince l'ultimo. `VAR=v comando` = ambiente mono-comando 
 virgolette non chiuse = resto riga letterale (niente continuazione).
 
 > **Nota tastiera**: `\` e `|` arrivano dal tasto ANSI `0x2B`, che
-> `pc-keyboard 0.7` mappa su `Oem7` (non gestito da `Us104Key`): `usertty` usa
+> `pc-keyboard 0.7` mappa su `Oem7` (non gestito da `Us104Key`): `porta` usa
 > un layout `Us104Fix` che lo mappa a `\` / `|` con shift. Senza, i nomi QEMU
 > `backslash`/`shift-backslash` erano validi ma i byte non arrivavano mai.
 
@@ -132,7 +132,7 @@ redirect file/heredoc espliciti vincono sui pipe-link per-slot:
 | `a \| b > /o` | Pipe + redirect combinati (esplicito vince sul link) |
 | `cat <<EOF` | Heredoc: corpo letterale letto pre-exec (prompt `> `), stdin dello stadio |
 
-Meccanismo (ADR-0032): pipe-buffer **in userfs** (feature dell'OS:
+Meccanismo (ADR-0032): pipe-buffer **in cardo** (feature dell'OS:
 `FileEntry::Pipe` + `PipeTable` cap 8192, `R_PIPE_CREATE` 0x20,
 `ERR_EMPTY`/`ERR_CLOSED` → `EAGAIN`/`EPIPE` al bordo POSIX); specifica POSIX
 (`pipe()`/`dup2()`, composizione) in `libr`/shell. Handoff stadi = grant con
@@ -202,7 +202,7 @@ Left/Right/Home/End cursore, Delete sotto cursore, Esc ignorato. L'editor
 possiede buffer+cursore+echo console-only (mai seriale); redraw senza
 conoscere il prompt (`ESC[D`×screen + `ESC[K` + buffer + riposiziona).
 La console capisce `ESC[D/C` (cursore senza erase) ed `ESC[K` (erase-to-EOL).
-Il backspace a riga vuota non mangia il prompt (floor migrato da `usertty`
+Il backspace a riga vuota non mangia il prompt (floor migrato da `porta`
 nella shell — Fase 18.0 superata). Solo ASCII; righe oltre 80 colonne non
 editabili (wrap VGA).
 
@@ -224,7 +224,7 @@ editabili (wrap VGA).
 
 La shell NON mappa la VGA: tutti i passaggi di input/output avvengono
 tramite il device `/dev/input/keyboard`, servito dal terminal server
-`usertty` (la console `userconsole` fa solo rendering `/dev/console` — Fase 15).
+`porta` (il server `gpu` fa solo rendering `/dev/console` — Fase 15).
 
 ### init
 
@@ -233,36 +233,35 @@ in sequenza prima di lanciare la shell (i PID sono indicativi: i peer si
 raggiungono per nome/canale, non per PID). Dalla Fase 21 solo disk/fs sono
 embedded; gli altri partono da `/fat/bin` via `spawn_image`:
 
-1. `userdisk` — disk driver ATA embedded (servizio `Disk`, Fase 16)
-2. `userfs` — file system server embedded (ramfs + FAT32 via userdisk, servizio `Fs`)
-3. `usertime` — data/ora da disco (servizio `Time`, Fase 50: CMOS `0x70/0x71` + `TIME_NOW`; serve `/fat`, quindi dopo userfs)
-4. `userconsole` — rendering VGA da disco (servizio `Console`; da disco non
-   puo' essere prima: il load richiede userfs pronto)
-5. `useruptime` — contatore PIT
-6. `userdevfs` — `/dev/null`, `/dev/zero` (servizio `Devfs`)
-7. `userkbd`/`usertty` — tastiera + terminale (servizi `Kbd`/`Tty`, Fase 15)
-8. Test: `usertestfs` → `usertestfat` → `usertests` (attende `TEST_DONE`)
-9. `usershell` — shell interattiva (ultima, dopo la suite)
+1. `vestigia` (log) + `block` (disk) — embedded, in parallelo (Fase 57/R1-R9)
+2. `cardo` — file system server embedded (ramfs + FAT32 via block, servizio `Cardo`)
+3. `time` — data/ora da disco (servizio `Time`, Fase 50; serve `/fat`, dopo cardo)
+4. FLUSH a `vestigia` (dopo fs+time) + `gpu` — rendering VGA da disco (servizio `Gpu`)
+5. `uptime` — contatore PIT
+6. `vela` — `/dev/null`, `/dev/zero` (servizio `Vela`, hub `/dev`)
+7. `kbd`/`porta` — tastiera + terminale (servizi `Kbd`/`Porta`, Fase 15)
+8. Test: `testfs` → `testfat` → `testarca` → `tests` (attende `TEST_DONE`)
+9. `shell` — shell interattiva (ultima, dopo la suite)
 
-### Console server (userconsole)
+### Terminale video (gpu)
 
 Rendering VGA in userspace. Gestisce:
 - Scrittura VGA (testo, cursore hardware CRTC)
-- Registrazione device `/dev/console` presso userfs via `FS_REGISTER`
+- Registrazione device `/dev/console` presso cardo via `FS_REGISTER`
 
-La tastiera è gestita da `userkbd`/`usertty` (Fase 15): input da `/dev/input/keyboard`, echo su `/dev/console` verso la shell.
+La tastiera è gestita da `kbd`/`porta` (Fase 15): input da `/dev/input/keyboard`, echo su `/dev/console` verso la shell.
 
-### FS server (userfs)
+### File system server (cardo)
 
 File system server con mount table dinamica:
 - `/` → ramfs (BTreeMap, scrivibile)
-- `/fat` → FAT32 scrivibile (via `userdisk` — Fase 16, scrittura Fase 20)
-- `/dev` → userdevfs (instradamento IPC)
+- `/fat` → FAT32 scrivibile (via `block` — Fase 16, scrittura Fase 20)
+- `/dev` → vela (instradamento IPC)
 - mount dinamici via `mount`/`umount` (Fase 16b, [ADR-0013](./adr/0013-mount-syscall.md)):
   tabella `Vec<FsMount>` con longest-prefix, attivazione lazy, re-apply delle
   spec statiche a ogni boot
 
-### DevFS (userdevfs)
+### Hub `/dev` (vela)
 
 Server minimale per device speciali:
 - `/dev/null` — read = 0 byte, write = scarta

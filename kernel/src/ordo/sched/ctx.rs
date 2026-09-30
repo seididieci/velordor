@@ -1,4 +1,4 @@
-// Split from sched_rt.rs (byte-identical move; see facade).
+// Split from ordo/sched.rs (byte-identical move; see facade).
 use core::sync::atomic::AtomicBool;
 use spin::Mutex;
 use crate::ordo::context::CpuContext;

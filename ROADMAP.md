@@ -102,8 +102,8 @@ Voci con scope e vittoria dichiarati (non date).
        Vittoria conseguita: rollback vero (persistente, sopravvive al kill);
        retention log implementabile (sblocco 57).
 - [x] **57 (L1) logging** (chiusa, ADR-0039; L0 cancellato senza implementarlo:
-      la ragione — ArcaFS non esisteva — e' estinta): `userlog`
-      (`Service::Log` = 10, embedded boot-TCB, spawn parallelo a disk prima
+      la ragione — ArcaFS non esisteva — e' estinta): `vestigia`
+      (`Service::Vestigia` = 10, embedded boot-TCB, spawn parallelo a block prima
       di fs) RAM-first con `LOG_FLUSH` di init (handshake FS + backdate/re-key
       pre-Time + riversamento incrementale + dual-write), bucket per identita'
       (`peer_info`, mai dichiarato), `!idx` per la latest post-restart, seal

@@ -41,7 +41,7 @@ async su canali per-nome, con bulk dati su ring SPSC).
 ```
 
 **Stato attuale**: la seriale e' l'unica debug console in-kernel; il console
-server userspace fa rendering VGA, la tastiera vive in `userkbd`/`usertty`
+server userspace fa rendering VGA, la tastiera vive in `kbd`/`porta`
 (Fase 15, niente piu' ponti kernel oltre routing+EOI dell'IRQ1).
 
 ## Scelte progettuali del kernel
@@ -55,7 +55,7 @@ Un solo percorso di scheduling a **32 priorita'** (0 = idle, 31 = max) con
 run queue per-priorita' O(1) e **Constant Bandwidth Server**: un task con
 riserva `(Q, P)` riceve Q tick garantiti ogni P anche sotto carico al 100%.
 Niente dual scheduler classico/RT da mantenere: un'unica implementazione,
-sempre attiva, esposta come `crate::sched`. Conseguenze: priorita' mappate su
+sempre attiva, esposta come `crate::ordo::sched`. Conseguenze: priorita' mappate su
 `Priority(u8)` con costanti alias; admission control CBS (~70% della CPU);
 quantum fisso (2 tick).
 
@@ -88,9 +88,9 @@ grandi spezzati in piu' round-trip dal client.
 ### TSS per-processo con I/O bitmap
 
 Ogni processo ha il proprio TSS con RSP0 e **I/O bitmap** (ADR-0006): i driver
-userspace dichiarano in `io_ranges` le porte consentite a ring 3 (es. userdisk →
-porte ATA su entrambi i canali, userkbd → 0x60-0x64, console → CRTC VGA) e non
-possono toccare altre porte (userfs: `&[]`, qualunque `in/out` e' #GP).
+userspace dichiarano in `io_ranges` le porte consentite a ring 3 (es. block →
+porte ATA su entrambi i canali, kbd → 0x60-0x64, gpu → CRTC VGA) e non
+possono toccare altre porte (cardo: `&[]`, qualunque `in/out` e' #GP).
 Conseguenze: driver I/O reali in userspace con minimo privilegio.
 
 ### Boot PVH custom

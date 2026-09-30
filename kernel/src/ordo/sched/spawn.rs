@@ -1,4 +1,4 @@
-// Split from sched_rt.rs (byte-identical move; see facade).
+// Split from ordo/sched.rs (byte-identical move; see facade).
 use super::*;
 use crate::ordo::process::Process;
 use core::sync::atomic::Ordering;
@@ -9,7 +9,7 @@ pub fn init() {
     let mut guard = SCHED.lock();
     *guard = Some(Scheduler::new());
     INITIALIZED.store(true, Ordering::Release);
-    crate::serial_println!("[sched_rt] init (preemptive, 32-prio + RR, quantum {} tick)", QUANTUM_TICKS);
+    crate::serial_println!("[ordo] init (preemptive, 32-prio + RR, quantum {} tick)", QUANTUM_TICKS);
 }
 
 pub fn spawn(name: &'static str, priority: Priority, entry: crate::ordo::process::ProcessFn, parent: Option<usize>, parent_chan: Option<usize>) -> Option<usize> {
@@ -28,7 +28,7 @@ pub fn spawn(name: &'static str, priority: Priority, entry: crate::ordo::process
     sched.set_ready(id);
     let p = &sched.processes[id];
     crate::serial_println!(
-        "[sched_rt] process '{}' (id {}), {:?} | cr3={:#x} rsp0={:#x}",
+        "[ordo] process '{}' (id {}), {:?} | cr3={:#x} rsp0={:#x}",
         name, id, priority, p.cr3, p.kernel_stack_top
     );
     Some(id)
@@ -60,7 +60,7 @@ pub unsafe fn create_user(
     sched.set_ready(id);
     let p = &sched.processes[id];
     crate::serial_println!(
-        "[sched_rt] USER process '{}' (id {}), {:?} | cr3={:#x} rsp0={:#x}",
+        "[ordo] USER process '{}' (id {}), {:?} | cr3={:#x} rsp0={:#x}",
         name, id, priority, p.cr3, p.kernel_stack_top
     );
     Some(id)

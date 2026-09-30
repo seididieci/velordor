@@ -2,7 +2,7 @@
 
 Filesystem nativo non-POSIX per Velordor: object store versionato con COW,
 snapshot, quota, ACL/ABAC. POSIX solo come vista (mapping sintetico).
-Filosofia ADR-0025: nativo dentro (userfs), personalita' al bordo (libr);
+Filosofia ADR-0025: nativo dentro (cardo), personalita' al bordo (libr);
 provider trait ADR-0038; policy/identita'/sandbox ADR-0037.
 
 Stato: sessione guidata A0 completata (decisioni T0–T10) + piano OS-first
@@ -10,7 +10,7 @@ P1–P5 chiuso (Fasi 50–54) + A1+N0 chiuso (Fase 55: object store, mount
 MBR/GPT, `sys` seedato, init dual-mode) + A2/56 CHIUSA (56.1 versioni in RAM;
 56.2a formato+allocatore; 56.2b B+tree COW + commit su disco; 56.2c
 recovery/orphan-GC + snapshot persistenti + sys-dal-volume) + 57/Logging-L1
-CHIUSA (userlog RAM-first, bucket per identita', ADR-0039; L0 cancellato).
+CHIUSA (vestigia RAM-first, bucket per identita', ADR-0039; L0 cancellato).
 Prossimo: 58+ (A3 quota/subvolumi, A4 ABAC, ...). Packing S1/S2,
 `R_OBJ_MGET` e marker dir persistenti (56.3) restano rinviati.
 
@@ -33,7 +33,7 @@ Prossimo: 58+ (A3 quota/subvolumi, A4 ABAC, ...). Packing S1/S2,
   opzionale, host tooling (`arca`) in std, verso una std minimale per il
   self-hosting.
 - **Integrazione col provider** (ADR-0038): ArcaFS e' un
-  `LocalFs`/`LocalFsDyn` in `userfs`; l'API nativa `R_OBJ_*` e' additiva
+  `LocalFs`/`LocalFsDyn` in `cardo`; l'API nativa `R_OBJ_*` e' additiva
   (dettagli §4).
 
 ### Posizionamento: cosa ArcaFS non vuole essere (anti-ZFS)
@@ -132,7 +132,7 @@ Prossimo: 58+ (A3 quota/subvolumi, A4 ABAC, ...). Packing S1/S2,
   ESP intoccata) — superblocco e shadow sono **partition-relative** (LBA0+LBA1
   del nodo, mai assoluti: lo shadow a `base+1` non collide con l'header GPT a
   LBA fisico 1). Il loader EFI resta fuori scope (solo readiness data-plane:
-  parser GPT in userdisk, `negotiate()` prova `ACFS` prima di `vfat`,
+  parser GPT in block, `negotiate()` prova `ACFS` prima di `vfat`,
   `arca create --whole-disk`/`--in-partition`); `device_table` (§10) e' per il
   multi-device, non per partizioni.
 - **Niente log append-only**: il commit e' shadow superblock + flip, il resto
@@ -145,7 +145,7 @@ Prossimo: 58+ (A3 quota/subvolumi, A4 ABAC, ...). Packing S1/S2,
   cancelli in-place (build freestanding `no_std` senza alloc, size entro il
   bound `SPAWN_IMAGE_MAX`, vettori RFC 7693, niente heap nel per-op),
   altrimenti reimplementazione propria (~500 righe, solo u32, auditabile);
-  solo userspace (userfs + `arca` + test), mai kernel (ADR-0025). FNV-1a
+  solo userspace (cardo + `arca` + test), mai kernel (ADR-0025). FNV-1a
   resta per `peer_info`/manifest/ABI u64 (hint + confronto esatto, mai
   sicurezza).
 - Footer blocco: `(type, device_idx, gen, tag128)` — blocchi
@@ -202,7 +202,7 @@ Prossimo: 58+ (A3 quota/subvolumi, A4 ABAC, ...). Packing S1/S2,
 
 - Bit `OBJ_R/OBJ_W` separati + `SNAP` + `ADMIN`; fail-closed agli ignoti;
   subtree esteso a bucket/prefisso (gratis: l'op porta bucket nel payload).
-- Motore in userfs (mai kernel): soggetti = `app_hash` oggi (+ `app_sign`
+- Motore in cardo (mai kernel): soggetti = `app_hash` oggi (+ `app_sign`
   e UID domani come attributi), subtree, ruoli-servizio; oggetti = xattr.
 - Ereditarieta' bucket→chiave solo in restrizione; snapshot con ACL
   congelata (o `ADMIN`); enforcement **ogni op** (chiude TOCTOU).
@@ -216,7 +216,7 @@ Prossimo: 58+ (A3 quota/subvolumi, A4 ABAC, ...). Packing S1/S2,
   versioni. Gli UID di Strato 3 saranno un attributo in piu'.
 - **Enforcement nel server, non nel provider**: `LocalFs::stat` non conosce
   il chiamante; la proiezione `mode`/`owner` e l'enforcement ABAC avvengono in
-  `userfs` (Fase 17/37) attorno alla chiamata al provider. Se servisse
+  `cardo` (Fase 17/37) attorno alla chiamata al provider. Se servisse
   contesto dentro il provider, si estende la trait, non si sposta
   l'enforcement.
 
@@ -239,7 +239,7 @@ Prossimo: 58+ (A3 quota/subvolumi, A4 ABAC, ...). Packing S1/S2,
   `user.*` liberi + `sys.*` riservati; chiavi ≤ 64B, valori ≤ 1KB,
   totale ≤ 2KB inline (oltre → blob attributi, pattern overflow).
 - `sys.content_hash` (riservato, BLAKE2s-256): hash del contenuto calcolato
-  dal writer (userfs) al seal e verificato al load da `init` (N0: confronto
+  dal writer (cardo) al seal e verificato al load da `init` (N0: confronto
   con content-hash o re-hash dei byte, da allineare con ADR-0027/0037).
   Abilita dedup come **ottimizzazione futura** (piu' `object_id` → stesso
   extent, tracciato da refcount/GC); non e' identita' (quella resta
@@ -320,6 +320,11 @@ ArcaFS. Non serve al self-hosting: track parallelo, dopo A1–A8.
   (versionato, default) vs `block` (volume, head unico mutabile, nessuna
   versione storica). Una VM = un bucket `block` = un volume: la policy si
   dichiara una volta, non per oggetto (vedi §1).
+  > Omonimia dichiarata: `block` qui e' il **tipo di bucket** ArcaFS; il
+  > driver ATA userspace si chiama `block` (R6, ADR-0040) — namespace
+  > diversi (stringa di tipo nel FS vs servizio/`/dev/sdX`), nessuna
+  > collisione nel codice. Se in futuro confonde, il tipo di bucket si
+  > rinomina (spec, non ABI) senza toccare il driver.
 - **COW != versionamento**: il bucket `block` perde la *retention* delle
   versioni, non il COW. Gli extent restano copy-on-write per due ragioni:
   atomicita' del commit (scrivi nuovo, flip del root, libera i vecchi) e
@@ -342,7 +347,7 @@ ArcaFS. Non serve al self-hosting: track parallelo, dopo A1–A8.
   - **flush** a modi (§11 `R_SYNC` None/Group/PerWrite) e hint
     `sequential`/`random`.
 - **Backend fuori dal FS**: servizio userspace che presenta l'oggetto come
-  **block device** (stile `userdisk`, canale dedicato), mappa settori→extent,
+  **block device** (stile `block`, canale dedicato), mappa settori→extent,
   gestisce discard, resize e thin provisioning.
 - **I/O path**: bulk multi-frame/scatter-gather verso i ring del client
   (chiude il limite ~4000B di §4 e l'aperto in §14), zero-copy dove possibile.
@@ -481,10 +486,10 @@ Caricare i servizi da ArcaFS e' quindi quasi tutto userspace.
 
 **Esempio di dichiarazione servizio:**
 ```rust
-const SVC_USERCONSOLE: SvcMeta = SvcMeta {
-    bin: b"userconsole",
+const SVC_GPU: SvcMeta = SvcMeta {
+    bin: b"gpu",
     path: Some("/fat/bin/console.bin"), // legacy fallback
-    obj: Some((b"sys", b"bin/userconsole.bin")), // nativo ArcaFS
+    obj: Some((b"sys", b"bin/gpu.bin")), // nativo ArcaFS
     prio: 16,
     io: VGA_CURSOR_RANGES,
 };
@@ -562,7 +567,7 @@ pub fn obj_get(bucket: &[u8], key: &[u8]) -> Result<Vec<u8>, Error> {
 - Estensione del flow esistente (Fase 54): dopo `probe_arca(handle)` che legge
   LBA0 del nodo, match su `magic="ACFS"` → mount come `ArcaFs`.
 - Per partizioni GPT: il nodo e' `sdXn` (es. `sda1`) con `PartLoc::Gpt { start,
-  sectors }`. userdisk lo esporta come handle IPC; userfs risolve per nome
+  sectors }`. block lo esporta come handle IPC; cardo risolve per nome
   (`DISK_RESOLVE` → handle) e legge LBA0 relativo.
 - Order: ArcaFS prima di vfat (come gia' fatto per whole-disk). Il superblock
   ArcaFS ha magic + checksum che non collidono con BPB FAT.
@@ -579,8 +584,8 @@ pub fn obj_get(bucket: &[u8], key: &[u8]) -> Result<Vec<u8>, Error> {
   fallisce loud. La creazione del partition table e' un'operazione separata
   (strumento dedicato o script di provisioning).
 
-**Integrazione con userdisk:**
-- userdisk esporta nodi partizione GPT come `sdXn` (stesso namespace MBR).
+**Integrazione con block:**
+- block esporta nodi partizione GPT come `sdXn` (stesso namespace MBR).
 - `DISK_INFO` per ogni nodo: tipo (`whole_disk`/`partition`), start LBA, sectors.
 - Negotiate prova ArcaFS su ogni nodo; se superblock valido → mount, altrimenti
   tenta vfat.
@@ -679,11 +684,11 @@ Primo passo A2: semantica versionata senza disco (il B+tree on-disk e' 56.2).
   scratch, gating di policy in A7. Mai nel percorso R_OBJ_* (in-RAM).
 - **Casa `arcafs/`**: tag/wire/formato condivisi guest/host; i wrapper IPC
   restano in `libr` (evita il ciclo `libr`↔`arcafs`); `libr` riesporta.
-- **Lezione stack**: il loop userfs gira su 16 KiB con buffer 4K nei
+- **Lezione stack**: il loop cardo gira su 16 KiB con buffer 4K nei
   handler — un ritorno by-value da 3.5 KiB (+inline) sfonda la guardia
   (osservato: #PF deterministico a ogni boot). Regola: payload grandi in
   `Box`, handler pesanti `#[inline(never)]`, mai array KiB per-valore nel
-  loop. `userfs.bin` al 90% di `SPAWN_IMAGE_MAX`: budget codice contato
+  loop. `cardo.bin` al 90% di `SPAWN_IMAGE_MAX`: budget codice contato
   per 56.2b.
 
 ## 19. Piano 56.2b/56.2c (A2 su disco)
@@ -719,18 +724,18 @@ e accendere la persistenza. Due passi con gate separati.
 - **Cache nodi**: write-through in-heap, LRU, cap iniziale 256 nodi
   (~1 MB, confermato in 56.2a); regola stack §18 vale per tutto il path
   (nodi in `Box`, mai per-valore nel loop). Tuning coi numeri, non a stima.
-- **Vincolo binario**: `userfs.bin` al 90% di `SPAWN_IMAGE_MAX` — budget
+- **Vincolo binario**: `cardo.bin` al 90% di `SPAWN_IMAGE_MAX` — budget
   codice contato: niente duplicazioni (riuso `arcafs::format`), `opt z`;
   se sfora si sposta codice, non si alza il bound senza ADR.
 - **Vittoria 56.2b**: tutta la semantica 56.1 passa identica ma su disco
   (stessi assert testsarca, backend diverso: il backend mem di 56.1 resta
   come oracolo di confronto); suite estesa con split/merge forzati
   (bulk insert oltre la capacità foglia) e crash a metà commit simulato
-  (kill userfs durante PUT pesanti → al remount generazione vecchia
+  (kill cardo durante PUT pesanti → al remount generazione vecchia
   intatta).
 - **Rischi noti**: split/merge con overflow record (il caso che rompe i
   B+tree fatti in casa); refcount vs snapshot-delete concorrente al commit
-  (ordine write sopra); heap userfs sotto churn (VERSION_RETAIN=8 resta).
+  (ordine write sopra); heap cardo sotto churn (VERSION_RETAIN=8 resta).
 
 > **Stato 56.2b (chiuso, gate 5/5+7/7+32/32+58/58)**: vittoria conseguita con
 > tre deviazioni dichiarate dal piano sopra — (1) backend UNICO su disco, il
@@ -757,7 +762,7 @@ e accendere la persistenza. Due passi con gate separati.
 - **Mount/recovery**: superblock valido → orphan-GC (raggiungibili dai 3
   alberi + meta + catene overflow, meno freelist/live/blocco 0 → freelist;
   un solo commit chiude anche DIRTY); remount = reload completo = **test di
-  crash deterministico** (niente reboot nel gate: kill userfs + remount +
+  crash deterministico** (niente reboot nel gate: kill cardo + remount +
   snapshot sopravvissuto USABILE via rollback). La guardia live e' esclusa
   dalla GC (leftover RAW mai sganciati = leak sicuro, mai double-push).
 - **Tabella snapshot persistente**: blocco meta `TREE_META` (`snap/<sid:8>`
