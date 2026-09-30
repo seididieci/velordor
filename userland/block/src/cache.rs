@@ -200,7 +200,7 @@ fn maybe_log() {
     unsafe {
         if h + m >= NEXT_LOG_AT {
             NEXT_LOG_AT += LOG_EVERY;
-            libr::println!("[block] cache hits={} misses={} inserts={}", h, m, ins);
+            civis::println!("[block] cache hits={} misses={} inserts={}", h, m, ins);
         }
     }
 }

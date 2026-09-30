@@ -1868,7 +1868,8 @@
           fork/async-in-volo invece di corrompere). Lezione: il kernel mappa
           ogni coppia sulle stesse VA fisse — "una coppia in piu'" non e'
           mai gratis. Gate: 5/5 + 7/7 + 40/40 + 58/58, zero FAIL/PANIC/FAULT;
-          boot produzione pulito. Prossimo: 58+ (A3 quota/subvolumi, ...).
+          boot produzione pulito. Prossimo: 58+ (A3 quota/subvolumi, ...;
+          rinumerato 59+ dalla Fase 58, ADR-0041).
     - [x] R1 (rename a fasi, ADR-0040): kernel in `ordo/` (`sched`+`aegis`+
           `process`+`context`), `relay/` (`channels`), `arc/` (`phys_mem`+
           `heap`+`vmm`+`vmm_user`) con facade sottili; package
@@ -1939,3 +1940,92 @@
           shell suite sequenziale `base run redirect 41 42 source 43 43b 44
           44b` verde (flake con `--jobs` solo da carico host: stessi test
           verdi in seq). Rename R0-R9 + R-final: chiuso.
+    - [x] 58.1 (personalità POSIX separata, ADR-0041, solo docs): nuova ADR-0041
+          (meccanismo `civis` ex `libs/libr`; personalità in
+          `flavours/posix/{libr,server,shell,cli,tests}`); emendamenti Fase 58
+          in ADR-0025 (Neutral) e ADR-0040 (pantheon + `Civis`); SUMMARY,
+          ROADMAP, questo log. Decisioni: args + wrapper fd + `exec_image`
+          restano meccanismo (li usano i server nativi); solo
+          errno/stdio/fork/exec passano alla personalità; inversione dei 3
+          riferimenti meccanismo→POSIX (`print::flush`→hook `persona::route_out`,
+          `REDIR_MAGIC` prefisso argv neutro in `civis::args`, doppio `entry!`).
+          Fase 58.1–58.6 dichiarate; rinumerazione del pregresso: le fasi ArcaFS
+          A3–A8 etichettate `58+` slittano a `59+` (ROADMAP, `arcafs.md`).
+          Zero codice: nessun gate toccato. Prossimo: 58.2 (rename
+          `libr`→`civis`).
+    - [x] 58.2 (personalità POSIX separata, ADR-0041, rename): `libs/libr` →
+          `libs/civis` (package `libr` → `civis`); path dep in 27 `Cargo.toml`
+          userland/testland (`civis = { path = ".../libs/civis" }`), import
+          `libr::`/`use libr` → `civis::`/`use civis` (~90 file, meccanico
+          compiler-guided) e Cargo.lock rigenerati; prosa dei commenti ai nuovi
+          nomi (kernel/arcafs/syscall-numbers solo in commento, nessuna
+          dipendenza). AGENTS aggiornato (albero, layout moduli, note stato);
+          `docs/src/*` e `arcafs.md` rinviati allo sweep di 58.6 (snapshot).
+          Nessun cambio di comportamento: `docs/src/11-testing.md` e
+          `run-tests.sh` invariati (il gate resta 5/5 + 7/7 + 40/40 + 58/58).
+          Gate: 5/5 + 7/7 + 40/40 + 58/58, zero FAIL/PANIC/FAULT. Prossimo: 58.3
+          (estrazione crate `flavours/posix/libr` + inversione hook).
+    - [x] 58.3 (personalità POSIX separata, ADR-0041, estrazione crate): nuovo
+          crate `flavours/posix/libr` (package `libr`, dep `civis`); traslocati
+          `posix.rs` (errno, `to_errno`) e `stdio.rs` (vfd/redirect/RedirEntry/
+          `stdio_restore`) + nuovi `exec.rs` (`serialize_argv*`, `exec`/`exec_env`)
+          e `fork.rs` (`fork`/`ForkResult`) tolti da `civis::spawn`. Inversione
+          dei 3 riferimenti meccanismo→POSIX: (1) `print::flush` → hook
+          `civis::persona::route_out` (`Option<fn>`, installato da `libr::entry!`);
+          (2) `REDIR_MAGIC` promosso a costante neutra in `civis::args`
+          (`redir_spec_arg` reso pub), semantica resta in `libr::stdio`; (3)
+          doppio `entry!`: `civis::entry!` (nudo, nativo) e `libr::entry!`
+          (`__entry_prepare` = installa hook + `stdio_restore`). `civis` non
+          contiene piu' alcun token `posix::` (commenti inclusi). Migrazione
+          consumatori: `shell`, `server`, `runhello`, `arca`, `usertests`,
+          `usertest-client` → dep `libr` + `libr::` per i simboli traslocati;
+          **analisi `arca`**: nessuna API POSIX, ma e' lanciabile dalla shell →
+          usa `libr::entry!` (onora il redirect, comportamento invariato) e
+          resta in `userland/`. Shell redirect 21/21 verde. Gate: 5/5 + 7/7 +
+          40/40 + 58/58, zero FAIL/PANIC/FAULT. Prossimo: 58.4 (spostamento
+          package `server`/`shell`/`cli` sotto `flavours/posix`).
+    - [x] 58.4 (personalità POSIX separata, ADR-0041, spostamento package):
+          `git mv userland/posix`→`flavours/posix/server`, `userland/shell`→
+          `flavours/posix/shell`, `userland/runhello`→`flavours/posix/cli/
+          runhello`, `userland/arca`→`userland/tools/arca` (nativo, tool).
+          Path dep aggiornati (`../libr`, `../../../libs/civis`, ecc.) +
+          `flavours/posix/.cargo/config.toml`. Output binari SEPARATI: nativi in
+          `userland/build`, POSIX in `flavours/posix/build` (nuovo
+          `scripts/build-posix.sh`, invocato da `build-userland.sh` PRIMA di
+          `gen-service-hashes.sh`); `gen-service-hashes.sh` ora globba entrambe
+          le dir (12 binari) e `inject-bins.sh` copia i POSIX dal nuovo path.
+          Cleanup `.bin` stantii a inizio build (evita const duplicate nel
+          manifest). Kernel invariato (i POSIX non sono embedded). Gate: 5/5 +
+          7/7 + 40/40 + 58/58, zero FAIL/PANIC/FAULT; shell `base`+`redirect`
+          verdi. Prossimo: 58.5 (suite test POSIX in `flavours/posix/tests`,
+          gate +riga).
+    - [x] 58.5 (personalità POSIX separata, ADR-0041, suite test): nuovo
+          binario `userposixtests` in `flavours/posix/tests` (crate, `libr` +
+          `civis`, ld proprio) con `t_posix` (t53), `t_fdredir` (t54),
+          `t_jobctl` (t55/t56) traslocati da `testland/usertests` + `helpers.rs`
+          ridotto (tags/modi/spawn_cfg/drain_stray/recv_done/wait_exit).
+          `usertests` ora è nativo (`civis::entry!`, niente dep `libr`; fork/exec
+          restano nei loro t49/t52 via helper) → 58→54 test. init spawa la nuova
+          suite PRIMA di usertests (t54 precede i drop di t34); output in
+          `flavours/posix/tests/build`, inject in `/test/posixtst.bin`;
+          `gen-test-policy.sh` globba anche quella dir (12 binari); build-tests
+          la costruisce con BUILD override. **Gate nuovo**: 5/5 + 7/7 + 40/40 +
+          `[posixtests] 4/4` + 54/54, zero FAIL/PANIC/FAULT. Aggiornati
+          `11-testing.md` (layout, ordine, righe, sezione posixtests), AGENTS,
+          `run-tests.sh`. Prossimo: 58.6 (sweep docs: 00/06/09/12/14, percorsi
+          `libs/civis` e `flavours/posix`).
+    - [x] 58.6 (personalità POSIX separata, ADR-0041, chiusura docs): sweep dei
+          capitoli correnti a `civis`/`flavours/posix` (00-introduzione albero,
+          04-memory, 06-syscalls, 07-ipc, 09-filesystem, 10-scheduler-rt-cbs,
+          12-utilities, 13-performance): meccanismo `libr::`→`civis::`, path
+          `libs/libr`→`libs/civis` e `userland/{shell,posix,runhello}`→
+          `flavours/posix/...`; conservati i riferimenti di personalità
+          (`libr::posix::Error`, `libr::exec`, stdio) e gli ADR/cronologia come
+          snapshot storici. Fix link ADR rotti in 09 (`../adr`→`./adr`) e link
+          ADR-0015 in 12-utilities. `arcafs.md` (`civis::load_file/obj_get/
+          image_hash`, wrapper civis). AGENTS: bullet stratificazione riscritto
+          (meccanismo=civis, personalità=libr) e nota "in corso" → chiusa;
+          ROADMAP: gate aggiornato + 58 `[x]`. `mdbook build` pulito. **Fase 58
+          chiusa**: gate 5/5 + 7/7 + 40/40 + 4/4 + 54/54, zero FAIL/PANIC/FAULT;
+          shell suite intera verde; invariante `rg "posix::" libs/civis/src` =
+          zero.

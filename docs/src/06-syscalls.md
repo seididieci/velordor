@@ -82,7 +82,7 @@ La numerazione e' definita nel dispatch di `syscall_handler` in `kernel/src/sysc
 |-----|---------|------|
 | 0 | `exit(code)` | termina il processo corrente (`sched::exit_current`) |
 | 2 | `write(fd, buf, count)` | fd 1/2 → seriale; altri fd → `-1` |
-| 3-7 | (ritirate) | erano `open/read/write_fs/close/readdir` kernel-side; dalla Fase 9.6 sono IPC dirette client→cardo (wrapper `libr` su ring, Fase 10.2) |
+| 3-7 | (ritirate) | erano `open/read/write_fs/close/readdir` kernel-side; dalla Fase 9.6 sono IPC dirette client→cardo (wrapper `civis` su ring, Fase 10.2) |
 | 8 | `getpid()` | id del processo corrente |
 | 16 | `send(channel, tag, w0, w1)` | IPC per canale (0 = parent), Fase 7+13 |
 | 17 | `recv()` | IPC per canale: ritorna (channel, tag, w0, w1), Fase 7+13 |
@@ -155,7 +155,7 @@ La numerazione e' definita nel dispatch di `syscall_handler` in `kernel/src/sysc
 > `Err(ServerDied)` da `wait_reply` invece di attendere per sempre.
 
 Le syscall classiche `fork`/`wait`/`brk`/`mmap` non sono implementate.
-`read`/`open`/`close`/`readdir`/`mkdir`/`stat` esistono come **wrapper `libr`**
+`read`/`open`/`close`/`readdir`/`mkdir`/`stat` esistono come **wrapper `civis`**
 (IPC dirette client→cardo sui ring, zero copie — v. [File System](./09-filesystem.md)),
 non come syscall kernel: i numeri 3-7/23-24 sono ritirati.
 
@@ -253,19 +253,19 @@ fallisce.
 `spawn_image(img, len, meta, metalen)` (Fase 21) e' la primitiva generale di
 creazione (come fork+exec): il binario e' letto dalla memoria del chiamante
 (servizi da disco: `/bin` e `/test` su `/fat`) invece che dalla tabella
-embedded. `meta` e' uno `SpawnMeta` da 40 B (`repr(C)`, identico in `libr`):
+embedded. `meta` e' uno `SpawnMeta` da 40 B (`repr(C)`, identico in `civis`):
 nome NUL-padded 16 B (non vuoto, stampabile), priorita' 1..31 (mai 0/idle),
 fino a 4 range di porte I/O. Le porte sono privilegio root: solo pid 1 (init)
 puo' chiederle, gli altri devono avere `io_count == 0`. Bound 256 KiB per
 singolo spawn (`SPAWN_IMAGE_MAX`, single source in `syscall-numbers` dalla
-Fase 39: anche `libr` lo usa per pre-validare). Ritorna il canale di nascita
+Fase 39: anche `civis` lo usa per pre-validare). Ritorna il canale di nascita
 o -1. Il kernel embedda ormai solo
 lo storage-TCB (init/disk/fs); tutto il resto parte da disco via init.
 
-### Fase 39 — errore nativo in `libr` (nessuna syscall nuova)
+### Fase 39 — errore nativo in `civis` (nessuna syscall nuova)
 
 La Fase 39 non aggiunge numeri di syscall: l'ABI kernel resta a `-1` nei
-registri (tabelle sopra invariate). Cambiano i **wrapper `libr`**, che ora
+registri (tabelle sopra invariate). Cambiano i **wrapper `civis`**, che ora
 ritornano `Result<T, libr::posix::Error>`: enum nativo del dominio OS
 (trasporto + dominio FS) con UNICA traduzione `to_errno` al bordo POSIX
 (i numeri errno non entrano mai nel kernel/wire, ADR-0015/0025). Il registry
@@ -295,7 +295,7 @@ prima che il FS esista).
 | `write` | 2 | Scrive su seriale (fd 1/2); altri fd → `-1` |
 
 > Le classiche `read`/`open`/`close`/`readdir` non sono syscall kernel:
-> sono wrapper IPC diretti in `libr` (client → cardo, v. [File System](./09-filesystem.md)).
+> sono wrapper IPC diretti in `civis` (client → cardo, v. [File System](./09-filesystem.md)).
 > `fork` (45, Fase 34) e `mmap` (39, Fase 28) esistono; `sbrk` e' la 25.
 > `exec` in-place (48, Fase 37.0 nucleo + 37.1 argv: `exec_image`/`exec`;
 > convenzione argv stile Linux come dato neutro, `_start` via macro `entry!`)
@@ -486,7 +486,7 @@ le operazioni FS sono ora IPC dirette client→cardo.
 
 ### Libreria C minimale
 
-La libreria è `libs/libr/src/lib.rs` (`libr`, condivisa userland+testland). ABI: `rax`=numero, `rdi/rsi/rdx/r10`=arg1-4,
+La libreria è `libs/civis/src/lib.rs` (`civis`, condivisa userland+testland). ABI: `rax`=numero, `rdi/rsi/rdx/r10`=arg1-4,
 ritorno in `rax`. Espone `syscall4` (ritorno in `rax`) e `syscall4_out` (cattura anche
 `rdi/rsi/rdx/r10` di ritorno, per l'IPC multi-parola).
 
@@ -519,7 +519,7 @@ in un buffer statico e flushati su stdout (fd 1) tramite una singola syscall qua
 si incontra un `\n` oppure il buffer e' pieno. Questo evita la frammentazione
 dell'output seriale (una syscall per ogni carattere o per ogni frammento).
 
-**Meccanismo** (`libr/src/lib.rs`):
+**Meccanismo** (`civis/src/lib.rs`):
 
 ```
 LINE_BUF: [u8; 1024]    ← buffer statico
@@ -531,7 +531,7 @@ push_byte(b):       flush() se '\n' o buffer pieno, altrimenti scrivi in LINE_BU
 flush():            singola syscall write(1, buf, len) + reset LINE_LEN
 ```
 
-**Macros** (`#[macro_export]`, usabili con `use libr::{print_str, println}`):
+**Macros** (`#[macro_export]`, usabili con `use civis::{print_str, println}`):
 
 ```rust
 // Bufferizza senza newline e senza flush automatico:

@@ -18,9 +18,9 @@ pub fn handle_open(
         return Err(ERR_INVALID);
     }
     let flags = flags as u32;
-    let creat = flags & libr::O_CREAT != 0;
-    let trunc = flags & libr::O_TRUNC != 0;
-    let append = flags & libr::O_APPEND != 0;
+    let creat = flags & civis::O_CREAT != 0;
+    let trunc = flags & civis::O_TRUNC != 0;
+    let append = flags & civis::O_APPEND != 0;
 
     // Cerca nei mount point registrati (vela, console, block, futuri driver).
     if let Some((driver_chan, rel)) = mount_legacy::resolve_mount(path, mounts) {
@@ -31,21 +31,21 @@ pub fn handle_open(
             if let Some(name) = prefix.strip_prefix("dev/") {
                 if name.starts_with("disk/by-") {
                     let h = mount::resolve_mount_source(&alloc::format!("/dev/{}", name)).ok_or(ERR)?;
-                    let reply = libr::send(driver_chan, DEV_OPEN, h as u64, 0).map_err(|_| ERR)?;
+                    let reply = civis::send(driver_chan, DEV_OPEN, h as u64, 0).map_err(|_| ERR)?;
                     if reply.w0 == ERR {
                         return Err(ERR);
                     }
                     return Ok(ftable.open_remote(chan, driver_chan, reply.w0 as u32));
                 }
                 if let Some(h) = mount_legacy::disk_handle(name) {
-                    let reply = libr::send(driver_chan, DEV_OPEN, h as u64, 0).map_err(|_| ERR)?;
+                    let reply = civis::send(driver_chan, DEV_OPEN, h as u64, 0).map_err(|_| ERR)?;
                     if reply.w0 == ERR {
                         return Err(ERR);
                     }
                     return Ok(ftable.open_remote(chan, driver_chan, reply.w0 as u32));
                 }
                 if let Some(dev) = name.rsplit('/').next().and_then(mount_legacy::dev_type) {
-                    let reply = libr::send(driver_chan, DEV_OPEN, dev, 0).map_err(|_| ERR)?;
+                    let reply = civis::send(driver_chan, DEV_OPEN, dev, 0).map_err(|_| ERR)?;
                     if reply.w0 == ERR {
                         return Err(ERR);
                     }
@@ -55,7 +55,7 @@ pub fn handle_open(
             return Err(ERR_NOTFOUND);
         }
         let device_type = mount_legacy::dev_type(rel).ok_or(ERR_NOTFOUND)?;
-        let reply = libr::send(driver_chan, DEV_OPEN, device_type, 0).map_err(|_| ERR)?;
+        let reply = civis::send(driver_chan, DEV_OPEN, device_type, 0).map_err(|_| ERR)?;
         let remote_fd = reply.w0 as u32;
         return Ok(ftable.open_remote(chan, driver_chan, remote_fd));
     }
@@ -133,9 +133,9 @@ pub fn handle_read(
             Some(&r) => r,
             None => return Err(ERR),
         };
-        libr::map_in(driver_chan, req_phys, libr::CLI_REQ_VA, 1).map_err(|_| ERR)?;
-        libr::map_in(driver_chan, resp_phys, libr::CLI_RESP_VA, 1).map_err(|_| ERR)?;
-        let reply = libr::send(driver_chan, DEV_READ, remote_fd as u64, count as u64).map_err(|_| ERR)?;
+        civis::map_in(driver_chan, req_phys, civis::CLI_REQ_VA, 1).map_err(|_| ERR)?;
+        civis::map_in(driver_chan, resp_phys, civis::CLI_RESP_VA, 1).map_err(|_| ERR)?;
+        let reply = civis::send(driver_chan, DEV_READ, remote_fd as u64, count as u64).map_err(|_| ERR)?;
         return Ok(reply.w0);
     }
     // Estremita' di pipe in lettura (Fase 42): mai dalla tail condivisa, mai
@@ -287,9 +287,9 @@ pub fn handle_write_remote(
         Some(&r) => r,
         None => return Err(ERR),
     };
-    libr::map_in(driver_chan, req_phys, libr::CLI_REQ_VA, 1).map_err(|_| ERR)?;
-    libr::map_in(driver_chan, resp_phys, libr::CLI_RESP_VA, 1).map_err(|_| ERR)?;
-    let reply = libr::send(driver_chan, DEV_WRITE, remote_fd as u64, count as u64).map_err(|_| ERR)?;
+    civis::map_in(driver_chan, req_phys, civis::CLI_REQ_VA, 1).map_err(|_| ERR)?;
+    civis::map_in(driver_chan, resp_phys, civis::CLI_RESP_VA, 1).map_err(|_| ERR)?;
+    let reply = civis::send(driver_chan, DEV_WRITE, remote_fd as u64, count as u64).map_err(|_| ERR)?;
     Ok(reply.w0)
 }
 
@@ -399,7 +399,7 @@ pub fn handle_write_local(
 
     // 47.3 — write via trait `LocalFs` (U1): open con O_CREAT per creare file
     // inesistenti, poi write attraverso la trait (gestisce resize + copy).
-    let handle = crate::provider::LocalFs::open(fs, path, libr::O_CREAT)?;
+    let handle = crate::provider::LocalFs::open(fs, path, civis::O_CREAT)?;
     let n = crate::provider::LocalFs::write(fs, handle, offset, payload, append)?;
     ftable.set_offset(chan, fd, offset + n as usize);
     Ok(n as u64)
@@ -421,7 +421,7 @@ pub fn handle_close(
     }
     // File remoto: chiudi anche sul server.
     if let Some((driver_chan, remote_fd)) = ftable.get_remote(chan, fd) {
-        let _ = libr::send(driver_chan, DEV_CLOSE, remote_fd as u64, 0);
+        let _ = civis::send(driver_chan, DEV_CLOSE, remote_fd as u64, 0);
     }
     if ftable.close(chan, fd) { Ok(0) } else { Err(ERR_INVALID) }
 }
@@ -440,9 +440,9 @@ pub fn handle_readdir(
     // response ring del client (mappata li' da map_in).
     if let Some((driver_chan, _rel)) = mount_legacy::resolve_mount(path, mounts) {
         let (req_phys, resp_phys) = rings.get(&chan).ok_or(ERR)?;
-        libr::map_in(driver_chan, *req_phys, libr::CLI_REQ_VA, 1).map_err(|_| ERR)?;
-        libr::map_in(driver_chan, *resp_phys, libr::CLI_RESP_VA, 1).map_err(|_| ERR)?;
-        let reply = libr::send(driver_chan, DEV_READDIR, 0, 0).map_err(|_| ERR)?;
+        civis::map_in(driver_chan, *req_phys, civis::CLI_REQ_VA, 1).map_err(|_| ERR)?;
+        civis::map_in(driver_chan, *resp_phys, civis::CLI_RESP_VA, 1).map_err(|_| ERR)?;
+        let reply = civis::send(driver_chan, DEV_READDIR, 0, 0).map_err(|_| ERR)?;
         return Ok(reply.w0);
     }
 
@@ -545,14 +545,14 @@ pub fn stat_reply(rings: &BTreeMap<u64, (u64, u64)>, chan: u64, size: u64, kind:
 }
 
 /// Codifica il campo `kind` di R_STAT da `Meta` (Fase 48): bit
-/// STAT_FILE/DIR + STAT_READONLY dal provider. `libr::stat` decodifica
+/// STAT_FILE/DIR + STAT_READONLY dal provider. `civis::stat` decodifica
 /// `w1 & STAT_READONLY`; senza questa propagazione `Meta.readonly` sarebbe
 /// ignorato (era il caso prima del wiring FAT).
 #[inline(never)]
 fn stat_kind(meta: &crate::provider::Meta) -> u64 {
-    let base = if meta.kind == 1 { libr::STAT_DIR } else { libr::STAT_FILE };
+    let base = if meta.kind == 1 { civis::STAT_DIR } else { civis::STAT_FILE };
     if meta.readonly {
-        base | libr::STAT_READONLY
+        base | civis::STAT_READONLY
     } else {
         base
     }
@@ -582,13 +582,13 @@ pub fn handle_stat(
     }
     // Root ramfs: esiste sempre.
     if path == "/" {
-        return Ok(stat_reply(rings, chan, 0, libr::STAT_DIR, 0));
+        return Ok(stat_reply(rings, chan, 0, civis::STAT_DIR, 0));
     }
     // Device registrati: foglie (rel non vuota = path sotto un device: None,
     // come open che rifiuta i dev_type sconosciuti).
     if let Some((_driver_chan, rel)) = mount_legacy::resolve_mount(path, mounts) {
         if rel.is_empty() {
-            return Ok(stat_reply(rings, chan, 0, libr::STAT_DEVICE, 0));
+            return Ok(stat_reply(rings, chan, 0, civis::STAT_DEVICE, 0));
         }
         return Err(ERR_NOTFOUND);
     }
@@ -599,7 +599,7 @@ pub fn handle_stat(
         // 48.5 — stat via trait `LocalFsDyn`: la trait gestisce il path relativo al mount.
         let fat = mount::by_id_mut(mounts_fat, mid).ok_or(ERR)?.local_dyn().ok_or(ERR)?;
         if rel.is_empty() {
-            return Ok(stat_reply(rings, chan, 0, libr::STAT_DIR, 0));
+            return Ok(stat_reply(rings, chan, 0, civis::STAT_DIR, 0));
         }
         let meta = fat.stat_dyn(rel)?;
         return Ok(stat_reply(rings, chan, meta.size, stat_kind(&meta), meta.mtime));
@@ -615,7 +615,7 @@ pub fn handle_stat(
         }
         // /dev/* senza prefix noto: solo sintesi (sotto).
         None => mount_legacy::synth_children(mounts, path)
-            .map(|_| stat_reply(rings, chan, 0, libr::STAT_DIR, 0))
+            .map(|_| stat_reply(rings, chan, 0, civis::STAT_DIR, 0))
             .ok_or(ERR_NOTFOUND),
     }
 }
@@ -761,11 +761,11 @@ pub fn handle_sync(
     chan: u64,
     mode: u32,
 ) -> Result<u64, u64> {
-    if mode != libr::SYNC_NONE && mode != libr::SYNC_GROUP && mode != libr::SYNC_PERWRITE {
+    if mode != civis::SYNC_NONE && mode != civis::SYNC_GROUP && mode != civis::SYNC_PERWRITE {
         return Err(ERR_INVALID);
     }
-    let prev = sync_expect.get(&chan).copied().unwrap_or(libr::SYNC_NONE);
-    if mode == libr::SYNC_GROUP {
+    let prev = sync_expect.get(&chan).copied().unwrap_or(civis::SYNC_NONE);
+    if mode == civis::SYNC_GROUP {
         // Barriera sui mount FAT attivi (quelli inattivi non hanno connessioni
         // con pendenze: write-through, niente dirty da spingere altrove).
         for m in mounts_fat.iter() {
@@ -986,9 +986,9 @@ pub fn handle_lseek(
     // conoscono).
     let (path, kind, cur, mnt) = ftable.get(chan, fd).ok_or(ERR_INVALID)?;
     let base: i64 = match whence {
-        libr::SEEK_SET => 0,
-        libr::SEEK_CUR => cur as i64,
-        libr::SEEK_END => {
+        civis::SEEK_SET => 0,
+        civis::SEEK_CUR => cur as i64,
+        civis::SEEK_END => {
             let size = match kind {
                 mount_legacy::FsKind::Ram => match fs.find(path).ok_or(ERR_NOTFOUND)? {
                     ramfs::FsNode::File { data, .. } => data.len() as i64,

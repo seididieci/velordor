@@ -1,0 +1,19 @@
+[package]
+name = "userposixtests"
+version = "0.1.0"
+edition = "2024"
+
+# Suite test della personalita' POSIX (Fase 58.5, ADR-0041): casa
+# `flavours/posix/tests`. Separata da testland/usertests (meccanismo).
+[workspace]
+
+[dependencies]
+civis = { path = "../../../libs/civis" }
+libr = { path = "../libr" }
+
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"
+opt-level = "z"

@@ -1,0 +1,19 @@
+[package]
+name = "libr"
+version = "0.1.0"
+edition = "2024"
+
+# Crate fuori dal workspace del kernel: build freestanding separata.
+# Personalita' POSIX (ADR-0041): strato di traduzione sopra il meccanismo
+# `civis`; i binari POSIX linkano entrambi.
+[workspace]
+
+[dependencies]
+civis = { path = "../../../libs/civis" }
+
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"
+opt-level = "z"

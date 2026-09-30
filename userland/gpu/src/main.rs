@@ -12,7 +12,7 @@
 #![no_main]
 
 extern crate alloc;
-use libr;
+use civis;
 
 /// Costante copiata da `vmm_user.rs` (il crate kernel non e' linkato qui).
 const USER_VGA: u64 = 0x4000_0010_0000;
@@ -28,7 +28,7 @@ use vela::gpu::{VGA_COLS, VGA_ROWS};
 use vela::gpu::{CRTC_DATA, CRTC_INDEX};
 
 // ── IPC tags + device type (DocsD: single source in `syscall-numbers`) ─
-use libr::{DEV_CLOSE, DEV_CONSOLE, DEV_OPEN, DEV_READ, DEV_WRITE};
+use civis::{DEV_CLOSE, DEV_CONSOLE, DEV_OPEN, DEV_READ, DEV_WRITE};
 
 /// Valore di errore IPC.
 const ERR: u64 = !0u64;
@@ -185,10 +185,10 @@ unsafe fn vga_write_char(vga: *mut Buffer, byte: u8, cursor: &mut usize) {
 // Le finestre CLI_* sono mappate da cardo (map_in) con i ring del client
 // a ogni relay DEV (zero-copy); i ring propri del server non cambiano mai.
 
-const REQ_RING_VA: u64 = libr::CLI_REQ_VA;
-const RESP_RING_VA: u64 = libr::CLI_RESP_VA;
-// Geometria ring (A1) + frame helpers (A2): single source in `libr`.
-use libr::{req_frame_read, resp_frame_write};
+const REQ_RING_VA: u64 = civis::CLI_REQ_VA;
+const RESP_RING_VA: u64 = civis::CLI_RESP_VA;
+// Geometria ring (A1) + frame helpers (A2): single source in `civis`.
+use civis::{req_frame_read, resp_frame_write};
 
 // ── Entry point ──────────────────────────────────────────────────────
 
@@ -197,13 +197,13 @@ use libr::{req_frame_read, resp_frame_write};
 /// a boot e su EXIT_NOTIFY. Unbounded come `fs_chan`. Idempotente grazie al
 /// replace-on-register in cardo.
 fn ensure_mounted() {
-    libr::ensure_fs_mount(|| libr::fs_register(b"/dev/console"));
+    civis::ensure_fs_mount(|| civis::fs_register(b"/dev/console"));
 }
 
-libr::entry!(real_main);
+civis::entry!(real_main);
 fn real_main(_sp: u64) -> ! {
     // 1. Mappa il frame buffer VGA.
-    let _ = libr::map_physical(VGA_PHYS, USER_VGA, 1);
+    let _ = civis::map_physical(VGA_PHYS, USER_VGA, 1);
     let vga = USER_VGA as *mut Buffer;
 
     // 2. Pulisci il VGA.
@@ -219,39 +219,39 @@ fn real_main(_sp: u64) -> ! {
     for &b in msg {
         unsafe { vga_write_char(vga, b, &mut cursor) };
     }
-    let _ = libr::print_string(b"[gpu] server up\n");
+    let _ = civis::print_string(b"[gpu] server up\n");
 
     // 4b. Registra il servizio Console per nome (ADR-0008): init lo usa per
     // la supervisione (service_pid) e i client potrebbero risolverlo.
-    if libr::service_register(libr::Service::Gpu).is_ok() {
-        let _ = libr::print_string(b"[gpu] registered as service Gpu\n");
+    if civis::service_register(civis::Service::Gpu).is_ok() {
+        let _ = civis::print_string(b"[gpu] registered as service Gpu\n");
     }
 
     // 4c. Avvisa il parent (init) di essere pronto (SVC_READY fire-and-forget):
     // serve al supervisore init-restart (Fase 14). SUBITO dopo la registrazione
     // del servizio (non dopo /dev/console, che richiede cardo non ancora nato:
     // init aspetta questo ack a boot e attendere dopo sarebbe deadlock).
-    // Fire-and-forget in `libr` (A3): retry bounded, mai hang.
-    libr::signal_ready(1);
+    // Fire-and-forget in `civis` (A3): retry bounded, mai hang.
+    civis::signal_ready(1);
 
-    // 5. Registra /dev/console con cardo (IPC FS_REGISTER via libr::fs_register,
+    // 5. Registra /dev/console con cardo (IPC FS_REGISTER via civis::fs_register,
     //    che prima alloca e registra la pagina FS per-processo).
     //    ensure_mounted: stessa funzione a boot e su EXIT_NOTIFY (t28).
     ensure_mounted();
-    let _ = libr::print_string(b"[gpu] registered /dev/console with cardo\n");
+    let _ = civis::print_string(b"[gpu] registered /dev/console with cardo\n");
 
     // 6. Loop IPC: solo richieste DEV sul device di output (+ EXIT_NOTIFY).
     //    Niente piu' tastiera qui (Fase 15: kbd + porta).
     loop {
-        match libr::recv() {
+        match civis::recv() {
             Ok(msg) => {
                 match msg.tag {
                     DEV_OPEN => {
                         // msg.w0 = device type
                         if msg.w0 == DEV_CONSOLE {
-                            let _ = libr::reply(msg.tag, 0, 0);
+                            let _ = civis::reply(msg.tag, 0, 0);
                         } else {
-                            let _ = libr::reply(msg.tag, ERR, 0);
+                            let _ = civis::reply(msg.tag, ERR, 0);
                         }
                     }
 
@@ -260,7 +260,7 @@ fn real_main(_sp: u64) -> ! {
                         // /dev/null. Frame SEMPRE (anche vuoto): il client
                         // distingue "0 byte" da "ring vuoto" solo dal frame.
                         unsafe { resp_frame_write(RESP_RING_VA, &[]); }
-                        let _ = libr::reply(msg.tag, 0, 0);
+                        let _ = civis::reply(msg.tag, 0, 0);
                     }
 
                     DEV_WRITE => {
@@ -275,21 +275,21 @@ fn real_main(_sp: u64) -> ! {
                                 unsafe { feed_byte(vga, *b, &mut cursor, &mut esc) };
                             }
                         }
-                        let _ = libr::reply(msg.tag, msg.w1, 0);
+                        let _ = civis::reply(msg.tag, msg.w1, 0);
                     }
 
                     DEV_CLOSE => {
-                        let _ = libr::reply(msg.tag, 0, 0);
+                        let _ = civis::reply(msg.tag, 0, 0);
                     }
 
-                    libr::EXIT_NOTIFY => {
+                    civis::EXIT_NOTIFY => {
                         // cardo morto e rinato (t28): re-mount. Nessuno stato
                         // per-client da purgare; mai rispondere alle notifiche.
                         ensure_mounted();
                     }
 
                     _ => {
-                        let _ = libr::reply(msg.tag, 0, 0);
+                        let _ = civis::reply(msg.tag, 0, 0);
                     }
                 }
             }
@@ -300,6 +300,6 @@ fn real_main(_sp: u64) -> ! {
 
 #[panic_handler]
 fn panic(_info: &core::panic::PanicInfo) -> ! {
-    let _ = libr::print_string(b"[gpu] panic\n");
-    libr::exit(1)
+    let _ = civis::print_string(b"[gpu] panic\n");
+    civis::exit(1)
 }

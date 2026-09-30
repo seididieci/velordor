@@ -31,7 +31,7 @@
 //! ERR all'utente, mai wedge): QEMU non impalla.
 
 use super::*;
-use libr::pio as io;
+use civis::pio as io;
 
 /// Offset registri Bus-Master dentro il canale (primario +0, secondario +8).
 const BM_CMD_OFF: u16 = 0;
@@ -123,7 +123,7 @@ impl DmaEngine {
             println!("[block] DMA: nessun disco con modo — resto in PIO");
             return None;
         }
-        let phys = match libr::dma_alloc(1) {
+        let phys = match civis::dma_alloc(1) {
             Ok(p) => p,
             Err(_) => {
                 println!("[block] DMA: staging alloc fallita — resto in PIO");
@@ -143,7 +143,7 @@ impl DmaEngine {
         );
         Some(DmaEngine {
             bmiba,
-            staging_va: libr::USER_DMA_VA,
+            staging_va: civis::USER_DMA_VA,
             staging_phys: phys,
             dma_ok: 0,
             dma_fb: 0,
@@ -167,7 +167,7 @@ impl DmaEngine {
         }
         let t = self.dma_ok + self.dma_fb;
         if t % STAT_EVERY == 0 {
-            let cpu = libr::ps_info(libr::getpid() as u32).map_or(0, |e| e.ticks);
+            let cpu = civis::ps_info(civis::getpid() as u32).map_or(0, |e| e.ticks);
             let dcpu = cpu.saturating_sub(self.cpu_last);
             self.cpu_last = cpu;
             println!(

@@ -147,7 +147,7 @@ pub(crate) fn fs_req_write(tag: u32, w0: u64, w1: u64, payload: &[u8]) -> bool {
         true
     }
 }
-/// Toglie l'ultimo frame scritto (rollback su send_async fallita, come libr).
+/// Toglie l'ultimo frame scritto (rollback su send_async fallita, come civis).
 pub(crate) fn fs_req_rollback(frame_len: usize) {
     unsafe {
         let head = core::ptr::read_volatile((FS_REQ_VA + RING_HEAD as u64) as *const u32);

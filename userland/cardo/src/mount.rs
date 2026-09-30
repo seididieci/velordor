@@ -13,8 +13,8 @@ fn probe_arca(handle: u32) -> Option<(u64, u64)> {
     if !disk.read_sector(0, &mut sec) {
         return None;
     }
-    let sb = &sec[..libr::ARCA_SUPER_LEN];
-    if sb[libr::ARCA_OFF_MAGIC..libr::ARCA_OFF_MAGIC + 4] != *libr::ARCA_MAGIC {
+    let sb = &sec[..civis::ARCA_SUPER_LEN];
+    if sb[civis::ARCA_OFF_MAGIC..civis::ARCA_OFF_MAGIC + 4] != *civis::ARCA_MAGIC {
         return None;
     }
     let u32le = |o: usize| {
@@ -25,16 +25,16 @@ fn probe_arca(handle: u32) -> Option<(u64, u64)> {
             sb[o], sb[o + 1], sb[o + 2], sb[o + 3], sb[o + 4], sb[o + 5], sb[o + 6], sb[o + 7],
         ])
     };
-    if u32le(libr::ARCA_OFF_VERSION) != libr::ARCA_VERSION {
+    if u32le(civis::ARCA_OFF_VERSION) != civis::ARCA_VERSION {
         return None;
     }
-    if u32le(libr::ARCA_OFF_BLOCK_SIZE) != libr::ARCA_BLOCK_SIZE {
+    if u32le(civis::ARCA_OFF_BLOCK_SIZE) != civis::ARCA_BLOCK_SIZE {
         return None;
     }
-    if libr::image_hash(&sb[..libr::ARCA_OFF_CHECK]) != u64le(libr::ARCA_OFF_CHECK) {
+    if civis::image_hash(&sb[..civis::ARCA_OFF_CHECK]) != u64le(civis::ARCA_OFF_CHECK) {
         return None;
     }
-    Some((u64le(libr::ARCA_OFF_GEN), u64le(libr::ARCA_OFF_UUID)))
+    Some((u64le(civis::ARCA_OFF_GEN), u64le(civis::ARCA_OFF_UUID)))
 }
 
 // ── Mount locali dinamici (Fase 16b) ─────────────────────────────────

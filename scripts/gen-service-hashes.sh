@@ -2,7 +2,8 @@
 # Genera il manifest degli hash dei servizi (Fase 36, Strato 2 di ADR-0026).
 #
 # Calcola FNV-1a a 64 bit (stesso algoritmo di `syscall_numbers::image_hash`,
-# single source dell'identita' misurata) sui `.bin` finali di userland/build
+# single source dell'identita' misurata) sui `.bin` finali dei servizi nativi
+# (userland/build) e della personalita' POSIX (flavours/posix/build, Fase 58.4)
 # e scrive `build-meta/service_hashes.rs` con una `pub const HASH_*` per
 # binario. I crate che ne hanno bisogno (init per il manifest, cardo per la
 # policy `FS_REGISTER`, usertests per t51) lo includono con
@@ -29,21 +30,25 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-BUILD="userland/build"
+# Fase 58.4: i servizi nativi stanno in userland/build, la personalita' POSIX
+# in flavours/posix/build (server/shell/cli). Il manifest li copre entrambi.
+BUILD_DIRS=(userland/build flavours/posix/build)
 OUT_DIR="build-meta"
 OUT="$OUT_DIR/service_hashes.rs"
 
-if [ ! -d "$BUILD" ]; then
-    echo "[gen-hashes] ERROR: $BUILD mancante (build-userland.sh prima)" >&2
-    exit 1
-fi
+for d in "${BUILD_DIRS[@]}"; do
+    if [ ! -d "$d" ]; then
+        echo "[gen-hashes] ERROR: $d mancante (build-userland.sh/build-posix.sh prima)" >&2
+        exit 1
+    fi
+done
 
 mkdir -p "$OUT_DIR"
 tmp="$OUT.tmp"
 POL_OUT="$OUT_DIR/service_policy.rs"
 poltmp="$POL_OUT.tmp"
 
-python3 - "$BUILD" "$tmp" "$poltmp" <<'EOF'
+python3 - "${BUILD_DIRS[@]}" "$tmp" "$poltmp" <<'EOF'
 import glob, hashlib, os, sys
 
 def fnv1a(data: bytes) -> int:
@@ -53,10 +58,11 @@ def fnv1a(data: bytes) -> int:
         h = (h * 0x100000001B3) & 0xFFFFFFFFFFFFFFFF
     return h
 
-build, tmp = sys.argv[1], sys.argv[2]
-bins = sorted(glob.glob(os.path.join(build, "*.bin")))
+dirs = sys.argv[1:-2]
+tmp, poltmp = sys.argv[-2], sys.argv[-1]
+bins = sorted(p for d in dirs for p in glob.glob(os.path.join(d, "*.bin")))
 if not bins:
-    sys.exit("nessun .bin in %s" % build)
+    sys.exit("nessun .bin in %s" % ", ".join(dirs))
 # userinit.bin e cardo.bin ESCLUSI: entrambi includono il manifest a compile
 # time (init: expected_hash; cardo: driver_name_of), quindi il loro hash nel
 # manifest sarebbe stale-by-construction E instabile (ciclo: il binario
@@ -135,11 +141,9 @@ with open(tmp, "w") as f:
     f.write("\n".join(lines) + "\n")
 print("[gen-hashes] %d binari -> %s" % (len(bins), tmp))
 
-poltmp = sys.argv[3] if len(sys.argv) > 3 else None
-if poltmp:
-    with open(poltmp, "w") as f:
-        f.write("\n".join(pol) + "\n")
-    print("[gen-hashes] policy %d righe -> %s" % (len(pol) - 6, poltmp))
+with open(poltmp, "w") as f:
+    f.write("\n".join(pol) + "\n")
+print("[gen-hashes] policy %d righe -> %s" % (len(pol) - 6, poltmp))
 EOF
 
 mv "$tmp" "$OUT"

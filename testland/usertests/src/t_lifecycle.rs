@@ -64,7 +64,7 @@ pub fn t_kill() -> bool {
         None => return false,
     };
     let code = -7i64;
-    if libr::kill(pid as i64, code).is_err() {
+    if civis::kill(pid as i64, code).is_err() {
         println!("[usertests] t23: kill(pid={}) FAILED", pid);
         return false;
     }
@@ -127,28 +127,28 @@ pub fn t_server_death_notify() -> bool {
         return false;
     }
     // Due richieste async in volo (mai risposte: il server non fa recv).
-    let r1 = match libr::send_async(s_chan, helpers::T_REQ, 0xBEEF, 0) {
+    let r1 = match civis::send_async(s_chan, helpers::T_REQ, 0xBEEF, 0) {
         Ok(r) => r,
         Err(_) => {
             println!("[usertests] t24: send_async FAILED");
             return false;
         }
     };
-    let _ = libr::send_async(s_chan, helpers::T_REQ, 0xBEEF + 1, 0);
+    let _ = civis::send_async(s_chan, helpers::T_REQ, 0xBEEF + 1, 0);
     // Kill: wake_senders sblocca il client sync, il reclaim notifica tutti.
     let code = -9i64;
-    if libr::kill(s_pid as i64, code).is_err() {
+    if civis::kill(s_pid as i64, code).is_err() {
         println!("[usertests] t24: kill(pid={}) FAILED", s_pid);
         return false;
     }
     // Path async: la reply non arrivera' mai → ServerDied con pid+code.
     // (Notifiche di altri pid = stale di helper precedenti: consumate.)
     loop {
-        match libr::wait_reply(r1) {
-            Err(libr::WaitReplyError::ServerDied { pid, code: c })
+        match civis::wait_reply(r1) {
+            Err(civis::WaitReplyError::ServerDied { pid, code: c })
                 if pid == s_pid && c == code => break,
-            Err(libr::WaitReplyError::ServerDied { pid, .. }) if pid != s_pid => continue,
-            Err(libr::WaitReplyError::ServerDied { pid, code: c }) => {
+            Err(civis::WaitReplyError::ServerDied { pid, .. }) if pid != s_pid => continue,
+            Err(civis::WaitReplyError::ServerDied { pid, code: c }) => {
                 println!(
                     "[usertests] t24: ServerDied errato (pid={}, code={}, attesi pid={} code={})",
                     pid, c, s_pid, code
@@ -162,7 +162,7 @@ pub fn t_server_death_notify() -> bool {
         }
     }
     // Via-libera al client: ora puo' inviare T_DONE senza race.
-    if libr::send(h_chan, helpers::T_GO, 0, 0).is_err() {
+    if civis::send(h_chan, helpers::T_GO, 0, 0).is_err() {
         println!("[usertests] t24: T_GO al client FAILED");
         return false;
     }
@@ -180,7 +180,7 @@ pub fn t_server_death_notify() -> bool {
         }
     }
     // Slot servizio liberato dal morto.
-    if libr::service_lookup(libr::Service::Test).is_ok() {
+    if civis::service_lookup(civis::Service::Test).is_ok() {
         println!("[usertests] t24: slot Test ancora occupato dopo la morte");
         return false;
     }
@@ -218,11 +218,11 @@ pub fn t_driver_death_mount() -> bool {
         let _ = helpers::wait_exit(d1_chan);
         return false;
     }
-    let Ok(fd1) = libr::open("/dev/tdie/null", 0) else {
+    let Ok(fd1) = civis::open("/dev/tdie/null", 0) else {
         println!("[usertests] t25: open /dev/tdie/null via D1 FAILED");
         return false;
     };
-    if libr::kill(d1_pid as i64, -11).is_err() {
+    if civis::kill(d1_pid as i64, -11).is_err() {
         println!("[usertests] t25: kill D1 FAILED");
         return false;
     }
@@ -246,14 +246,14 @@ pub fn t_driver_death_mount() -> bool {
         let _ = helpers::wait_exit(d2_chan);
         return false;
     }
-    let Ok(fd2) = libr::open("/dev/tdie/null", 0) else {
+    let Ok(fd2) = civis::open("/dev/tdie/null", 0) else {
         println!("[usertests] t25: open /dev/tdie/null via D2 FAILED (mount stale?)");
         return false;
     };
     // Igiene: chiudi e uccidi D2 (nessun mount orfano per i test/shell dopo).
-    let _ = libr::close(fd1);
-    let _ = libr::close(fd2);
-    if libr::kill(d2_pid as i64, 0).is_err() {
+    let _ = civis::close(fd1);
+    let _ = civis::close(fd2);
+    if civis::kill(d2_pid as i64, 0).is_err() {
         println!("[usertests] t25: kill D2 FAILED");
         return false;
     }
@@ -265,13 +265,13 @@ pub fn t_driver_death_mount() -> bool {
         }
     }
     // Smoke ramfs: la purge non ha corrotto lo stato vivo.
-    let Ok(fd) = libr::open("hello.txt", 0) else {
+    let Ok(fd) = civis::open("hello.txt", 0) else {
         println!("[usertests] t25: smoke hello.txt FAILED");
         return false;
     };
     let mut buf = [0u8; 64];
-    let n = libr::read_fs(fd, &mut buf, 64).unwrap_or(0);
-    let _ = libr::close(fd);
+    let n = civis::read_fs(fd, &mut buf, 64).unwrap_or(0);
+    let _ = civis::close(fd);
     n >= helpers::HELLO.len() && buf[..helpers::HELLO.len()] == *helpers::HELLO
 }
 
@@ -299,38 +299,38 @@ pub fn t_client_death_purge() -> bool {
         }
     }
     // Smoke completo: il server e' sano dopo N purge.
-    let Ok(fd) = libr::open("/dev/null", 0) else {
+    let Ok(fd) = civis::open("/dev/null", 0) else {
         println!("[usertests] t26: smoke open /dev/null FAILED");
         return false;
     };
     let data = [0x5Au8; 16];
-    if libr::write_fs(fd, &data, 16) != Ok(16) {
+    if civis::write_fs(fd, &data, 16) != Ok(16) {
         println!("[usertests] t26: smoke write /dev/null FAILED");
         return false;
     }
     let mut b = [0u8; 16];
-    if libr::read_fs(fd, &mut b, 16) != Ok(0) {
+    if civis::read_fs(fd, &mut b, 16) != Ok(0) {
         println!("[usertests] t26: smoke read /dev/null FAILED");
         return false;
     }
-    let _ = libr::close(fd);
-    let Ok(fdz) = libr::open("/dev/zero", 0) else {
+    let _ = civis::close(fd);
+    let Ok(fdz) = civis::open("/dev/zero", 0) else {
         println!("[usertests] t26: smoke open /dev/zero FAILED");
         return false;
     };
     let mut z = [0xFFu8; 16];
-    if libr::read_fs(fdz, &mut z, 16) != Ok(16) || z.iter().any(|&x| x != 0) {
+    if civis::read_fs(fdz, &mut z, 16) != Ok(16) || z.iter().any(|&x| x != 0) {
         println!("[usertests] t26: smoke read /dev/zero FAILED");
         return false;
     }
-    let _ = libr::close(fdz);
-    let Ok(fdh) = libr::open("hello.txt", 0) else {
+    let _ = civis::close(fdz);
+    let Ok(fdh) = civis::open("hello.txt", 0) else {
         println!("[usertests] t26: smoke open hello.txt FAILED");
         return false;
     };
     let mut hb = [0u8; 64];
-    let n = libr::read_fs(fdh, &mut hb, 64).unwrap_or(0);
-    let _ = libr::close(fdh);
+    let n = civis::read_fs(fdh, &mut hb, 64).unwrap_or(0);
+    let _ = civis::close(fdh);
     if n >= helpers::HELLO.len() && hb[..helpers::HELLO.len()] != *helpers::HELLO {
         println!("[usertests] t26: smoke content hello.txt FAILED");
         return false;
@@ -339,28 +339,28 @@ pub fn t_client_death_purge() -> bool {
         println!("[usertests] t26: smoke short read hello.txt");
         return false;
     }
-    let Ok(fw) = libr::open("ut26.bin", libr::O_CREAT) else {
+    let Ok(fw) = civis::open("ut26.bin", civis::O_CREAT) else {
         println!("[usertests] t26: smoke open ut26.bin FAILED");
         return false;
     };
     let wb = [0xA5u8; 64];
-    if libr::write_fs(fw, &wb, 64) != Ok(64) {
+    if civis::write_fs(fw, &wb, 64) != Ok(64) {
         println!("[usertests] t26: smoke write ut26.bin FAILED");
         return false;
     }
-    let _ = libr::close(fw);
-    let Ok(fr) = libr::open("ut26.bin", 0) else {
+    let _ = civis::close(fw);
+    let Ok(fr) = civis::open("ut26.bin", 0) else {
         println!("[usertests] t26: smoke reopen ut26.bin FAILED");
         return false;
     };
     let mut rb = [0u8; 64];
-    let nr = libr::read_fs(fr, &mut rb, 64);
-    let _ = libr::close(fr);
+    let nr = civis::read_fs(fr, &mut rb, 64);
+    let _ = civis::close(fr);
     if nr != Ok(64) || rb.iter().any(|&x| x != 0xA5) {
         println!("[usertests] t26: smoke verify ut26.bin FAILED");
         return false;
     }
-    if libr::mkdir("utdir26").is_err() {
+    if civis::mkdir("utdir26").is_err() {
         println!("[usertests] t26: smoke mkdir FAILED");
         return false;
     }
@@ -383,15 +383,15 @@ pub fn t_client_death_purge() -> bool {
 /// numero); osserva sparizione → ricomparsa.
 pub fn t_vela_restart() -> bool {
     helpers::drain_stray();
-    let Ok(fd) = libr::open("/dev/null", 0) else {
+    let Ok(fd) = civis::open("/dev/null", 0) else {
         println!("[usertests] t27: baseline open /dev/null FAILED");
         return false;
     };
-    let _ = libr::close(fd);
+    let _ = civis::close(fd);
     // Fase 35 (hardening): i servizi supervisionati si uccidono tramite init
     // (bounce: init e' parent e riavvia per la via normale). Il kill diretto
     // e' parent-scoped e qui fallirebbe (vela e' figlio di init, non nostro).
-    let p1 = match libr::init_bounce(libr::Service::Vela) {
+    let p1 = match civis::init_bounce(civis::Service::Vela) {
         Ok(p) => p,
         Err(_) => {
             println!("[usertests] t27: bounce vela FAILED");
@@ -399,17 +399,17 @@ pub fn t_vela_restart() -> bool {
         }
     };
     // Fase A: attendi sparizione dallo slot (morte osservata dal registry).
-    // Poll throttled (Livello 1, buon vicinato): vedi `libr::poll_wait`.
-    if !libr::poll_wait(1000, libr::POLL_PERIOD_TICKS, || {
-        libr::service_pid(libr::Service::Vela).is_err()
+    // Poll throttled (Livello 1, buon vicinato): vedi `civis::poll_wait`.
+    if !civis::poll_wait(1000, civis::POLL_PERIOD_TICKS, || {
+        civis::service_pid(civis::Service::Vela).is_err()
     }) {
         println!("[usertests] t27: vela mai sparito (timeout)");
         return false;
     }
     // Fase B: attendi ricomparsa (init ha riavviato + registrato).
     // Bound 2000 (vedi sopra: include il reload da disco sotto carico).
-    let p2 = match libr::poll_value(2000, libr::POLL_PERIOD_TICKS, || {
-        libr::service_pid(libr::Service::Vela).ok()
+    let p2 = match civis::poll_value(2000, civis::POLL_PERIOD_TICKS, || {
+        civis::service_pid(civis::Service::Vela).ok()
     }) {
         Some(p) => p,
         None => {
@@ -420,30 +420,30 @@ pub fn t_vela_restart() -> bool {
     println!("[usertests] t27: vela riavviato (pid {} -> {})", p1, p2);
     // Fase C: operativita' — open finche' riesce (bound come sopra: il driver
     // puo' aver registrato lo slot ma non ancora i mount).
-    // Throttled via `libr::open_wait` (igiene Livello 1, buon vicinato).
+    // Throttled via `civis::open_wait` (igiene Livello 1, buon vicinato).
     // NOTA (esperimento B): t27 PASSA anche in busy-loop non throttled —
     // lo storm del test NON e' causale del vecchio FAIL (N=1, confound).
-    let Ok(fd2) = libr::open_wait("/dev/null", 0, 2000, libr::POLL_PERIOD_TICKS) else {
+    let Ok(fd2) = civis::open_wait("/dev/null", 0, 2000, civis::POLL_PERIOD_TICKS) else {
         println!("[usertests] t27: /dev/null mai tornato (timeout)");
         return false;
     };
     let data = [0x5Au8; 16];
-    let ok = libr::write_fs(fd2, &data, 16) == Ok(16);
+    let ok = civis::write_fs(fd2, &data, 16) == Ok(16);
     let mut b = [0u8; 16];
-    let okr = libr::read_fs(fd2, &mut b, 16) == Ok(0);
-    let _ = libr::close(fd2);
+    let okr = civis::read_fs(fd2, &mut b, 16) == Ok(0);
+    let _ = civis::close(fd2);
     if !ok || !okr {
         println!("[usertests] t27: write/read post-restart FAILED");
         return false;
     }
     // Smoke ramfs: cardo mai toccato dal restart.
-    let Ok(fdh) = libr::open("hello.txt", 0) else {
+    let Ok(fdh) = civis::open("hello.txt", 0) else {
         println!("[usertests] t27: smoke hello.txt FAILED");
         return false;
     };
     let mut hb = [0u8; 64];
-    let n = libr::read_fs(fdh, &mut hb, 64).unwrap_or(0);
-    let _ = libr::close(fdh);
+    let n = civis::read_fs(fdh, &mut hb, 64).unwrap_or(0);
+    let _ = civis::close(fdh);
     n >= helpers::HELLO.len() && hb[..helpers::HELLO.len()] == *helpers::HELLO
 }
 
@@ -456,30 +456,30 @@ pub fn t_vela_restart() -> bool {
 pub fn t_cardo_restart() -> bool {
     helpers::drain_stray();
     // Baseline: hello + /dev/null.
-    let Ok(fdh) = libr::open("hello.txt", 0) else {
+    let Ok(fdh) = civis::open("hello.txt", 0) else {
         println!("[usertests] t28: baseline hello.txt FAILED");
         return false;
     };
-    let _ = libr::close(fdh);
-    let Ok(fdn) = libr::open("/dev/null", 0) else {
+    let _ = civis::close(fdh);
+    let Ok(fdn) = civis::open("/dev/null", 0) else {
         println!("[usertests] t28: baseline /dev/null FAILED");
         return false;
     };
-    let _ = libr::close(fdn);
+    let _ = civis::close(fdn);
     // Probe ramfs (wipe check dopo il restart).
-    let Ok(fp) = libr::open("td28probe", 0x200) else {
+    let Ok(fp) = civis::open("td28probe", 0x200) else {
         println!("[usertests] t28: create probe FAILED");
         return false;
     };
     let pwb = [0xBEu8; 32];
-    if libr::write_fs(fp, &pwb, 32) != Ok(32) {
+    if civis::write_fs(fp, &pwb, 32) != Ok(32) {
         println!("[usertests] t28: write probe FAILED");
         return false;
     }
-    let _ = libr::close(fp);
+    let _ = civis::close(fp);
     // Bounce via init (Fase 35: cardo e' figlio di init, kill diretto qui
     // fallirebbe col kill parent-scoped).
-    let p1 = match libr::init_bounce(libr::Service::Cardo) {
+    let p1 = match civis::init_bounce(civis::Service::Cardo) {
         Ok(p) => p,
         Err(_) => {
             println!("[usertests] t28: bounce cardo FAILED");
@@ -487,14 +487,14 @@ pub fn t_cardo_restart() -> bool {
         }
     };
     // Kill + sparizione + ricomparsa (come t27, poll throttled Livello 1).
-    if !libr::poll_wait(1000, libr::POLL_PERIOD_TICKS, || {
-        libr::service_pid(libr::Service::Cardo).is_err()
+    if !civis::poll_wait(1000, civis::POLL_PERIOD_TICKS, || {
+        civis::service_pid(civis::Service::Cardo).is_err()
     }) {
         println!("[usertests] t28: cardo mai sparito (timeout)");
         return false;
     }
-    let p2 = match libr::poll_value(1000, libr::POLL_PERIOD_TICKS, || {
-        libr::service_pid(libr::Service::Cardo).ok()
+    let p2 = match civis::poll_value(1000, civis::POLL_PERIOD_TICKS, || {
+        civis::service_pid(civis::Service::Cardo).ok()
     }) {
         Some(p) => p,
         None => {
@@ -507,29 +507,29 @@ pub fn t_cardo_restart() -> bool {
     // Throttled (lezione t27/t28): martellare cardo in busy-loop affama la
     // re-registrazione dei driver (vela/console ricreano il mount proprio
     // su questo cardo).
-    if !libr::poll_wait(1000, libr::POLL_PERIOD_TICKS, || {
-        libr::mkdir("/td28").is_ok()
+    if !civis::poll_wait(1000, civis::POLL_PERIOD_TICKS, || {
+        civis::mkdir("/td28").is_ok()
     }) {
         println!("[usertests] t28: mkdir post-restart mai riuscito (timeout)");
         return false;
     }
-    let Ok(fw) = libr::open("/td28/f", 0x200) else {
+    let Ok(fw) = civis::open("/td28/f", 0x200) else {
         println!("[usertests] t28: create /td28/f FAILED");
         return false;
     };
     let wb = [0xD8u8; 32];
-    if libr::write_fs(fw, &wb, 32) != Ok(32) {
+    if civis::write_fs(fw, &wb, 32) != Ok(32) {
         println!("[usertests] t28: write /td28/f FAILED");
         return false;
     }
-    let _ = libr::close(fw);
-    let Ok(fr) = libr::open("/td28/f", 0) else {
+    let _ = civis::close(fw);
+    let Ok(fr) = civis::open("/td28/f", 0) else {
         println!("[usertests] t28: reopen /td28/f FAILED");
         return false;
     };
     let mut rb = [0u8; 32];
-    let nr = libr::read_fs(fr, &mut rb, 32);
-    let _ = libr::close(fr);
+    let nr = civis::read_fs(fr, &mut rb, 32);
+    let _ = civis::close(fr);
     // Dettaglio diagnostico (solo su FAIL): nr e primo byte diverso.
     if nr != Ok(32) {
         println!("[usertests] t28: verify nr={:?} (atteso Ok(32))", nr);
@@ -540,13 +540,13 @@ pub fn t_cardo_restart() -> bool {
         return false;
     }
     // hello.txt ricreato dal fresh cardo.
-    let Ok(fh) = libr::open("hello.txt", 0) else {
+    let Ok(fh) = civis::open("hello.txt", 0) else {
         println!("[usertests] t28: hello.txt ricreato mancante");
         return false;
     };
     let mut hb = [0u8; 64];
-    let n = libr::read_fs(fh, &mut hb, 64).unwrap_or(0);
-    let _ = libr::close(fh);
+    let n = civis::read_fs(fh, &mut hb, 64).unwrap_or(0);
+    let _ = civis::close(fh);
     if n < helpers::HELLO.len() || hb[..helpers::HELLO.len()] != *helpers::HELLO {
         println!("[usertests] t28: hello.txt ricreato corrotto");
         return false;
@@ -558,13 +558,13 @@ pub fn t_cardo_restart() -> bool {
         return false;
     }
     // Persistente: /fat leggibile (rimontato dal disco).
-    let Ok(ff) = libr::open("/fat/HELLO.TXT", 0) else {
+    let Ok(ff) = civis::open("/fat/HELLO.TXT", 0) else {
         println!("[usertests] t28: /fat/HELLO.TXT illeggibile");
         return false;
     };
     let mut fb = [0u8; 32];
-    let nf = libr::read_fs(ff, &mut fb, 32).unwrap_or(0);
-    let _ = libr::close(ff);
+    let nf = civis::read_fs(ff, &mut fb, 32).unwrap_or(0);
+    let _ = civis::close(ff);
     if nf == 0 {
         println!("[usertests] t28: /fat/HELLO.TXT vuoto");
         return false;
@@ -572,15 +572,15 @@ pub fn t_cardo_restart() -> bool {
     // Driver re-registrati: /dev/null operativo. Retry con bound (throttled):
     // vela ricrea il mount in modo asincrono su EXIT_NOTIFY e puo' laggare
     // dietro il fresh cardo; un singolo tentativo darebbe falsi FAIL.
-    let Ok(fd2) = libr::open_wait("/dev/null", 0, 1000, libr::POLL_PERIOD_TICKS) else {
+    let Ok(fd2) = civis::open_wait("/dev/null", 0, 1000, civis::POLL_PERIOD_TICKS) else {
         println!("[usertests] t28: /dev/null post-restart FAILED");
         return false;
     };
     let data = [0x5Au8; 16];
-    let ok = libr::write_fs(fd2, &data, 16) == Ok(16);
+    let ok = civis::write_fs(fd2, &data, 16) == Ok(16);
     let mut b = [0u8; 16];
-    let okr = libr::read_fs(fd2, &mut b, 16) == Ok(0);
-    let _ = libr::close(fd2);
+    let okr = civis::read_fs(fd2, &mut b, 16) == Ok(0);
+    let _ = civis::close(fd2);
     if !ok || !okr {
         println!("[usertests] t28: write/read /dev/null FAILED");
         return false;
@@ -631,11 +631,11 @@ pub fn t_exec_core() -> bool {
             return false;
         }
     };
-    let h_before = match libr::peer_info(h_chan) {
+    let h_before = match civis::peer_info(h_chan) {
         Ok(h) => h,
         Err(_) => {
             println!("[usertests] t52: peer_info pre-exec FAILED");
-            let _ = libr::kill(h_pid as i64, 0);
+            let _ = civis::kill(h_pid as i64, 0);
             let _ = helpers::wait_exit(h_chan);
             return false;
         }
@@ -643,28 +643,28 @@ pub fn t_exec_core() -> bool {
     // Via (sync) + T_CFG da spin (budget=100, ~1s di vita: la query post-exec
     // lo trova vivo; il T_DONE arriva dopo). La send si blocca finche' lo
     // spin risponde: nessun polling, nessuna race sul momento dell'exec.
-    if libr::send(h_chan, helpers::T_GO, 0, 0).is_err() {
+    if civis::send(h_chan, helpers::T_GO, 0, 0).is_err() {
         println!("[usertests] t52: T_GO FAILED");
-        let _ = libr::kill(h_pid as i64, 0);
+        let _ = civis::kill(h_pid as i64, 0);
         let _ = helpers::wait_exit(h_chan);
         return false;
     }
-    let ack = match libr::send(h_chan, helpers::T_CFG, 100, 0) {
+    let ack = match civis::send(h_chan, helpers::T_CFG, 100, 0) {
         Ok(a) => a,
         Err(_) => {
             println!("[usertests] t52: T_CFG post-exec FAILED (exec non passato?)");
-            let _ = libr::kill(h_pid as i64, 0);
+            let _ = civis::kill(h_pid as i64, 0);
             let _ = helpers::wait_exit(h_chan);
             return false;
         }
     };
     if ack.w0 != h_pid {
         println!("[usertests] t52: pid cambiato ({} -> {})", h_pid, ack.w0);
-        let _ = libr::kill(h_pid as i64, 0);
+        let _ = civis::kill(h_pid as i64, 0);
         let _ = helpers::wait_exit(h_chan);
         return false;
     }
-    let h_after = match libr::peer_info(h_chan) {
+    let h_after = match civis::peer_info(h_chan) {
         Ok(h) => h,
         Err(_) => {
             println!("[usertests] t52: peer_info post-exec FAILED");
@@ -689,7 +689,7 @@ pub fn t_exec_core() -> bool {
             return false;
         }
     };
-    let h_ref = libr::peer_info(r_chan).unwrap_or(0);
+    let h_ref = civis::peer_info(r_chan).unwrap_or(0);
     let (ok_h, _) = helpers::recv_done(&[h_chan]);
     let (ok_r, _) = helpers::recv_done(&[r_chan]);
     // Reap senza EXIT_NOTIFY (consumate dai recv_done sopra): poll throttled
@@ -725,52 +725,52 @@ pub fn t_exec_core() -> bool {
             return false;
         }
     };
-    let a_pre = match libr::peer_info(a_chan) {
+    let a_pre = match civis::peer_info(a_chan) {
         Ok(h) => h,
         Err(_) => {
             println!("[usertests] t52: peer_info argv-helper FAILED");
-            let _ = libr::kill(a_pid as i64, 0);
+            let _ = civis::kill(a_pid as i64, 0);
             let _ = helpers::wait_exit(a_chan);
             return false;
         }
     };
-    if libr::send(a_chan, helpers::T_GO, 0, 0).is_err() {
+    if civis::send(a_chan, helpers::T_GO, 0, 0).is_err() {
         println!("[usertests] t52: T_GO argv FAILED");
-        let _ = libr::kill(a_pid as i64, 0);
+        let _ = civis::kill(a_pid as i64, 0);
         let _ = helpers::wait_exit(a_chan);
         return false;
     }
     // Stesso binario prima/dopo: il valore e' deterministico comunque
     // (l'exec puo' essere gia' avvenuto o no, l'hash non cambia).
-    match libr::peer_info(a_chan) {
+    match civis::peer_info(a_chan) {
         Ok(h) if h == a_pre => {}
         Ok(h) => {
             println!("[usertests] t52: hash incoerente ({:#x} -> {:#x})", a_pre, h);
-            let _ = libr::kill(a_pid as i64, 0);
+            let _ = civis::kill(a_pid as i64, 0);
             let _ = helpers::wait_exit(a_chan);
             return false;
         }
         Err(_) => {
             println!("[usertests] t52: peer_info post-GO FAILED");
-            let _ = libr::kill(a_pid as i64, 0);
+            let _ = civis::kill(a_pid as i64, 0);
             let _ = helpers::wait_exit(a_chan);
             return false;
         }
     }
-    let expected_fnv = libr::image_hash(b"hello\0world\0");
+    let expected_fnv = civis::image_hash(b"hello\0world\0");
     let (argc_rep, fnv_rep) = loop {
-        match libr::recv() {
+        match civis::recv() {
             Ok(m) if m.tag == helpers::T_DONE && m.channel == a_chan => {
-                let _ = libr::reply(helpers::T_ACK, 0, 0);
+                let _ = civis::reply(helpers::T_ACK, 0, 0);
                 break (m.w0, m.w1);
             }
-            Ok(m) if libr::is_exit_notify(&m) => {}
+            Ok(m) if civis::is_exit_notify(&m) => {}
             Ok(_) => {
-                let _ = libr::reply(helpers::T_ACK, 0, 0);
+                let _ = civis::reply(helpers::T_ACK, 0, 0);
             }
             Err(_) => {
                 println!("[usertests] t52: recv report argv FAILED");
-                let _ = libr::kill(a_pid as i64, 0);
+                let _ = civis::kill(a_pid as i64, 0);
                 let _ = helpers::wait_exit(a_chan);
                 return false;
             }

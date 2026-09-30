@@ -6,19 +6,19 @@
 #![no_std]
 #![no_main]
 
-use libr;
-use libr::{println};
+use civis;
+use civis::{println};
 
 const PERIOD_TICKS: i64 = 500; // 100 Hz -> 5 s
 
 /// Entry: loop infinito che stampa l'uptime ogni 5 secondi.
-libr::entry!(real_main);
+civis::entry!(real_main);
 fn real_main(_sp: u64) -> ! {
     println!("[uptime] user process up");
     let mut deadline = PERIOD_TICKS;
 
     loop {
-        let now = libr::get_ticks();
+        let now = civis::get_ticks();
 
         if now >= deadline {
             let secs = now / 100;
@@ -43,5 +43,5 @@ fn real_main(_sp: u64) -> ! {
 #[panic_handler]
 fn panic(_info: &core::panic::PanicInfo) -> ! {
     println!("[uptime] panic");
-    libr::exit(1)
+    civis::exit(1)
 }

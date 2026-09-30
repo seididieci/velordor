@@ -277,7 +277,7 @@ impl<B: BlockSource> Fat32<B> {
     /// fallita. Straddle gestito come `patch_entry`. A servizio Time assente
     /// `wall_secs()` e' 0 → clamp a 1980-01-01 (convenzione DOS per ignoto).
     fn stamp_mtime(&self, dir_cluster: u32, entry_off: usize) -> bool {
-        let (wdate, wtime) = libr::time::epoch_to_dos(crate::wall::wall_secs());
+        let (wdate, wtime) = civis::time::epoch_to_dos(crate::wall::wall_secs());
         let (lba, off) = match self.dir_entry_pos(dir_cluster, entry_off) {
             Some(p) => p,
             None => return false,
@@ -560,7 +560,7 @@ impl<B: BlockSource> Fat32<B> {
             put(i, 0); // Crt*/LstAcc: sconosciuti (come prima)
         }
         // WrtTime/WrtDate all'ora corrente (Fase 50): mai entry senza tempo.
-        let (wdate, wtime) = libr::time::epoch_to_dos(crate::wall::wall_secs());
+        let (wdate, wtime) = civis::time::epoch_to_dos(crate::wall::wall_secs());
         put(22, (wtime & 0xFF) as u8);
         put(23, ((wtime >> 8) & 0xFF) as u8);
         put(24, (wdate & 0xFF) as u8);

@@ -5,7 +5,7 @@ use super::*;
 // identificato da un id opaco. Semantica STRETTAMENTE non-bloccante: il
 // server e' single-threaded event-driven (un recv → una reply), quindi non
 // puo' mai dormire in attesa di dati/spazio — il client riprova throttled
-// (vedi Error::Empty/Closed in libr). Regole:
+// (vedi Error::Empty/Closed in civis). Regole:
 // - read a vuota con writer aperti → Empty (riprova, MAI wedge);
 // - read a vuota con writer chiusi → 0 (EOF vero);
 // - write oltre la capacita' → parziale (come i file, il client rimanda);

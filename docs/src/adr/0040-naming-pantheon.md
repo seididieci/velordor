@@ -2,6 +2,8 @@
 
 **Status**: Accepted (R0 — solo docs; il codice segue nelle fasi R1–R9).
 Emendamento R0b: entrano `Vestigia` (logging) e `Porta` (terminale).
+Emendamento Fase 58 (ADR-0041): entra `Civis` (la libreria di sistema condivisa,
+ex `libr`) e la personalità POSIX prende casa in `flavours/posix`.
 
 ## Context
 
@@ -30,6 +32,7 @@ Velordor e' il sistema operativo. Dentro:
 | Cardo | il perno del traffico file/driver (server FS: mount, registry, smistamento) | la cerniera |
 | Vestigia | le tracce che il sistema lascia (logging L1) | le vestigia |
 | Porta | la soglia d'ingresso dell'utente (terminale, line discipline) | la porta |
+| Civis | la libreria di sistema condivisa: il meccanismo neutro che ogni personalità usa (ex `libr`) | il cittadino |
 
 Fuori schema (nomi invariati, per sempre o fino a nuova ADR): `shell`,
 `uptime`, `posix`, `time`, helper di test (`usertest*`, `utcbstest`,

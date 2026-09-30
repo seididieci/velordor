@@ -138,7 +138,7 @@ con zero-fill lazy (stesso contratto di `sbrk`: VA subito, frame al fault).
   (spawn, write, …) accetta memoria mappata senza cambi puntuali.
 - Solo RW in 28 (`prot` diverso = `-1`); niente split, niente file-backed
   (page-in su fault verso cardo e' deadlock-prone: sua fase propria).
-- `libr::mmap` / `mmap_fixed` / `munmap`; `sbrk`/heap/scratch invariati.
+- `civis::mmap` / `mmap_fixed` / `munmap`; `sbrk`/heap/scratch invariati.
 
 ## Protezioni di memoria (Fase 29)
 
@@ -239,7 +239,7 @@ con zero-fill lazy (stesso contratto di `sbrk`: VA subito, frame al fault).
   salva anche i callee-saved user) + `fork_child_exit` (`rax = 0`, `sysretq`,
   mai `PERCPU.ipc_override`). Ritorno multi-registro: padre `(pid, chan)`,
   figlio `(0, chan)`. TSS senza porte, VMA/`HEAP_BRK`/`req_next`/priorita'
-  ereditati, IPC/ring/fd/CBS no; `libr::post_fork_child` avvelena l'FS.
+  ereditati, IPC/ring/fd/CBS no; `civis::post_fork_child` avvelena l'FS.
 - Test t49: isolamento bidirezionale su globale COW + report sul canale di
   nascita + exit 0; nessun leak (`heap_out` piatto).
 

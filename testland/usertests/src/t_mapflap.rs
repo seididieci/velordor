@@ -9,11 +9,11 @@ use super::*;
 pub fn t_mapflap() -> bool {
     helpers::drain_stray();
     const VA_X: u64 = 0x0000_4000_003E_0000;
-    const P1: u64 = libr::MAP_TEST_PHYS;
+    const P1: u64 = civis::MAP_TEST_PHYS;
     const N: usize = 3000;
     // Fase A: da solo.
     for _ in 0..N {
-        if libr::map_physical(P1, VA_X, 1).is_err() {
+        if civis::map_physical(P1, VA_X, 1).is_err() {
             println!("[usertests] t29: map solo FAILED");
             return false;
         }
@@ -40,7 +40,7 @@ pub fn t_mapflap() -> bool {
     };
     let mut bad = 0u32;
     for _ in 0..N {
-        if libr::map_physical(P1, VA_X, 1).is_err() {
+        if civis::map_physical(P1, VA_X, 1).is_err() {
             println!("[usertests] t29: map conc FAILED");
             return false;
         }
@@ -94,11 +94,11 @@ pub fn t_mapflap() -> bool {
 /// backpressure). Il flooder viene sempre fermato (T_STOP) e reaped.
 pub fn t_neighbor() -> bool {
     helpers::drain_stray();
-    let Ok(fb) = libr::open_wait("/dev/null", 0, 1000, libr::POLL_PERIOD_TICKS) else {
+    let Ok(fb) = civis::open_wait("/dev/null", 0, 1000, civis::POLL_PERIOD_TICKS) else {
         println!("[usertests] t30: baseline open /dev/null FAILED");
         return false;
     };
-    let _ = libr::close(fb);
+    let _ = civis::close(fb);
     // Helper "cattivo vicino" (nessun T_DONE atteso prima di T_STOP).
     let (fchan, _) = match helpers::spawn_cfg("/fat/test/testcli.bin", "utcli", 16, helpers::M_FLOOD, 0) {
         Some(x) => x,
@@ -119,17 +119,17 @@ pub fn t_neighbor() -> bool {
     // EXIT_NOTIFY dal flooder = morto -> false (mai hang; il flooder in
     // warmup non puo' morire — loop infinito — ma non si resta appesi).
     let warmed = loop {
-        match libr::recv() {
+        match civis::recv() {
             Ok(m) => {
                 if m.tag == helpers::T_READY && m.channel == fchan {
-                    let _ = libr::reply(helpers::T_ACK, 0, 0);
+                    let _ = civis::reply(helpers::T_ACK, 0, 0);
                     break m.w0 == 1;
                 }
-                if libr::is_exit_notify(&m) && m.channel == fchan {
+                if civis::is_exit_notify(&m) && m.channel == fchan {
                     break false;
                 }
-                if !libr::is_exit_notify(&m) {
-                    let _ = libr::reply(helpers::T_ACK, 0, 0);
+                if !civis::is_exit_notify(&m) {
+                    let _ = civis::reply(helpers::T_ACK, 0, 0);
                 }
             }
             Err(_) => break false,
@@ -140,7 +140,7 @@ pub fn t_neighbor() -> bool {
         helpers::stop_flooder(fchan);
         return false;
     }
-    let p1 = match libr::init_bounce(libr::Service::Vela) {
+    let p1 = match civis::init_bounce(civis::Service::Vela) {
         Ok(p) => p,
         Err(_) => {
             println!("[usertests] t30: bounce vela FAILED");
@@ -150,15 +150,15 @@ pub fn t_neighbor() -> bool {
     };
     // Sparizione + ricomparsa (poll throttled, come t27; il riuso PID puo'
     // ridare lo stesso numero: si osserva sparizione → ricomparsa).
-    if !libr::poll_wait(1000, libr::POLL_PERIOD_TICKS, || {
-        libr::service_pid(libr::Service::Vela).is_err()
+    if !civis::poll_wait(1000, civis::POLL_PERIOD_TICKS, || {
+        civis::service_pid(civis::Service::Vela).is_err()
     }) {
         println!("[usertests] t30: vela mai sparito (timeout)");
         helpers::stop_flooder(fchan);
         return false;
     }
-    match libr::poll_value(1000, libr::POLL_PERIOD_TICKS, || {
-        libr::service_pid(libr::Service::Vela).ok()
+    match civis::poll_value(1000, civis::POLL_PERIOD_TICKS, || {
+        civis::service_pid(civis::Service::Vela).ok()
     }) {
         Some(p2) => println!("[usertests] t30: vela riavviato (pid {} -> {})", p1, p2),
         None => {
@@ -168,31 +168,31 @@ pub fn t_neighbor() -> bool {
         }
     }
     // Misura: operativita' sotto flood.
-    let t_start = libr::get_ticks();
-    let fd = libr::open_wait("/dev/null", 0, 1000, libr::POLL_PERIOD_TICKS);
-    let elapsed = libr::get_ticks() - t_start;
+    let t_start = civis::get_ticks();
+    let fd = civis::open_wait("/dev/null", 0, 1000, civis::POLL_PERIOD_TICKS);
+    let elapsed = civis::get_ticks() - t_start;
     helpers::stop_flooder(fchan);
     let Ok(fd) = fd else {
         println!("[usertests] t30: /dev/null mai tornato (timeout)");
         return false;
     };
     let data = [0x5Au8; 16];
-    let ok = libr::write_fs(fd, &data, 16) == Ok(16);
+    let ok = civis::write_fs(fd, &data, 16) == Ok(16);
     let mut b = [0u8; 16];
-    let okr = libr::read_fs(fd, &mut b, 16) == Ok(0);
-    let _ = libr::close(fd);
+    let okr = civis::read_fs(fd, &mut b, 16) == Ok(0);
+    let _ = civis::close(fd);
     if !ok || !okr {
         println!("[usertests] t30: write/read post-flood FAILED");
         return false;
     }
     // Smoke ramfs: il flood e' read-only, hello.txt intatto.
-    let Ok(fdh) = libr::open("hello.txt", 0) else {
+    let Ok(fdh) = civis::open("hello.txt", 0) else {
         println!("[usertests] t30: smoke hello.txt FAILED");
         return false;
     };
     let mut hb = [0u8; 64];
-    let n = libr::read_fs(fdh, &mut hb, 64).unwrap_or(0);
-    let _ = libr::close(fdh);
+    let n = civis::read_fs(fdh, &mut hb, 64).unwrap_or(0);
+    let _ = civis::close(fdh);
     if n >= helpers::HELLO.len() && hb[..helpers::HELLO.len()] != *helpers::HELLO {
         println!("[usertests] t30: hello.txt corrotto dal flood?!");
         return false;
@@ -216,24 +216,24 @@ pub fn t_neighbor() -> bool {
 /// porta, stesso path di prima). Niente digitazione reale (serve QMP).
 pub fn t_kbd_presence() -> bool {
     helpers::drain_stray();
-    if libr::service_pid(libr::Service::Kbd).is_err() {
+    if civis::service_pid(civis::Service::Kbd).is_err() {
         println!("[usertests] t31: service Kbd non registrato");
         return false;
     }
-    if libr::service_pid(libr::Service::Porta).is_err() {
+    if civis::service_pid(civis::Service::Porta).is_err() {
         println!("[usertests] t31: service Porta non registrato");
         return false;
     }
-    let Ok(fk) = libr::open_wait("/dev/kbd/kbd", 0, 1000, libr::POLL_PERIOD_TICKS) else {
+    let Ok(fk) = civis::open_wait("/dev/kbd/kbd", 0, 1000, civis::POLL_PERIOD_TICKS) else {
         println!("[usertests] t31: open /dev/kbd/kbd FAILED");
         return false;
     };
-    let _ = libr::close(fk);
-    let Ok(ft) = libr::open_wait("/dev/input/keyboard", 0, 1000, libr::POLL_PERIOD_TICKS) else {
+    let _ = civis::close(fk);
+    let Ok(ft) = civis::open_wait("/dev/input/keyboard", 0, 1000, civis::POLL_PERIOD_TICKS) else {
         println!("[usertests] t31: open /dev/input/keyboard FAILED");
         return false;
     };
-    let _ = libr::close(ft);
+    let _ = civis::close(ft);
     true
 }
 

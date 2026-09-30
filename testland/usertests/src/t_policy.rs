@@ -17,9 +17,9 @@ use super::*;
 /// reply gli estranei (come `recv_expect`, ma serve il detail).
 fn recv_done_w1(chan: u64) -> Option<u64> {
     loop {
-        match libr::recv() {
+        match civis::recv() {
             Ok(m) => {
-                let _ = libr::reply(helpers::T_ACK, 0, 0);
+                let _ = civis::reply(helpers::T_ACK, 0, 0);
                 if m.tag == helpers::T_DONE && m.channel == chan {
                     if m.w0 != 1 {
                         return None;
@@ -60,21 +60,21 @@ pub fn t_policy() -> bool {
     }
     let _ = helpers::wait_exit(g_chan);
     // 2. Attore ignoto: default restrittivo (esiti attesi = tutti i bit).
-    let img = match libr::load_file("/fat/test/foreign.bin") {
+    let img = match civis::load_file("/fat/test/foreign.bin") {
         Some(i) => i,
         None => {
             println!("[usertests] t57: load foreign.bin FAILED");
             return false;
         }
     };
-    let meta = match libr::SpawnMeta::new("foreign", 16, &[]) {
+    let meta = match civis::SpawnMeta::new("foreign", 16, &[]) {
         Some(m) => m,
         None => {
             println!("[usertests] t57: SpawnMeta FAILED");
             return false;
         }
     };
-    let f_chan = match libr::spawn_image(&img, &meta) {
+    let f_chan = match civis::spawn_image(&img, &meta) {
         Ok(c) => c as u64,
         Err(_) => {
             println!("[usertests] t57: spawn foreign FAILED");

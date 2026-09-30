@@ -8,21 +8,21 @@ use super::*;
 /// operativo), umount di non-montato e di `/`. Ultimo test: dopo solo shell.
 pub fn t_mount() -> bool {
     helpers::drain_stray();
-    if libr::mkdir("/mnt").is_err() {
+    if civis::mkdir("/mnt").is_err() {
         println!("[usertests] t33: mkdir /mnt FAILED");
         return false;
     }
-    if libr::mount("/dev/sda", "/mnt").is_err() {
+    if civis::mount("/dev/sda", "/mnt").is_err() {
         println!("[usertests] t33: mount /dev/sda /mnt FAILED");
         return false;
     }
     // Re-mount identico: idempotente (replace), resta operativo.
-    if libr::mount("/dev/sda", "/mnt").is_err() {
+    if civis::mount("/dev/sda", "/mnt").is_err() {
         println!("[usertests] t33: re-mount FAILED");
         return false;
     }
     // Contenuto via mount dinamico (stesso della statica /fat).
-    let Ok(fd) = libr::open("/mnt/HELLO.TXT", 0) else {
+    let Ok(fd) = civis::open("/mnt/HELLO.TXT", 0) else {
         println!("[usertests] t33: open /mnt/HELLO.TXT FAILED");
         return false;
     };
@@ -30,23 +30,23 @@ pub fn t_mount() -> bool {
     let n = helpers::t33_read_all(fd, &mut hb);
     if n != helpers::FAT_HELLO.len() || hb[..helpers::FAT_HELLO.len()] != *helpers::FAT_HELLO {
         println!("[usertests] t33: /mnt/HELLO.TXT corrotto");
-        let _ = libr::close(fd);
+        let _ = civis::close(fd);
         return false;
     }
     // Umount busy: fd aperto sul mount → rifiutato.
-    if libr::umount("/mnt").is_ok() {
+    if civis::umount("/mnt").is_ok() {
         println!("[usertests] t33: umount busy accettato?!");
-        let _ = libr::close(fd);
+        let _ = civis::close(fd);
         return false;
     }
-    let _ = libr::close(fd);
-    if libr::umount("/mnt").is_err() {
+    let _ = civis::close(fd);
+    if civis::umount("/mnt").is_err() {
         println!("[usertests] t33: umount /mnt FAILED");
         return false;
     }
     // Dopo umount /mnt e' di nuovo ramfs: niente entry FAT.
     let mut eb = [0u8; 256];
-    if libr::readdir("/mnt", &mut eb, 256).is_err() {
+    if civis::readdir("/mnt", &mut eb, 256).is_err() {
         println!("[usertests] t33: readdir /mnt post-umount FAILED");
         return false;
     }
@@ -67,23 +67,23 @@ pub fn t_mount() -> bool {
         return false;
     }
     // Error paths.
-    if libr::mount("/dev/xxx", "/mnt").is_ok() {
+    if civis::mount("/dev/xxx", "/mnt").is_ok() {
         println!("[usertests] t33: mount sorgente invalida accettato?!");
         return false;
     }
-    if libr::mount("/dev/sdz", "/mnt").is_ok() {
+    if civis::mount("/dev/sdz", "/mnt").is_ok() {
         println!("[usertests] t33: mount disco assente accettato?!");
         return false;
     }
-    if libr::mount("/dev/sda", "/a/../b").is_ok() {
+    if civis::mount("/dev/sda", "/a/../b").is_ok() {
         println!("[usertests] t33: mount target invalido accettato?!");
         return false;
     }
-    if libr::umount("/mnt").is_ok() {
+    if civis::umount("/mnt").is_ok() {
         println!("[usertests] t33: doppio umount accettato?!");
         return false;
     }
-    if libr::umount("/").is_ok() {
+    if civis::umount("/").is_ok() {
         println!("[usertests] t33: umount / accettato?!");
         return false;
     }
@@ -98,55 +98,55 @@ pub fn t_mount() -> bool {
 pub fn t_resolve() -> bool {
     helpers::drain_stray();
     // 1. Nome ben formato ma assente (fat.img non partizionata: niente sda1).
-    if libr::mount("/dev/sda1", "/phantom").is_ok() {
+    if civis::mount("/dev/sda1", "/phantom").is_ok() {
         println!("[usertests] t35: mount sda1 assente accettato?!");
         return false;
     }
     // Nessuna spec fantasma: umount deve fallire.
-    if libr::umount("/phantom").is_ok() {
+    if civis::umount("/phantom").is_ok() {
         println!("[usertests] t35: spec fantasma dopo mount fallito?!");
         return false;
     }
     // 2. Nome malformato/ignoto: stesso contratto.
-    if libr::mount("/dev/zzz", "/phantom2").is_ok() {
+    if civis::mount("/dev/zzz", "/phantom2").is_ok() {
         println!("[usertests] t35: mount nome ignoto accettato?!");
         return false;
     }
-    if libr::umount("/phantom2").is_ok() {
+    if civis::umount("/phantom2").is_ok() {
         println!("[usertests] t35: spec fantasma (nome ignoto)?!");
         return false;
     }
     // 3. Mount valido ancora operativo dopo i rifiuti (tabella intatta).
-    if libr::mount("/dev/sda", "/mnt").is_err() {
+    if civis::mount("/dev/sda", "/mnt").is_err() {
         println!("[usertests] t35: mount /dev/sda /mnt FAILED");
         return false;
     }
-    let Ok(fd) = libr::open("/mnt/HELLO.TXT", 0) else {
+    let Ok(fd) = civis::open("/mnt/HELLO.TXT", 0) else {
         println!("[usertests] t35: open /mnt/HELLO.TXT FAILED");
-        let _ = libr::umount("/mnt");
+        let _ = civis::umount("/mnt");
         return false;
     };
     let mut hb = [0u8; 32];
     let n = helpers::t33_read_all(fd, &mut hb);
-    let _ = libr::close(fd);
+    let _ = civis::close(fd);
     if n != helpers::FAT_HELLO.len() || hb[..helpers::FAT_HELLO.len()] != *helpers::FAT_HELLO {
         println!("[usertests] t35: /mnt/HELLO.TXT corrotto");
-        let _ = libr::umount("/mnt");
+        let _ = civis::umount("/mnt");
         return false;
     }
     // 4. Replace con bad source non distrugge il buon mount.
-    if libr::mount("/dev/zzz", "/mnt").is_ok() {
+    if civis::mount("/dev/zzz", "/mnt").is_ok() {
         println!("[usertests] t35: replace con bad source accettato?!");
-        let _ = libr::umount("/mnt");
+        let _ = civis::umount("/mnt");
         return false;
     }
-    let Ok(fd4) = libr::open("/mnt/HELLO.TXT", 0) else {
+    let Ok(fd4) = civis::open("/mnt/HELLO.TXT", 0) else {
         println!("[usertests] t35: buon mount distrutto dal bad replace?!");
-        let _ = libr::umount("/mnt");
+        let _ = civis::umount("/mnt");
         return false;
     };
-    let _ = libr::close(fd4);
-    if libr::umount("/mnt").is_err() {
+    let _ = civis::close(fd4);
+    if civis::umount("/mnt").is_err() {
         println!("[usertests] t35: umount /mnt FAILED");
         return false;
     }
@@ -165,86 +165,86 @@ pub fn t_rights() -> bool {
     helpers::drain_stray();
     // 1. Default {ALL, root}: GET ritorna ALL, subtree vuoto (= root).
     let mut sb = [0u8; 32];
-    if libr::rights_get(&mut sb) != Ok(libr::RIGHTS_ALL) || sb[0] != 0 {
+    if civis::rights_get(&mut sb) != Ok(civis::RIGHTS_ALL) || sb[0] != 0 {
         println!("[usertests] t34: GET default non ALL+root");
         return false;
     }
-    let Ok(fd) = libr::open("/t34.txt", libr::O_CREAT) else {
+    let Ok(fd) = civis::open("/t34.txt", civis::O_CREAT) else {
         println!("[usertests] t34: open baseline FAILED");
         return false;
     };
-    if libr::write_fs(fd, b"abcdef", 6) != Ok(6) {
+    if civis::write_fs(fd, b"abcdef", 6) != Ok(6) {
         println!("[usertests] t34: write baseline FAILED");
-        let _ = libr::close(fd);
+        let _ = civis::close(fd);
         return false;
     }
-    let _ = libr::close(fd);
+    let _ = civis::close(fd);
     // 2. Drop solo-ops (WRITE via, resto invariato): write -1, read ok.
-    if libr::rights_drop(libr::RIGHTS_ALL & !libr::RIGHTS_WRITE, None).is_err() {
+    if civis::rights_drop(civis::RIGHTS_ALL & !civis::RIGHTS_WRITE, None).is_err() {
         println!("[usertests] t34: rights_drop WRITE FAILED");
         return false;
     }
-    let Ok(fd) = libr::open("/t34.txt", 0) else {
+    let Ok(fd) = civis::open("/t34.txt", 0) else {
         println!("[usertests] t34: reopen dopo drop FAILED");
         return false;
     };
-    if libr::write_fs(fd, b"x", 1).is_ok() {
+    if civis::write_fs(fd, b"x", 1).is_ok() {
         println!("[usertests] t34: write accettata dopo drop?!");
-        let _ = libr::close(fd);
+        let _ = civis::close(fd);
         return false;
     }
     let mut rb = [0u8; 8];
-    if libr::read_fs(fd, &mut rb, 6) != Ok(6) || rb[..6] != *b"abcdef" {
+    if civis::read_fs(fd, &mut rb, 6) != Ok(6) || rb[..6] != *b"abcdef" {
         println!("[usertests] t34: read dopo drop FAILED/corrotto");
-        let _ = libr::close(fd);
+        let _ = civis::close(fd);
         return false;
     }
-    let _ = libr::close(fd);
+    let _ = civis::close(fd);
     // 3. Drop MOUNT + subtree /fat.
-    if libr::rights_drop(
-        libr::RIGHTS_ALL & !libr::RIGHTS_WRITE & !libr::RIGHTS_MOUNT,
+    if civis::rights_drop(
+        civis::RIGHTS_ALL & !civis::RIGHTS_WRITE & !civis::RIGHTS_MOUNT,
         Some("/fat"),
     ).is_err()
     {
         println!("[usertests] t34: rights_drop MOUNT+/fat FAILED");
         return false;
     }
-    if libr::mount("/dev/sda", "/mnt").is_ok() {
+    if civis::mount("/dev/sda", "/mnt").is_ok() {
         println!("[usertests] t34: mount accettato senza bit?!");
         return false;
     }
-    if libr::open("/hello.txt", 0).is_ok() {
+    if civis::open("/hello.txt", 0).is_ok() {
         println!("[usertests] t34: open fuori subtree accettato?!");
         return false;
     }
-    let Ok(fd) = libr::open("/fat/HELLO.TXT", 0) else {
+    let Ok(fd) = civis::open("/fat/HELLO.TXT", 0) else {
         println!("[usertests] t34: open dentro subtree FAILED");
         return false;
     };
     let mut hb = [0u8; 32];
     let n = helpers::t33_read_all(fd, &mut hb);
-    let _ = libr::close(fd);
+    let _ = civis::close(fd);
     if n != helpers::FAT_HELLO.len() || hb[..helpers::FAT_HELLO.len()] != *helpers::FAT_HELLO {
         println!("[usertests] t34: /fat/HELLO.TXT corrotto");
         return false;
     }
     let mut eb = [0u8; 256];
-    if libr::readdir("/fat", &mut eb, 256).is_err() {
+    if civis::readdir("/fat", &mut eb, 256).is_err() {
         println!("[usertests] t34: readdir dentro subtree FAILED");
         return false;
     }
-    if libr::readdir("/", &mut eb, 256).is_ok() {
+    if civis::readdir("/", &mut eb, 256).is_ok() {
         println!("[usertests] t34: readdir fuori subtree accettato?!");
         return false;
     }
     // 4. Widen a root rifiutato (da /fat): Err e diritti invariati.
-    if libr::rights_drop(libr::RIGHTS_ALL, Some("/")).is_ok() {
+    if civis::rights_drop(civis::RIGHTS_ALL, Some("/")).is_ok() {
         println!("[usertests] t34: widen a root accettato?!");
         return false;
     }
     let mut sb2 = [0u8; 32];
-    let want = libr::RIGHTS_ALL & !libr::RIGHTS_WRITE & !libr::RIGHTS_MOUNT;
-    if libr::rights_get(&mut sb2) != Ok(want) || sb2[..3] != *b"fat" || sb2[3] != 0 {
+    let want = civis::RIGHTS_ALL & !civis::RIGHTS_WRITE & !civis::RIGHTS_MOUNT;
+    if civis::rights_get(&mut sb2) != Ok(want) || sb2[..3] != *b"fat" || sb2[3] != 0 {
         println!("[usertests] t34: GET finale non mask+/fat");
         return false;
     }
@@ -253,12 +253,12 @@ pub fn t_rights() -> bool {
 
 /// t37 — syscall `ps_info` (Fase 19.1): snapshot processi.
 pub fn t_ps() -> bool {
-    let me = libr::getpid() as u32;
+    let me = civis::getpid() as u32;
     let mut count = 0u32;
     let mut found_me = false;
     let mut my_ticks = 0u64;
-    for pid in 0..libr::PS_SCAN_MAX {
-        let Some(e) = libr::ps_info(pid) else { continue; };
+    for pid in 0..civis::PS_SCAN_MAX {
+        let Some(e) = civis::ps_info(pid) else { continue; };
         count += 1;
         if e.prio > 31 {
             println!("[usertests] t37: prio assurda pid={}", pid);
@@ -302,7 +302,7 @@ pub fn t_ps() -> bool {
     // osservato sotto KVM): ora si aspetta l'evento con bound, mai un tempo
     // fisso. Batch di spin puri tra le letture (pattern utspin: niente
     // busy-loop su syscall).
-    let bound = libr::get_ticks() + 500;
+    let bound = civis::get_ticks() + 500;
     let mut my_ticks2 = my_ticks;
     loop {
         let mut x = 0u64;
@@ -310,8 +310,8 @@ pub fn t_ps() -> bool {
             x = x.wrapping_add(i ^ 0x9E3779B97F4A7C15);
         }
         core::hint::black_box(x);
-        for pid in 0..libr::PS_SCAN_MAX {
-            if let Some(e) = libr::ps_info(pid) {
+        for pid in 0..civis::PS_SCAN_MAX {
+            if let Some(e) = civis::ps_info(pid) {
                 if e.pid == me {
                     my_ticks2 = e.ticks;
                 }
@@ -320,14 +320,14 @@ pub fn t_ps() -> bool {
         if my_ticks2 > my_ticks {
             break;
         }
-        if libr::get_ticks() > bound {
+        if civis::get_ticks() > bound {
             println!("[usertests] t37: TIME fermo ({} -> {})", my_ticks, my_ticks2);
             return false;
         }
     }
     // Fase 52 (P3 durabilita'): sensore RAM `SYS_MEMINFO` — totali positivi,
     // liberi entro i totali, usati = totali - liberi (coerenza istantanea).
-    let (free, total, used) = libr::meminfo();
+    let (free, total, used) = civis::meminfo();
     if total == 0 || free > total || free + used != total {
         println!("[usertests] t37: meminfo assurda ({}/{}/{})", free, total, used);
         return false;
@@ -338,9 +338,9 @@ pub fn t_ps() -> bool {
 
 /// t38 — `stat` lato cardo (Fase 19.2): metadati senza aprire.
 pub fn t_stat() -> bool {
-    let mut st = libr::Stat { size: 0, kind: 0, readonly: false, mtime: 0 };
+    let mut st = civis::Stat { size: 0, kind: 0, readonly: false, mtime: 0 };
     // File ramfs: size esatta, non readonly.
-    if libr::stat("hello.txt", &mut st).is_err()
+    if civis::stat("hello.txt", &mut st).is_err()
         || !st.is_file()
         || st.size as usize != helpers::HELLO.len()
         || st.readonly
@@ -349,25 +349,25 @@ pub fn t_stat() -> bool {
         return false;
     }
     // Root ramfs: dir.
-    if libr::stat("/", &mut st).is_err() || !st.is_dir() {
+    if civis::stat("/", &mut st).is_err() || !st.is_dir() {
         println!("[usertests] t38: stat / FAILED");
         return false;
     }
     // Dir ramfs creata ad hoc + rimozione (stat segue la vita del nodo).
-    if libr::mkdir("/t38dir").is_err() {
+    if civis::mkdir("/t38dir").is_err() {
         println!("[usertests] t38: mkdir /t38dir FAILED");
         return false;
     }
-    if libr::stat("/t38dir", &mut st).is_err() || !st.is_dir() || st.readonly {
+    if civis::stat("/t38dir", &mut st).is_err() || !st.is_dir() || st.readonly {
         println!("[usertests] t38: stat /t38dir FAILED");
         return false;
     }
-    if libr::remove("/t38dir").is_err() || libr::stat("/t38dir", &mut st).is_ok() {
+    if civis::remove("/t38dir").is_err() || civis::stat("/t38dir", &mut st).is_ok() {
         println!("[usertests] t38: stat dopo rm accettata?!");
         return false;
     }
     // FAT (scrivibile dalla Fase 20): file + dir NON readonly.
-    if libr::stat("/fat/HELLO.TXT", &mut st).is_err()
+    if civis::stat("/fat/HELLO.TXT", &mut st).is_err()
         || !st.is_file()
         || st.size == 0
         || st.readonly
@@ -375,32 +375,32 @@ pub fn t_stat() -> bool {
         println!("[usertests] t38: stat /fat/HELLO.TXT FAILED");
         return false;
     }
-    if libr::stat("/fat", &mut st).is_err() || !st.is_dir() || st.readonly {
+    if civis::stat("/fat", &mut st).is_err() || !st.is_dir() || st.readonly {
         println!("[usertests] t38: stat /fat FAILED");
         return false;
     }
     // Device: tipo device, size 0; padri sintetizzati: dir.
-    if libr::stat("/dev/null", &mut st).is_err() || !st.is_device() || st.size != 0 {
+    if civis::stat("/dev/null", &mut st).is_err() || !st.is_device() || st.size != 0 {
         println!("[usertests] t38: stat /dev/null FAILED");
         return false;
     }
-    if libr::stat("/dev", &mut st).is_err() || !st.is_dir() {
+    if civis::stat("/dev", &mut st).is_err() || !st.is_dir() {
         println!("[usertests] t38: stat /dev FAILED");
         return false;
     }
     // Error paths: inesistente e sotto-device (foglie).
-    if libr::stat("/nonexistent-t38", &mut st).is_ok() {
+    if civis::stat("/nonexistent-t38", &mut st).is_ok() {
         println!("[usertests] t38: stat inesistente accettata?!");
         return false;
     }
-    if libr::stat("/dev/null/trailing", &mut st).is_ok() {
+    if civis::stat("/dev/null/trailing", &mut st).is_ok() {
         println!("[usertests] t38: stat sotto-device accettata?!");
         return false;
     }
     // Fase 50 (P1 orologio): servizio Time raggiungibile, monotono e con
     // epoch plausibile; mtime veri su ramfs (creazione+write) e FAT.
     const EPOCH_2020: u64 = 1_577_836_800; // 2020-01-01 00:00:00 UTC
-    let (s1, c1) = match libr::time::time_now() {
+    let (s1, c1) = match civis::time::time_now() {
         Ok(t) => t,
         Err(_) => {
             println!("[usertests] t38: TIME_NOW irraggiungibile");
@@ -411,7 +411,7 @@ pub fn t_stat() -> bool {
         println!("[usertests] t38: data/ora implausibile ({}.{:02})", s1, c1);
         return false;
     }
-    let (s2, c2) = match libr::time::time_now() {
+    let (s2, c2) = match civis::time::time_now() {
         Ok(t) => t,
         Err(_) => {
             println!("[usertests] t38: TIME_NOW (2) irraggiungibile");
@@ -423,59 +423,59 @@ pub fn t_stat() -> bool {
         return false;
     }
     // mtime ramfs: file creato+scritto dal test (Time gia' su a boot).
-    let fd = match libr::open("/t38mtime", libr::O_CREAT) {
+    let fd = match civis::open("/t38mtime", civis::O_CREAT) {
         Ok(f) => f,
         Err(_) => {
             println!("[usertests] t38: create /t38mtime FAILED");
             return false;
         }
     };
-    let w = libr::write_fs(fd, b"t38", 3);
-    let _ = libr::close(fd);
+    let w = civis::write_fs(fd, b"t38", 3);
+    let _ = civis::close(fd);
     if w != Ok(3) {
         println!("[usertests] t38: write /t38mtime FAILED");
         return false;
     }
-    if libr::stat("/t38mtime", &mut st).is_err() || st.mtime < EPOCH_2020 {
+    if civis::stat("/t38mtime", &mut st).is_err() || st.mtime < EPOCH_2020 {
         println!("[usertests] t38: mtime /t38mtime implausibile ({})", st.mtime);
         return false;
     }
     let m1 = st.mtime;
     // Dir ramfs creata dal test: timbrata anche lei.
-    if libr::stat("/t38dir2", &mut st).is_ok() || libr::mkdir("/t38dir2").is_err() {
+    if civis::stat("/t38dir2", &mut st).is_ok() || civis::mkdir("/t38dir2").is_err() {
         println!("[usertests] t38: setup /t38dir2 FAILED");
         return false;
     }
-    if libr::stat("/t38dir2", &mut st).is_err() || st.mtime < EPOCH_2020 {
+    if civis::stat("/t38dir2", &mut st).is_err() || st.mtime < EPOCH_2020 {
         println!("[usertests] t38: mtime /t38dir2 implausibile ({})", st.mtime);
         return false;
     }
     // Crescita garantita: 120 tick (1.2 s) attraversano sempre un secondo.
-    libr::spin_ticks(120);
-    let fd = match libr::open("/t38mtime", 0) {
+    civis::spin_ticks(120);
+    let fd = match civis::open("/t38mtime", 0) {
         Ok(f) => f,
         Err(_) => {
             println!("[usertests] t38: reopen /t38mtime FAILED");
             return false;
         }
     };
-    let w = libr::write_fs(fd, b"x", 1);
-    let _ = libr::close(fd);
+    let w = civis::write_fs(fd, b"x", 1);
+    let _ = civis::close(fd);
     if w != Ok(1) {
         println!("[usertests] t38: rewrite /t38mtime FAILED");
         return false;
     }
-    if libr::stat("/t38mtime", &mut st).is_err() || st.mtime <= m1 {
+    if civis::stat("/t38mtime", &mut st).is_err() || st.mtime <= m1 {
         println!("[usertests] t38: mtime non cresciuto ({} -> {})", m1, st.mtime);
         return false;
     }
     // FAT: HELLO.TXT ha timestamp DOS validi (mkfat) → mtime noto (> 0).
-    if libr::stat("/fat/HELLO.TXT", &mut st).is_err() || st.mtime == 0 {
+    if civis::stat("/fat/HELLO.TXT", &mut st).is_err() || st.mtime == 0 {
         println!("[usertests] t38: mtime FAT assente ({})", st.mtime);
         return false;
     }
-    let _ = libr::remove("/t38mtime");
-    let _ = libr::remove("/t38dir2");
+    let _ = civis::remove("/t38mtime");
+    let _ = civis::remove("/t38dir2");
     true
 }
 
@@ -484,7 +484,7 @@ pub fn t_stat() -> bool {
 /// per nome (= il boot da disco ha funzionato: gpu/kbd/porta/shell non
 /// sono piu' embedded ma girano).
 pub fn t_diskboot() -> bool {
-    let mut st = libr::Stat { size: 0, kind: 0, readonly: false, mtime: 0 };
+    let mut st = civis::Stat { size: 0, kind: 0, readonly: false, mtime: 0 };
     for path in [
         "/fat/bin/gpu.bin",
         "/fat/bin/uptime.bin",
@@ -496,20 +496,20 @@ pub fn t_diskboot() -> bool {
         "/fat/test/testfat.bin",
         "/fat/test/tests.bin",
     ] {
-        if libr::stat(path, &mut st).is_err() || !st.is_file() || st.size == 0 {
+        if civis::stat(path, &mut st).is_err() || !st.is_file() || st.size == 0 {
             println!("[usertests] t39: {} mancante/vuoto", path);
             return false;
         }
     }
     for svc in [
-        libr::Service::Gpu,
-        libr::Service::Cardo,
-        libr::Service::Vela,
-        libr::Service::Kbd,
-        libr::Service::Porta,
-        libr::Service::Block,
+        civis::Service::Gpu,
+        civis::Service::Cardo,
+        civis::Service::Vela,
+        civis::Service::Kbd,
+        civis::Service::Porta,
+        civis::Service::Block,
     ] {
-        if libr::service_lookup(svc).is_err() {
+        if civis::service_lookup(svc).is_err() {
             println!("[usertests] t39: servizio {:?} non registrato", svc as u64);
             return false;
         }

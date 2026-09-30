@@ -37,11 +37,11 @@ pub const DEFAULT_UNKNOWN_OPS: u32 = 0x19F;
 /// Tetto ops per il canale `chan` (chiamato una volta all'handshake).
 pub fn ceiling_for(chan: u64) -> u32 {
     // (1) init: TCB pid 1, fuori manifest per costruzione.
-    if libr::peer_pid(chan).unwrap_or(-1) == 1 {
-        return libr::RIGHTS_ALL;
+    if civis::peer_pid(chan).unwrap_or(-1) == 1 {
+        return civis::RIGHTS_ALL;
     }
     // (2+3) hash noto: cerca prima nei servizi, poi nei test.
-    if let Ok(h) = libr::peer_info(chan) {
+    if let Ok(h) = civis::peer_info(chan) {
         for &(ph, mask) in SERVICE_POLICY {
             if ph == h {
                 return mask;

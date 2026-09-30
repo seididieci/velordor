@@ -71,7 +71,7 @@ impl<B: BlockSource> Fat32<B> {
                     // 13-17, LstAcc a 18-19 — restano ignorati).
                     let wtime = u16::from_le_bytes([e[22], e[23]]);
                     let wdate = u16::from_le_bytes([e[24], e[25]]);
-                    let mtime = libr::time::dos_to_epoch(wdate, wtime);
+                    let mtime = civis::time::dos_to_epoch(wdate, wtime);
 
                     entries.push(DirEntry {
                         name,

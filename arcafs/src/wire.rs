@@ -1,7 +1,7 @@
 //! Builder/parser puri dei frame ArcaFS (niente I/O, niente errori tipati:
 //! ritornano `Option`, i chiamanti mappano nel loro errore di dominio).
 //!
-//! Usati da `libr` (wrapper client), cardo (handler server) e tool host:
+//! Usati da `civis` (wrapper client), cardo (handler server) e tool host:
 //! il formato e' definito UNA volta sola.
 
 use super::proto::{OBJ_BUCKET_MAX, OBJ_KEY_MAX};

@@ -77,7 +77,7 @@
 extern crate alloc;
 use alloc::vec;
 
-use libr::{print_str, println};
+use civis::{print_str, println};
 
 const T_ACK: u64 = 101;
 const T_REQ: u64 = 102;
@@ -151,8 +151,8 @@ const MODE_SIGCATCH: u64 = 31;
 // drop PIPE → pipe_create negata; read valida dopo (anti-wedge).
 const MODE_GRANTDENY: u64 = 32;
 
-// Tag DEV_* + errore IPC (A1): single source in `libr` (prima letterali qui).
-use libr::{DEV_CLOSE, DEV_OPEN, ERR};
+// Tag DEV_* + errore IPC (A1): single source in `civis` (prima letterali qui).
+use civis::{DEV_CLOSE, DEV_OPEN, ERR};
 
 libr::entry!(real_main);
 fn real_main(sp: u64) -> ! {
@@ -163,15 +163,15 @@ fn real_main(sp: u64) -> ! {
     // trailing NUL incluso). L'env atteso (`T52E=envok`, messo nel blocco
     // dal ramo EXECDEMO sotto) e' verificato qui: assente/diverso →
     // T_DONE(0, 0) + exit(1) (il parent se ne accorge dal report).
-    if let Some(args) = libr::args_from_stack(sp) {
+    if let Some(args) = civis::args_from_stack(sp) {
         if args.get(0) == Some(b"ARGPROBE".as_slice()) {
-            let env_ok = match libr::env_from_stack(sp) {
+            let env_ok = match civis::env_from_stack(sp) {
                 Some(env) => env.get("T52E") == Some(b"envok".as_slice()),
                 None => false,
             };
             if !env_ok {
-                let _ = libr::send(libr::CHANNEL_PARENT, T_DONE, 0, 0);
-                libr::exit(1);
+                let _ = civis::send(civis::CHANNEL_PARENT, T_DONE, 0, 0);
+                civis::exit(1);
             }
             let mut joined = alloc::vec::Vec::new();
             let mut i = 1u64;
@@ -180,32 +180,32 @@ fn real_main(sp: u64) -> ! {
                 joined.push(0);
                 i += 1;
             }
-            let _ = libr::send(
-                libr::CHANNEL_PARENT,
+            let _ = civis::send(
+                civis::CHANNEL_PARENT,
                 T_DONE,
                 args.argc(),
-                libr::image_hash(&joined),
+                civis::image_hash(&joined),
             );
-            libr::exit(0);
+            civis::exit(0);
         }
     }
-    let my_pid = libr::getpid();
+    let my_pid = civis::getpid();
     println!("[utcli] pid={} up", my_pid);
 
-    let cfg = match libr::recv() {
+    let cfg = match civis::recv() {
         Ok(m) => m,
         Err(_) => {
             println!("[utcli] recv cfg failed");
-            libr::exit(1);
+            civis::exit(1);
         }
     };
     // Il parent e' raggiungibile sul canale di nascita (ADR-0008).
-    let parent = libr::CHANNEL_PARENT;
+    let parent = civis::CHANNEL_PARENT;
     let mode = cfg.w0;
     let rounds = cfg.w1 as usize;
 
     // ACK con il nostro pid: l'orchestratore verifica spawn/getpid.
-    let _ = libr::reply(T_ACK, libr::getpid() as u64, 0);
+    let _ = civis::reply(T_ACK, civis::getpid() as u64, 0);
     println!("[utcli] pid={} acked, sending done...", my_pid);
 
     match mode {
@@ -213,7 +213,7 @@ fn real_main(sp: u64) -> ! {
             // Lifecycle (Fase 14): materializza `rounds` KiB di heap e termina
             // SENZA T_DONE: il parent segue la notifica EXIT_NOTIFY.
             let ok = churn_heap(rounds);
-            libr::exit(if ok { 0 } else { 1 });
+            civis::exit(if ok { 0 } else { 1 });
         }
         MODE_KILLME => {
             // Lifecycle (Fase 14): dorme in recv finche' il parent lo kill().
@@ -223,7 +223,7 @@ fn real_main(sp: u64) -> ! {
             // Usato anche come foglia parcheggiata per t40 (NEST): vivo ma
             // idle, killabile, osservabile via `ps`.
             loop {
-                let _ = libr::recv();
+                let _ = civis::recv();
             }
         }
         MODE_SIGCATCH => {
@@ -232,13 +232,13 @@ fn real_main(sp: u64) -> ! {
             // distinguersi dal 130 dell'escalation via kill: la prova del
             // catch e' il code stesso).
             loop {
-                match libr::recv() {
-                    Ok(m) if m.tag == libr::JOB_CANCEL => libr::exit(42),
-                    Ok(m) if libr::is_exit_notify(&m) => {}
+                match civis::recv() {
+                    Ok(m) if m.tag == civis::JOB_CANCEL => civis::exit(42),
+                    Ok(m) if civis::is_exit_notify(&m) => {}
                     Ok(_) => {
-                        let _ = libr::reply(0, 0, 0);
+                        let _ = civis::reply(0, 0, 0);
                     }
-                    Err(_) => libr::exit(1),
+                    Err(_) => civis::exit(1),
                 }
             }
         }
@@ -248,15 +248,15 @@ fn real_main(sp: u64) -> ! {
             // possibile) attende ~100 tick (finestra di osservazione per chi
             // verifica il reparent via `ps`) ed esce 0 da solo.
             loop {
-                match libr::recv() {
-                    Ok(m) if libr::is_exit_notify(&m) => {
-                        libr::spin_ticks(100);
-                        libr::exit(0);
+                match civis::recv() {
+                    Ok(m) if civis::is_exit_notify(&m) => {
+                        civis::spin_ticks(100);
+                        civis::exit(0);
                     }
                     Ok(_) => {
-                        let _ = libr::reply(0, 0, 0);
+                        let _ = civis::reply(0, 0, 0);
                     }
-                    Err(_) => libr::exit(1),
+                    Err(_) => civis::exit(1),
                 }
             }
         }
@@ -268,13 +268,13 @@ fn real_main(sp: u64) -> ! {
             // occupato) esci subito: il test fallira' in modo rumoroso (kill
             // su processo gia' morto), mai hang.
             // (Prima: busy-spin — vedi KILLME sopra.)
-            if libr::service_register(libr::Service::Test).is_err() {
+            if civis::service_register(civis::Service::Test).is_err() {
                 println!("[utcli] pid={} srvdie: register Test FAILED", my_pid);
-                libr::exit(1);
+                civis::exit(1);
             }
             println!("[utcli] pid={} srvdie: registered, parking in recv", my_pid);
             loop {
-                let _ = libr::recv();
+                let _ = civis::recv();
             }
         }
         MODE_SYNCWAIT => {
@@ -285,54 +285,54 @@ fn real_main(sp: u64) -> ! {
             // manda solo dopo il proprio wait_reply: cosi' il nostro T_DONE
             // non puo' mai anticipare la notifica nella sua coda) e riporta
             // T_DONE(w0=1, w1=code). Ogni deviazione: T_DONE(w0=0, w1=detail).
-            let srv = match libr::service_lookup(libr::Service::Test) {
+            let srv = match civis::service_lookup(civis::Service::Test) {
                 Ok(c) => c as u64,
                 Err(_) => {
-                    let _ = libr::send(parent, T_DONE, 0, 10);
-                    libr::exit(0);
+                    let _ = civis::send(parent, T_DONE, 0, 10);
+                    civis::exit(0);
                 }
             };
-            if libr::send(parent, T_READY, 1, 0).is_err() {
-                libr::exit(1);
+            if civis::send(parent, T_READY, 1, 0).is_err() {
+                civis::exit(1);
             }
-            match libr::send(srv, T_REQ, 0xCAFE, 0) {
+            match civis::send(srv, T_REQ, 0xCAFE, 0) {
                 Ok(_) => {
                     // Il server non risponde mai: successo impossibile.
-                    let _ = libr::send(parent, T_DONE, 0, 11);
-                    libr::exit(0);
+                    let _ = civis::send(parent, T_DONE, 0, 11);
+                    civis::exit(0);
                 }
                 Err(_) => {}
             }
             let code = loop {
-                match libr::recv() {
-                    Ok(m) if libr::is_exit_notify(&m) => break m.w0,
+                match civis::recv() {
+                    Ok(m) if civis::is_exit_notify(&m) => break m.w0,
                     Ok(_) => {
-                        let _ = libr::reply(T_ACK, 0, 0);
+                        let _ = civis::reply(T_ACK, 0, 0);
                     }
                     Err(_) => {
-                        let _ = libr::send(parent, T_DONE, 0, 12);
-                        libr::exit(0);
+                        let _ = civis::send(parent, T_DONE, 0, 12);
+                        civis::exit(0);
                     }
                 }
             };
             // Via-libera del parent (dopo il suo wait_reply).
             loop {
-                match libr::recv() {
+                match civis::recv() {
                     Ok(m) if m.tag == T_GO => {
-                        let _ = libr::reply(T_ACK, 0, 0);
+                        let _ = civis::reply(T_ACK, 0, 0);
                         break;
                     }
                     Ok(_) => {
-                        let _ = libr::reply(T_ACK, 0, 0);
+                        let _ = civis::reply(T_ACK, 0, 0);
                     }
                     Err(_) => {
-                        let _ = libr::send(parent, T_DONE, 0, 13);
-                        libr::exit(0);
+                        let _ = civis::send(parent, T_DONE, 0, 13);
+                        civis::exit(0);
                     }
                 }
             }
-            let _ = libr::send(parent, T_DONE, 1, code);
-            libr::exit(0);
+            let _ = civis::send(parent, T_DONE, 1, code);
+            civis::exit(0);
         }
         MODE_EXECDEMO => {
             // Demo exec (t52, Fase 37): attende il via T_GO, poi exec. `rounds`
@@ -342,25 +342,25 @@ fn real_main(sp: u64) -> ! {
             // argv e riporta T_DONE da sola). Successo = mai ritorno;
             // fallimento = T_DONE(w0=0, w1=detail) + exit, mai hang.
             loop {
-                match libr::recv() {
+                match civis::recv() {
                     Ok(m) if m.tag == T_GO => {
-                        let _ = libr::reply(T_ACK, 0, 0);
+                        let _ = civis::reply(T_ACK, 0, 0);
                         break;
                     }
                     Ok(_) => {
-                        let _ = libr::reply(T_ACK, 0, 0);
+                        let _ = civis::reply(T_ACK, 0, 0);
                     }
                     Err(_) => {
-                        libr::exit(1);
+                        civis::exit(1);
                     }
                 }
             }
             if rounds == 1 {
-                let img = match libr::load_file("/fat/test/testcli.bin") {
+                let img = match civis::load_file("/fat/test/testcli.bin") {
                     Some(b) if !b.is_empty() => b,
                     _ => {
-                        let _ = libr::send(parent, T_DONE, 0, 30);
-                        libr::exit(0);
+                        let _ = civis::send(parent, T_DONE, 0, 30);
+                        civis::exit(0);
                     }
                 };
                 // Blocco argv+env via serialize (single source col kernel:
@@ -373,30 +373,30 @@ fn real_main(sp: u64) -> ! {
                 ) {
                     Some(b) => b,
                     None => {
-                        let _ = libr::send(parent, T_DONE, 0, 32);
-                        libr::exit(0);
+                        let _ = civis::send(parent, T_DONE, 0, 32);
+                        civis::exit(0);
                     }
                 };
-                match libr::exec_image_args(&img, &buf) {
-                    Ok(()) => libr::exit(1), // irraggiungibile
+                match civis::exec_image_args(&img, &buf) {
+                    Ok(()) => civis::exit(1), // irraggiungibile
                     Err(_) => {
-                        let _ = libr::send(parent, T_DONE, 0, 31);
-                        libr::exit(0);
+                        let _ = civis::send(parent, T_DONE, 0, 31);
+                        civis::exit(0);
                     }
                 }
             }
-            let img = match libr::load_file("/fat/test/testspin.bin") {
+            let img = match civis::load_file("/fat/test/testspin.bin") {
                 Some(b) if !b.is_empty() => b,
                 _ => {
-                    let _ = libr::send(parent, T_DONE, 0, 20);
-                    libr::exit(0);
+                    let _ = civis::send(parent, T_DONE, 0, 20);
+                    civis::exit(0);
                 }
             };
-            match libr::exec_image(&img) {
-                Ok(()) => libr::exit(1), // irraggiungibile: success non ritorna
+            match civis::exec_image(&img) {
+                Ok(()) => civis::exit(1), // irraggiungibile: success non ritorna
                 Err(_) => {
-                    let _ = libr::send(parent, T_DONE, 0, 21);
-                    libr::exit(0);
+                    let _ = civis::send(parent, T_DONE, 0, 21);
+                    civis::exit(0);
                 }
             }
         }
@@ -404,26 +404,26 @@ fn real_main(sp: u64) -> ! {
             // Driver sacrificale (t25): registra "/dev/tdie", handshake T_READY e
             // serve il minimo. Se la registrazione fallisce: T_READY(w0=0) +
             // exit(1) — il test fallisce rumoroso, mai hang.
-            if libr::fs_register(b"/dev/tdie").is_err() {
+            if civis::fs_register(b"/dev/tdie").is_err() {
                 println!("[utcli] pid={} mntdie: fs_register FAILED", my_pid);
-                let _ = libr::send(parent, T_READY, 0, 0);
-                libr::exit(1);
+                let _ = civis::send(parent, T_READY, 0, 0);
+                civis::exit(1);
             }
             println!("[utcli] pid={} mntdie: registered /tdie", my_pid);
-            if libr::send(parent, T_READY, 1, 0).is_err() {
-                libr::exit(1);
+            if civis::send(parent, T_READY, 1, 0).is_err() {
+                civis::exit(1);
             }
             loop {
-                match libr::recv() {
+                match civis::recv() {
                     Ok(m) => match m.tag {
                         DEV_OPEN => {
-                            let _ = libr::reply(0, 1, 0);
+                            let _ = civis::reply(0, 1, 0);
                         }
                         DEV_CLOSE => {
-                            let _ = libr::reply(0, 0, 0);
+                            let _ = civis::reply(0, 0, 0);
                         }
                         _ => {
-                            let _ = libr::reply(0, ERR, 0);
+                            let _ = civis::reply(0, ERR, 0);
                         }
                     },
                     Err(_) => {}
@@ -433,26 +433,26 @@ fn real_main(sp: u64) -> ! {
         MODE_REG51 => {
             // Driver sacrificale (t51, Fase 36): identico a MNTDIE ma sul
             // prefix dedicato "/dev/t51" (nessuna interferenza con t25).
-            if libr::fs_register(b"/dev/t51").is_err() {
+            if civis::fs_register(b"/dev/t51").is_err() {
                 println!("[utcli] pid={} reg51: fs_register FAILED", my_pid);
-                let _ = libr::send(parent, T_READY, 0, 0);
-                libr::exit(1);
+                let _ = civis::send(parent, T_READY, 0, 0);
+                civis::exit(1);
             }
             println!("[utcli] pid={} reg51: registered /t51", my_pid);
-            if libr::send(parent, T_READY, 1, 0).is_err() {
-                libr::exit(1);
+            if civis::send(parent, T_READY, 1, 0).is_err() {
+                civis::exit(1);
             }
             loop {
-                match libr::recv() {
+                match civis::recv() {
                     Ok(m) => match m.tag {
                         DEV_OPEN => {
-                            let _ = libr::reply(0, 1, 0);
+                            let _ = civis::reply(0, 1, 0);
                         }
                         DEV_CLOSE => {
-                            let _ = libr::reply(0, 0, 0);
+                            let _ = civis::reply(0, 0, 0);
                         }
                         _ => {
-                            let _ = libr::reply(0, ERR, 0);
+                            let _ = civis::reply(0, ERR, 0);
                         }
                     },
                     Err(_) => {}
@@ -461,14 +461,14 @@ fn real_main(sp: u64) -> ! {
         }
         MODE_OPENDIE => {
             // Client sacrificale (t26): apre e muore senza close.
-            if libr::open("/dev/null", 0).is_err()
-                || libr::open("/dev/zero", 0).is_err()
-                || libr::open("hello.txt", 0).is_err()
+            if civis::open("/dev/null", 0).is_err()
+                || civis::open("/dev/zero", 0).is_err()
+                || civis::open("hello.txt", 0).is_err()
             {
                 println!("[utcli] opendie: open failed");
-                libr::exit(2);
+                civis::exit(2);
             }
-            libr::exit(0);
+            civis::exit(0);
         }
         MODE_NEST => {
             // Genitore intermedio (Fase 22, t40): spawna due foglie parcheggiate
@@ -480,20 +480,20 @@ fn real_main(sp: u64) -> ! {
             let det = match spawn_killme(true, MODE_ORPHAN) {
                 Some(c) => c,
                 None => {
-                    let _ = libr::send(parent, T_READY, 0, 0);
-                    libr::exit(1);
+                    let _ = civis::send(parent, T_READY, 0, 0);
+                    civis::exit(1);
                 }
             };
             let norm = match spawn_killme(false, MODE_KILLME) {
                 Some(c) => c,
                 None => {
-                    let _ = libr::send(parent, T_READY, 0, 0);
-                    libr::exit(1);
+                    let _ = civis::send(parent, T_READY, 0, 0);
+                    civis::exit(1);
                 }
             };
             println!("[utcli] pid={} nest: det={} norm={}", my_pid, det, norm);
-            let _ = libr::send(parent, T_READY, det, norm);
-            libr::exit(0);
+            let _ = civis::send(parent, T_READY, det, norm);
+            civis::exit(0);
         }
         MODE_FAULT_RO | MODE_FAULT_NONE | MODE_FAULT_NX | MODE_FAULT_GUARD | MODE_FAULT_GPF | MODE_FAULT_CODE => {
             run_fault(mode);
@@ -518,9 +518,9 @@ fn real_main(sp: u64) -> ! {
                 MODE_SUSPENDENY => run_suspenddeny(rounds as i64),
                 _ => (false, 1),
             };
-            let _ = libr::send(parent, T_DONE, ok as u64, detail as u64);
+            let _ = civis::send(parent, T_DONE, ok as u64, detail as u64);
             println!("[utcli] pid={} done ok={} detail={}", my_pid, ok, detail);
-            libr::exit(0);
+            civis::exit(0);
         }
     }
 }
@@ -530,7 +530,7 @@ fn real_main(sp: u64) -> ! {
 /// (che il parent deve vedere: prova la visibilita' bidirezionale) e riporta
 /// l'esito. Le pagine sono le stesse del parent: zero-copy tra processi.
 fn run_shmdemo(id: u32) -> (bool, usize) {
-    let base = match libr::shm_map(id, 0, libr::PROT_READ | libr::PROT_WRITE) {
+    let base = match civis::shm_map(id, 0, civis::PROT_READ | civis::PROT_WRITE) {
         Ok(b) => b,
         Err(_) => return (false, 1),
     };
@@ -548,7 +548,7 @@ fn run_shmdemo(id: u32) -> (bool, usize) {
 /// private) e verifica marker + pattern circostante. Il parent non deve vedere
 /// i marker (isolamento). Esito come `(bool, detail)`.
 fn run_cowdemo(id: u32) -> (bool, usize) {
-    let base = match libr::shm_map_cow(id, 0) {
+    let base = match civis::shm_map_cow(id, 0) {
         Ok(b) => b,
         Err(_) => return (false, 1),
     };
@@ -595,16 +595,16 @@ fn run_forkdemo() -> (bool, usize) {
         Ok(libr::ForkResult::Child { .. }) => {
             // Shared-read: il pattern del padre e' visibile prima del write.
             if unsafe { FORK_G } != FORK_PAT {
-                libr::exit(2);
+                civis::exit(2);
             }
             unsafe { FORK_G = FORK_CHILD_VAL; }
             if unsafe { FORK_G } != FORK_CHILD_VAL {
-                libr::exit(3);
+                civis::exit(3);
             }
             // Report SYNC al padre (canale 0): il padre risponde, poi esco.
-            match libr::send(libr::CHANNEL_PARENT, T_FORKREP, FORK_CHILD_VAL, FORK_CHILD_VAL) {
-                Ok(_) => libr::exit(0),
-                Err(_) => libr::exit(4),
+            match civis::send(civis::CHANNEL_PARENT, T_FORKREP, FORK_CHILD_VAL, FORK_CHILD_VAL) {
+                Ok(_) => civis::exit(0),
+                Err(_) => civis::exit(4),
             }
         }
         Ok(libr::ForkResult::Parent { pid, chan }) => {
@@ -617,27 +617,27 @@ fn run_forkdemo() -> (bool, usize) {
                 return (false, 6);
             }
             // Report del figlio (SYNC: rispondo per sbloccarlo).
-            let rep = match libr::recv() {
+            let rep = match civis::recv() {
                 Ok(m) if m.tag == T_FORKREP && m.channel == chan => m,
                 Ok(m) => {
-                    let _ = libr::reply(0, 0, 0);
+                    let _ = civis::reply(0, 0, 0);
                     return (false, 7 + (m.tag as usize % 10));
                 }
                 Err(_) => return (false, 8),
             };
-            let _ = libr::reply(0, 0, 0);
+            let _ = civis::reply(0, 0, 0);
             if rep.w0 != FORK_CHILD_VAL || rep.w1 != FORK_CHILD_VAL {
                 return (false, 9);
             }
             // Il figlio e' uscito 0 (EXIT_NOTIFY sul canale di nascita).
             loop {
-                match libr::recv() {
-                    Ok(m) if m.channel == chan && libr::is_exit_notify(&m) => {
+                match civis::recv() {
+                    Ok(m) if m.channel == chan && civis::is_exit_notify(&m) => {
                         return (m.w0 == 0, 10);
                     }
-                    Ok(m) if libr::is_exit_notify(&m) => {}
+                    Ok(m) if civis::is_exit_notify(&m) => {}
                     Ok(_) => {
-                        let _ = libr::reply(0, 0, 0);
+                        let _ = civis::reply(0, 0, 0);
                     }
                     Err(_) => return (false, 11),
                 }
@@ -652,11 +652,11 @@ fn run_forkdemo() -> (bool, usize) {
 /// proviamo a registrare un servizio di sistema (`Init`) da non-figlio di
 /// init: deve fallire. Ritorna (ok, detail) coi due esiti.
 fn run_harden(target: i64) -> (bool, usize) {
-    let kill_rejected = libr::kill(target, 0).is_err();
-    let reg_rejected = libr::service_register(libr::Service::Init).is_err();
+    let kill_rejected = civis::kill(target, 0).is_err();
+    let reg_rejected = civis::service_register(civis::Service::Init).is_err();
     // Fase 39: anche il nuovo slot Posix e' gatato (non-figlio-di-init).
     // Esercita service_from_disc(8) + braccio nome "posix" nel kernel.
-    let posix_rejected = libr::service_register(libr::Service::Posix).is_err();
+    let posix_rejected = civis::service_register(civis::Service::Posix).is_err();
     let ok = kill_rejected && reg_rejected && posix_rejected;
     let detail =
         (kill_rejected as usize) | ((reg_rejected as usize) << 1) | ((posix_rejected as usize) << 2);
@@ -668,21 +668,21 @@ fn run_harden(target: i64) -> (bool, usize) {
 /// del grant: qui si devono leggere "DEF"). Poi un secondo claim dello stesso
 /// nonce deve dare Invalid (single-use). Ritorna (ok, detail).
 fn run_dupclaim(nonce: u64) -> (bool, usize) {
-    let fd = match libr::dup_claim(nonce) {
+    let fd = match civis::dup_claim(nonce) {
         Ok(f) => f,
         Err(_) => return (false, 10),
     };
     let mut b = [0u8; 3];
-    let n = match libr::read_fs(fd, &mut b, 3) {
+    let n = match civis::read_fs(fd, &mut b, 3) {
         Ok(n) => n,
         Err(_) => return (false, 11),
     };
-    let _ = libr::close(fd);
+    let _ = civis::close(fd);
     if n != 3 || &b != b"DEF" {
         return (false, 12);
     }
-    match libr::dup_claim(nonce) {
-        Err(libr::Error::Invalid) => (true, 0),
+    match civis::dup_claim(nonce) {
+        Err(civis::Error::Invalid) => (true, 0),
         _ => (false, 13),
     }
 }
@@ -691,16 +691,16 @@ fn run_dupclaim(nonce: u64) -> (bool, usize) {
 /// T_DONE(w1) all'orchestratore (che lo gira al sibling). Ritorna (ok, nonce
 /// come detail: il T_DONE generico lo mette in w1).
 fn run_dupgrant() -> (bool, usize) {
-    let fd = match libr::open("/t54sib.txt", 0) {
+    let fd = match civis::open("/t54sib.txt", 0) {
         Ok(f) => f,
         Err(_) => return (false, 0),
     };
-    let nonce = match libr::dup_grant(fd) {
+    let nonce = match civis::dup_grant(fd) {
         Ok(n) => n,
         Err(_) => return (false, 0),
     };
     // Il grant e' uno snapshot server-side: l'fd si puo' chiudere subito.
-    let _ = libr::close(fd);
+    let _ = civis::close(fd);
     (true, nonce as usize)
 }
 
@@ -708,8 +708,8 @@ fn run_dupgrant() -> (bool, usize) {
 /// parent) — l'attestazione parentela deve rifiutare con Invalid.
 /// Ritorna (ok, detail).
 fn run_dupsibclaim(nonce: u64) -> (bool, usize) {
-    match libr::dup_claim(nonce) {
-        Err(libr::Error::Invalid) => (true, 0),
+    match civis::dup_claim(nonce) {
+        Err(civis::Error::Invalid) => (true, 0),
         _ => (false, 20),
     }
 }
@@ -718,17 +718,17 @@ fn run_dupsibclaim(nonce: u64) -> (bool, usize) {
 /// intatto) e verifica che lseek venga rifiutato con Failed (il choke
 /// centrale risponde ERR generico). Ritorna (ok, detail).
 fn run_seekdeny() -> (bool, usize) {
-    let fd = match libr::open("/t54seek.txt", libr::O_CREAT) {
+    let fd = match civis::open("/t54seek.txt", civis::O_CREAT) {
         Ok(f) => f,
         Err(_) => return (false, 0),
     };
-    if libr::rights_drop(libr::RIGHTS_ALL & !libr::RIGHTS_SEEK, None).is_err() {
+    if civis::rights_drop(civis::RIGHTS_ALL & !civis::RIGHTS_SEEK, None).is_err() {
         return (false, 1);
     }
-    let r = libr::lseek(fd, 0, libr::SEEK_SET);
-    let _ = libr::close(fd);
+    let r = civis::lseek(fd, 0, civis::SEEK_SET);
+    let _ = civis::close(fd);
     match r {
-        Err(libr::Error::Failed) => (true, 0),
+        Err(civis::Error::Failed) => (true, 0),
         _ => (false, 2),
     }
 }
@@ -741,44 +741,44 @@ fn run_seekdeny() -> (bool, usize) {
 fn run_grantdeny() -> (bool, usize) {
     let mut detail = 0usize;
     let mut sb = [0u8; 32];
-    if libr::rights_get(&mut sb) != Ok(libr::RIGHTS_ALL) {
+    if civis::rights_get(&mut sb) != Ok(civis::RIGHTS_ALL) {
         return (false, detail);
     }
     detail |= 1;
-    let fd = match libr::open("/t57grant.txt", libr::O_CREAT) {
+    let fd = match civis::open("/t57grant.txt", civis::O_CREAT) {
         Ok(f) => f,
         Err(_) => return (false, detail),
     };
-    if libr::rights_drop(libr::RIGHTS_ALL & !libr::RIGHTS_GRANT, None).is_err() {
-        let _ = libr::close(fd);
+    if civis::rights_drop(civis::RIGHTS_ALL & !civis::RIGHTS_GRANT, None).is_err() {
+        let _ = civis::close(fd);
         return (false, detail);
     }
-    if libr::dup_grant(fd).is_err() {
+    if civis::dup_grant(fd).is_err() {
         detail |= 2;
     }
-    if libr::rights_drop(
-        libr::RIGHTS_ALL & !libr::RIGHTS_GRANT & !libr::RIGHTS_PIPE,
+    if civis::rights_drop(
+        civis::RIGHTS_ALL & !civis::RIGHTS_GRANT & !civis::RIGHTS_PIPE,
         None,
     )
     .is_err()
     {
-        let _ = libr::close(fd);
+        let _ = civis::close(fd);
         return (false, detail);
     }
-    if libr::pipe().is_err() {
+    if civis::pipe().is_err() {
         detail |= 4;
     }
     // Op valida DOPO i rifiuti (round trip veri, non count-0 vacuo): il bit
     // WRITE e' intatto, quindi write+read-back devono funzionare.
     let mut b = [0u8; 4];
-    if libr::write_fs(fd, b"qwer", 4) == Ok(4)
-        && libr::lseek(fd, 0, libr::SEEK_SET).is_ok()
-        && libr::read_fs(fd, &mut b, 4) == Ok(4)
+    if civis::write_fs(fd, b"qwer", 4) == Ok(4)
+        && civis::lseek(fd, 0, civis::SEEK_SET).is_ok()
+        && civis::read_fs(fd, &mut b, 4) == Ok(4)
         && b == *b"qwer"
     {
         detail |= 8;
     }
-    let _ = libr::close(fd);
+    let _ = civis::close(fd);
     (detail == 15, detail)
 }
 
@@ -786,8 +786,8 @@ fn run_grantdeny() -> (bool, usize) {
 /// `target` = pid di un processo che NON e' nostro figlio (un fratello
 /// spawnato dall'orchestratore, come in `run_harden`). Ritorna (ok, detail).
 fn run_suspenddeny(target: i64) -> (bool, usize) {
-    let s_denied = libr::suspend(target).is_err();
-    let r_denied = libr::resume(target).is_err();
+    let s_denied = civis::suspend(target).is_err();
+    let r_denied = civis::resume(target).is_err();
     let ok = s_denied && r_denied;
     (ok, (s_denied as usize) | ((r_denied as usize) << 1))
 }
@@ -800,41 +800,41 @@ fn run_suspenddeny(target: i64) -> (bool, usize) {
 fn run_fault(mode: u64) -> ! {
     match mode {
         MODE_FAULT_RO => {
-            let p = libr::mmap(0, 4096).expect("mmap");
+            let p = civis::mmap(0, 4096).expect("mmap");
             unsafe { core::ptr::write_volatile(p as *mut u8, 0x41); }
-            let _ = libr::mprotect(p, 4096, libr::PROT_READ);
+            let _ = civis::mprotect(p, 4096, civis::PROT_READ);
             unsafe { core::ptr::write_volatile(p as *mut u8, 0x42); } // #PF
         }
         MODE_FAULT_NONE => {
-            let p = libr::mmap(0, 4096).expect("mmap");
+            let p = civis::mmap(0, 4096).expect("mmap");
             unsafe { core::ptr::write_volatile(p as *mut u8, 0x41); }
-            let _ = libr::mprotect(p, 4096, libr::PROT_NONE);
+            let _ = civis::mprotect(p, 4096, civis::PROT_NONE);
             let _ = unsafe { core::ptr::read_volatile(p as *const u8) }; // #PF
         }
         MODE_FAULT_NX => {
-            let p = libr::mmap(0, 4096).expect("mmap");
+            let p = civis::mmap(0, 4096).expect("mmap");
             unsafe { core::ptr::write_volatile(p as *mut u8, 0xC3); } // ret
             let f: extern "C" fn() = unsafe { core::mem::transmute(p) };
             f(); // fetch su pagina NX → #PF
         }
         MODE_FAULT_GUARD => {
-            let g = libr::USER_STACK_GUARD as *mut u8;
+            let g = civis::USER_STACK_GUARD as *mut u8;
             unsafe { core::ptr::write_volatile(g, 0x41); } // #PF (guard)
         }
         MODE_FAULT_GPF => {
             // Nessuna porta concessa a questo helper (io_count == 0): `in` su
             // una porta qualsiasi → #GP → il kernel termina il processo.
-            unsafe { libr::pio::inb(0x80); }
+            unsafe { civis::pio::inb(0x80); }
         }
         MODE_FAULT_CODE => {
             // Fase 31: il codice e' mappato RX (W^X): scrivere all'indirizzo
             // del codice (USER_CODE) → #PF protection-violation → kill.
-            unsafe { core::ptr::write_volatile(libr::USER_CODE as *mut u8, 0x41); }
+            unsafe { core::ptr::write_volatile(civis::USER_CODE as *mut u8, 0x41); }
         }
         _ => {}
     }
     println!("[utcli] fault mode={} NON ha faultato", mode);
-    libr::exit(1);
+    civis::exit(1);
 }
 
 /// Legge un file intero in heap (bound 256 KiB, chunk 4000 = RING_MAX_PAYLOAD).
@@ -844,11 +844,11 @@ fn run_fault(mode: u64) -> ! {
 /// = modalita' della foglia (KILLME/ORPHAN). Ritorna il pid della foglia
 /// (dall'ACK) o None.
 fn spawn_killme(detached: bool, mode: u64) -> Option<u64> {
-    let img = libr::load_file("/fat/test/testcli.bin")?;
-    let base = libr::SpawnMeta::new("utcli", 16, &[])?;
+    let img = civis::load_file("/fat/test/testcli.bin")?;
+    let base = civis::SpawnMeta::new("utcli", 16, &[])?;
     let meta = if detached { base.detached() } else { base };
-    let chan = libr::spawn_image(&img, &meta).ok()? as u64;
-    let ack = libr::send(chan, T_CFG, mode, 0).ok()?;
+    let chan = civis::spawn_image(&img, &meta).ok()? as u64;
+    let ack = civis::send(chan, T_CFG, mode, 0).ok()?;
     Some(ack.w0)
 }
 
@@ -880,10 +880,10 @@ fn churn_heap(kib: usize) -> bool {
 /// cross-talk di mapping/TLB. Ritorna (ok, mismatches).
 fn run_maphammer(rounds: usize) -> (bool, usize) {
     const VA_X: u64 = 0x0000_4000_003E_0000;
-    let p2 = libr::MAP_TEST_PHYS + 0x1000;
+    let p2 = civis::MAP_TEST_PHYS + 0x1000;
     let mut bad = 0usize;
     for _ in 0..rounds {
-        if libr::map_physical(p2, VA_X, 1).is_err() {
+        if civis::map_physical(p2, VA_X, 1).is_err() {
             return (false, 0xFFFF);
         }
         unsafe {
@@ -917,33 +917,33 @@ fn run_flood(parent: u64) -> (bool, usize) {
     let mut warmed = false;
     let data = [0x5Au8; 16];
     loop {
-        if let Ok(fd) = libr::open("/dev/null", 0) {
-            let _ = libr::write_fs(fd, &data, 16);
-            let _ = libr::close(fd);
+        if let Ok(fd) = civis::open("/dev/null", 0) {
+            let _ = civis::write_fs(fd, &data, 16);
+            let _ = civis::close(fd);
         }
         ops += 1;
         if !warmed && ops >= WARMUP_OPS {
             warmed = true;
             // Il parent risponde (recv_expect): poi il flood continua.
-            let _ = libr::send(parent, T_READY, 1, 0);
+            let _ = civis::send(parent, T_READY, 1, 0);
         }
         if ops % 64 == 0 {
-            match libr::recv_poll() {
+            match civis::recv_poll() {
                 Some(m) if m.tag == T_STOP => {
-                    let _ = libr::reply(T_ACK, 0, 0);
+                    let _ = civis::reply(T_ACK, 0, 0);
                     return (true, ops);
                 }
                 // Se il parent muore, la suite e' finita: esci in silenzio
                 // invece di floodare per sempre (igiene, mai wedge).
                 Some(m)
-                    if m.channel == libr::CHANNEL_PARENT
-                        && libr::is_exit_notify(&m) =>
+                    if m.channel == civis::CHANNEL_PARENT
+                        && civis::is_exit_notify(&m) =>
                 {
-                    libr::exit(0);
+                    civis::exit(0);
                 }
-                Some(m) if libr::is_exit_notify(&m) => {}
+                Some(m) if civis::is_exit_notify(&m) => {}
                 Some(_) => {
-                    let _ = libr::reply(T_ACK, 0, 0);
+                    let _ = civis::reply(T_ACK, 0, 0);
                 }
                 None => {}
             }
@@ -959,18 +959,18 @@ fn run_flood(parent: u64) -> (bool, usize) {
 fn run_srv() -> (bool, usize) {
     let mut served = 0usize;
     loop {
-        match libr::recv() {
+        match civis::recv() {
             Ok(m) => match m.tag {
                 T_REQ => {
-                    let _ = libr::reply(0, 2 * m.w0, 0);
+                    let _ = civis::reply(0, 2 * m.w0, 0);
                     served += 1;
                 }
                 T_STOP => {
-                    let _ = libr::reply(T_ACK, 0, 0);
+                    let _ = civis::reply(T_ACK, 0, 0);
                     return (true, served);
                 }
                 _ => {
-                    let _ = libr::reply(T_ACK, 0, 0);
+                    let _ = civis::reply(T_ACK, 0, 0);
                 }
             },
             Err(_) => return (false, served),
@@ -982,7 +982,7 @@ fn run_echo(parent: u64, rounds: usize) -> (bool, usize) {
     let mut mismatches = 0usize;
     for seq in 0..rounds {
         let payload = (seq + 1) as u64;
-        match libr::send(parent, T_REQ, payload, 0) {
+        match civis::send(parent, T_REQ, payload, 0) {
             Ok(r) => {
                 if r.w0 != 2 * payload {
                     mismatches += 1;
@@ -995,16 +995,16 @@ fn run_echo(parent: u64, rounds: usize) -> (bool, usize) {
 }
 
 fn run_zeroread(parent: u64, rounds: usize) -> (bool, usize) {
-    // Throttled (Livello 1, buon vicinato): vedi `libr::open_wait`.
-    let fd = libr::open_wait("/dev/zero", 0, 1000, libr::POLL_PERIOD_TICKS);
+    // Throttled (Livello 1, buon vicinato): vedi `civis::open_wait`.
+    let fd = civis::open_wait("/dev/zero", 0, 1000, civis::POLL_PERIOD_TICKS);
     // Il buffer FS e' per-processo (Fase 9.6), quindi piu' client possono
     // leggere /dev/zero senza corrompersi a vicenda. L'handshake T_OPENED resta
     // come barriera di coordinamento: l'orchestratore attende che tutti abbiano
     // aperto prima di rilasciare le read con T_GO.
     let open_ok = fd.is_ok();
-    let _ = libr::send(parent, T_OPENED, open_ok as u64, 0);    match libr::recv() {
+    let _ = civis::send(parent, T_OPENED, open_ok as u64, 0);    match civis::recv() {
         Ok(m) if m.tag == T_GO => {
-            let _ = libr::reply(T_ACK, 0, 0);
+            let _ = civis::reply(T_ACK, 0, 0);
         }
         _ => return (false, 1),
     }
@@ -1015,7 +1015,7 @@ fn run_zeroread(parent: u64, rounds: usize) -> (bool, usize) {
     let mut bad = 0usize;
     let mut buf = vec![0u8; 4096];
     for i in 0..rounds {
-        let n = libr::read_fs(fd, &mut buf, 4096);
+        let n = civis::read_fs(fd, &mut buf, 4096);
         if n != Ok(4096) {
             bad += 1;
             println!("[utcli] zeroread read#{} n={:?}", i, n);
@@ -1030,25 +1030,25 @@ fn run_zeroread(parent: u64, rounds: usize) -> (bool, usize) {
             println!();
         }
     }
-    let _ = libr::close(fd);
+    let _ = civis::close(fd);
     (bad == 0, bad)
 }
 
 fn run_nullw() -> (bool, usize) {
-    let Ok(fd) = libr::open_wait("/dev/null", 0, 1000, libr::POLL_PERIOD_TICKS) else {
+    let Ok(fd) = civis::open_wait("/dev/null", 0, 1000, civis::POLL_PERIOD_TICKS) else {
         println!("[utcli] nullw: open /dev/null failed");
         return (false, 1);
     };
     let data = [0x5Au8; 512];
-    let n = libr::write_fs(fd, &data, 512);
+    let n = civis::write_fs(fd, &data, 512);
     let mut buf = [0u8; 64];
-    let r = libr::read_fs(fd, &mut buf, 64);
-    let _ = libr::close(fd);
+    let r = civis::read_fs(fd, &mut buf, 64);
+    let _ = civis::close(fd);
     (n == Ok(512) && r == Ok(0), 1)
 }
 
 #[panic_handler]
 fn panic_handler(_info: &core::panic::PanicInfo) -> ! {
     println!("[utcli] panic");
-    libr::exit(1)
+    civis::exit(1)
 }

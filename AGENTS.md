@@ -64,12 +64,14 @@ cd docs && mdbook serve
 6. **Comments** solo quando necessario (il codice deve essere auto-esplicativo)
 7. **Naming**: snake_case per funzioni/variabili, PascalCase per tipi
 8. **Error handling**: usare `Result<T, E>` dove possibile, `unwrap()` solo in init
-9. **Stratificazione `libr` (ADR-0025)**: meccanismo (`sys/ipc/heap/task/...`,
-   neutro) vs personalita' POSIX al bordo (`posix::to_errno`, `stdio`,
-   redirect) vs misti dichiarati (`fs/spawn/print/args`); `Error` vive nel
-   modulo neutro `error`. REGOLA: il meccanismo non usa mai `posix::` (vale
-   anche per il codice nuovo: non stare in due scatole — verifica con
-   `rg "posix::" libs/libr/src`).
+9. **Stratificazione meccanismo/personalita' (ADR-0025, ADR-0041)**: il
+   MECCANISMO e' il crate `libs/civis` (neutro: sys/ipc/heap/task/fs/spawn/
+   print/args, `error`); la PERSONALITA' POSIX e' `flavours/posix/libr`
+   (`posix`/`stdio`/`fork`/`exec`). `Error` vive nel meccanismo
+   (`civis::error`). Il confine e' una dipendenza Cargo e l'unico aggancio
+   meccanismo→personalita' e' l'hook `civis::persona` (routing stdout,
+   installato da `libr::entry!`). REGOLA: il meccanismo non usa mai POSIX
+   (verifica `rg "posix::" libs/civis/src` → zero).
 
 ## File Structure
 
@@ -85,21 +87,30 @@ velordor/
 │   ├── Cargo.toml
 │   └── linker.ld       # Include la nota PVH per il boot QEMU
 ├── libs/
-│   └── libr/           # libreria di sistema condivisa (userland + testland)
+│   ├── civis/          # meccanismo di sistema condiviso (ex libr): sys/ipc/heap/
+│   │                   #   fs/spawn/print/args + hook `persona` (ADR-0041)
+│   └── vela/           # codice driver condiviso (hub/block/input/gpu)
+├── flavours/
+│   └── posix/          # personalita' POSIX (ADR-0041)
+│       ├── libr/       # crate `libr`: errno/stdio/fork/exec + `entry!` (hook)
+│       ├── server/     # posix-server (userposix.bin)
+│       ├── shell/      # shell POSIX (usershell.bin)
+│       ├── cli/        # programmi lanciabili POSIX (runhello)
+│       ├── build/      # output .bin del flavour (generato)
+│       └── tests/      # suite test della personalita' (Fase 58.5)
 ├── syscall-numbers/    # Costanti syscall + costanti condivise (kernel+user)
 ├── scripts/
 │   ├── boot.asm        # MBR 16-bit (riserva, non usato dal path PVH)
 │   ├── build_common.sh # build_one() condivisa (freestanding PIC)
-│   ├── build-userland.sh  # binari "utente" -> userland/build
+│   ├── build-userland.sh  # servizi nativi -> userland/build (+ build-posix)
+│   ├── build-posix.sh  # binari POSIX -> flavours/posix/build
 │   ├── build-tests.sh  # binari test suite -> testland/build
 │   └── putc16.inc
 ├── run.sh              # build userland + testland + kernel + QEMU (PVH)
-├── userland/           # SOLO binari ad uso utente: init, console server,
-│   │                   #   fs server, devfs, shell, uptime, kbd/tty (Fase 15),
-│   │                   #   disk server (Fase 16), time (Fase 50), arca (P5),
-│   │                   #   log gateway L1 (Fase 57, boot-TCB embedded);
-│   │                   #   futuri: utility (Fase 18)
-│   └── build/          # output .bin dei servizi utente
+├── userland/           # servizi NATIVI: init, block, cardo, gpu, kbd, vela,
+│   │                   #   porta, vestigia, time, uptime; tools/arca (nativo,
+│   │                   #   linka `libr` solo per l'entry/redirect)
+│   └── build/          # output .bin dei servizi nativi
 ├── blake2s/            # BLAKE2s-256 proprio (RFC 7693, no_std) — P5
 ├── arcafs/             # casa ArcaFS (56.2a): tag/wire/formato condivisi guest/host — P5/A1/A2
 ├── tools/arca/         # tool host `arca create` (std, P5)
@@ -118,14 +129,19 @@ velordor/
 └── AGENTS.md           # Questo file
 ```
 
-**Layout moduli (Cleanup)**: ogni crate ha `main.rs`/`lib.rs` sottile (solo attr, `mod`, import, `_start`/panic o re-export) + moduli tematici (`cardo`: mount/ramfs/ftable/rights/rings/handlers/server; `libr`: ipc/spawn/sys/print/tsc/fs/* + facade che riesporta tutti i path `libr::X`; kernel: `ordo/` (`sched/`+`aegis`), `relay/` (`channels`), `arc/` (`vmm_user/`+`phys_mem`+`heap`+`vmm`), `syscall/` con facade e `main.rs` intoccato); i figli usano `use super::*;` (+`use crate::*;` se annidati) e i cross-riferimenti sono path espliciti (`handlers::handle_open`), mai glob dai parent. Costanti/tag condivisi stanno in `syscall-numbers` via `libr`, mai duplicati nei crate.
+**Layout moduli (Cleanup)**: ogni crate ha `main.rs`/`lib.rs` sottile (solo attr, `mod`, import, `_start`/panic o re-export) + moduli tematici (`cardo`: mount/ramfs/ftable/rights/rings/handlers/server; `civis`: ipc/spawn/sys/print/tsc/fs/* + facade che riesporta tutti i path `civis::X`; `libr`: posix/stdio/exec/fork; kernel: `ordo/` (`sched/`+`aegis`), `relay/` (`channels`), `arc/` (`vmm_user/`+`phys_mem`+`heap`+`vmm`), `syscall/` con facade e `main.rs` intoccato); i figli usano `use super::*;` (+`use crate::*;` se annidati) e i cross-riferimenti sono path espliciti (`handlers::handle_open`), mai glob dai parent. Costanti/tag condivisi stanno in `syscall-numbers` via `civis`, mai duplicati nei crate.
 
 ## Stato corrente
 
-Gate: `[testfs] PASS 5/5` + `[testfat] PASS 7/7` + `[testsarca] PASS 40/40` + `[usertests] PASS 58/58` + shell, zero FAIL/PANIC/FAULT (vedi `docs/src/11-testing.md`).
+Gate: `[testfs] PASS 5/5` + `[testfat] PASS 7/7` + `[testsarca] PASS 40/40` + `[posixtests] PASS 4/4` + `[usertests] PASS 54/54` + shell, zero FAIL/PANIC/FAULT (vedi `docs/src/11-testing.md`).
 
 - **Stato e futuro**: `ROADMAP.md` (sorgente unica: tabella completate 1-55, Pianificate, Parcheggiate).
 - **Storia dettagliata**: `docs/src/14-cronologia-fasi.md` (log per fase: decisioni, bug trovati, lezioni, validazioni).
+- **Personalità POSIX separata (Fase 58, ADR-0041, chiusa)**: meccanismo
+  `libs/civis` (ex `libs/libr`), personalità `flavours/posix/libr`; binari in
+  `flavours/posix/{server,shell,cli}` → `flavours/posix/build`, suite test in
+  `flavours/posix/tests` → `flavours/posix/tests/build`. Servizi nativi in
+  `userland/` (bins in `userland/build`).
 
 ## Important Notes
 
@@ -156,7 +172,7 @@ Gate: `[testfs] PASS 5/5` + `[testfat] PASS 7/7` + `[testsarca] PASS 40/40` + `[
   non si indirizzano piu' per PID. Ogni processo parla su un **`Channel`**
   (coppia bidirezionale creata da `spawn` per i figli, o da `service_lookup`
   per i servizi registrati per nome con `service_register`). Il canale 0 = il
-  parent. `libr` risolve `Fs`/`Console`/`Devfs` per nome. I messaggi viaggiano
+  parent. `civis` risolve `Fs`/`Console`/`Devfs` per nome. I messaggi viaggiano
   per channel_id; `reply` e' implicita al messaggio corrente (via `reply_chan`),
   mai per PID. La morte di un endpoint invalida i suoi canali e libera lo slot
   servizio → riavvio/riuso sicuri. Lo slot canale 0 NON si assegna mai (id 0 =
@@ -233,7 +249,7 @@ Gate: `[testfs] PASS 5/5` + `[testfat] PASS 7/7` + `[testsarca] PASS 40/40` + `[
   Per i READ remoti il driver scrive il response frame nella response ring del
   client (zero copie in ogni percorso). Ring a pagina singola: dati
   `[0x0000..0xFF8)` = 4088 B, head a `0xFF8`, tail a `0xFFC`; capacity reale
-  4087 B (free = CAP-1) → libr splitta read/write > ~4000 B in piu' round
+  4087 B (free = CAP-1) → civis splitta read/write > ~4000 B in piu' round
   trip. Il kernel NON e' nel percorso dati; slot (`fs_slots`) e syscall FS
   kernel-side (3-7, 23, 24) rimossi.
 - **Registrazione driver via ring**: devfs/console si registrano con
@@ -249,8 +265,10 @@ Gate: `[testfs] PASS 5/5` + `[testfat] PASS 7/7` + `[testsarca] PASS 40/40` + `[
   devfs, quindi i test in SEQUENZA (ognuno atteso
   fino a `TEST_DONE` sul canale di nascita), usershell per ultimo (interattivo).
 - **I test girano in sequenza, la shell e' ultima**: usertestfs/usertestfat/
-  usertests condividono la ramfs di cardo (path e file di lavoro) e l'output
-  seriale; la sequenza rende PID e risultati deterministici. Con il buffer
+  testsarca/posixtests/usertests condividono la ramfs di cardo (path e file di
+  lavoro) e l'output seriale; la sequenza rende PID e risultati deterministici.
+  `posixtests` (`flavours/posix/tests`) precede `usertests` (t54 prima dei drop
+  di diritti di t34). Con il buffer
   per-processo (9.6) la race della vecchia shared buffer e' eliminata (la suite
   t15 churn devfs concorrente gira davvero in parallelo). init spawa i test uno
   alla volta e attende il `TEST_DONE` (canale 0x7E) da ciascuno sul canale di
@@ -273,8 +291,8 @@ Gate: `[testfs] PASS 5/5` + `[testfat] PASS 7/7` + `[testsarca] PASS 40/40` + `[
   pagina FS propria (mai riusata da altri, Fase 9.6) → niente residui di slot/
   buffer condivisi che finivano nelle risposte di altri device (il vecchio
   bug `/dev/zero`).
-- **Heap on-demand in libr** (single allocator): niente piu' `static [u8; N]`
-  nei binari user. `libr/src/heap.rs` e' l'UNICO allocatore (free-list first-fit
+- **Heap on-demand in civis** (single allocator): niente piu' `static [u8; N]`
+  nei binari user. `civis/src/heap.rs` e' l'UNICO allocatore (free-list first-fit
   con split+coalescenza) ed espone `#[global_allocator]`; i crate user che
   alloccano non definiscono allocatori propri. L'heap parte vuoto a
   `USER_HEAP_BASE` (= `USER_STACK_TOP`) e cresce via la syscall **`sbrk` (25)**,
@@ -314,13 +332,14 @@ timeout 60 ./run.sh > /tmp/boot.log
 ./scripts/bench.sh > /tmp/bench.log
 rg '\[bench\]' /tmp/bench-run1.log /tmp/bench-run2.log /tmp/bench-run3.log
 
-# Suite di regressione (boot): 4 righe PASS attese e ZERO FAIL/PANIC
+# Suite di regressione (boot): 5 righe PASS attese e ZERO FAIL/PANIC
 #   [testfs] PASS 5/5
 #   [testfat] PASS 7/7
 #   [testsarca] PASS 40/40
-#   [usertests] PASS 58/58
+#   [posixtests] PASS 4/4
+#   [usertests] PASS 54/54
 timeout 150 ./run-tests.sh > /tmp/boot.log
-rg '\[testfs\] PASS 5/5|\[testfat\] PASS 7/7|\[testsarca\] PASS 40/40|\[usertests\] PASS 58/58' /tmp/boot.log
+rg '\[testfs\] PASS 5/5|\[testfat\] PASS 7/7|\[testsarca\] PASS 40/40|\[posixtests\] PASS 4/4|\[usertests\] PASS 54/54' /tmp/boot.log
 test "$(rg -c 'FAIL|PANIC|#.* FAULT' /tmp/boot.log)" = "0"
 ```
 

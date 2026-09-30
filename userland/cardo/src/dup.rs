@@ -115,7 +115,7 @@ pub fn handle_grant(
         }
         _ => return Err(ERR_INVALID),
     };
-    let pid = libr::peer_pid(chan).map_err(|_| ERR_INVALID)?;
+    let pid = civis::peer_pid(chan).map_err(|_| ERR_INVALID)?;
     if pid < 0 || pid > u32::MAX as i64 {
         return Err(ERR_INVALID);
     }
@@ -140,11 +140,11 @@ pub fn handle_claim(
     }
     let g = grants.remove(nonce).ok_or(ERR_INVALID)?;
     // Attestazione doppia: il claimant deve essere figlio del registrante…
-    let me = libr::peer_pid(chan).map_err(|_| ERR_INVALID)?;
+    let me = civis::peer_pid(chan).map_err(|_| ERR_INVALID)?;
     if me < 0 || me > u32::MAX as i64 {
         return Err(ERR_INVALID);
     }
-    let parent = match libr::ps_info(me as u32) {
+    let parent = match civis::ps_info(me as u32) {
         Some(e) => e.parent,
         None => None,
     };
@@ -155,7 +155,7 @@ pub fn handle_claim(
     // (il pid potrebbe essere stato riusato dopo la morte del registrante:
     // il grant sarebbe orfano — la purge su EXIT_NOTIFY lo rimuove, ma la
     // race resta chiusa qui per costruzione).
-    match libr::peer_pid(g.registrant_chan) {
+    match civis::peer_pid(g.registrant_chan) {
         Ok(p) if p == g.registrant_pid as i64 => {}
         _ => return Err(ERR_INVALID),
     }

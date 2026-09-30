@@ -15,16 +15,16 @@ static TICK: AtomicI64 = AtomicI64::new(0);
 static CHAN: AtomicU64 = AtomicU64::new(u64::MAX);
 
 fn refresh() {
-    let Ok(chan) = libr::spawn::service_lookup(libr::Service::Time) else {
+    let Ok(chan) = civis::spawn::service_lookup(civis::Service::Time) else {
         return;
     };
-    let Ok(r) = libr::ipc::send(chan as u64, libr::TIME_NOW, 0, 0) else {
+    let Ok(r) = civis::ipc::send(chan as u64, civis::TIME_NOW, 0, 0) else {
         return;
     };
     // `tick_base` campionato subito dopo la reply: lo skew (frazione di un
     // round-trip IPC) e' trascurabile contro la granularita' di 10 ms.
     EPOCH.store(r.w0, Ordering::Relaxed);
-    TICK.store(libr::get_ticks(), Ordering::Relaxed);
+    TICK.store(civis::get_ticks(), Ordering::Relaxed);
     CHAN.store(chan as u64, Ordering::Relaxed);
     HAVE.store(true, Ordering::Relaxed);
 }
@@ -38,7 +38,7 @@ pub fn wall_secs() -> u64 {
     if !HAVE.load(Ordering::Relaxed) {
         return 0;
     }
-    let dt = libr::get_ticks().wrapping_sub(TICK.load(Ordering::Relaxed)).max(0) as u64;
+    let dt = civis::get_ticks().wrapping_sub(TICK.load(Ordering::Relaxed)).max(0) as u64;
     EPOCH.load(Ordering::Relaxed).wrapping_add(dt / 100)
 }
 

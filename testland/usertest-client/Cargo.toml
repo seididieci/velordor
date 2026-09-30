@@ -6,7 +6,8 @@ edition = "2024"
 [workspace]
 
 [dependencies]
-libr = { path = "../../libs/libr" }
+civis = { path = "../../libs/civis" }
+libr = { path = "../../flavours/posix/libr" }
 
 [profile.dev]
 panic = "abort"

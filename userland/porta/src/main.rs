@@ -31,27 +31,27 @@ extern crate alloc;
 use alloc::collections::VecDeque;
 use pc_keyboard::{DecodedKey, HandleControl, KeyCode, Keyboard, KeyboardLayout, ScancodeSet1, layouts};
 
-use libr::println;
+use civis::println;
 
-// ── IPC tags (DocsD: single source in `syscall-numbers`, via `libr`) ──
-use libr::{DEV_CLOSE, DEV_KEYBOARD, DEV_OPEN, DEV_READ, DEV_WRITE};
+// ── IPC tags (DocsD: single source in `syscall-numbers`, via `civis`) ──
+use civis::{DEV_CLOSE, DEV_KEYBOARD, DEV_OPEN, DEV_READ, DEV_WRITE};
 
 /// Notify da kbd (fire-and-forget, NESSUNA reply): scancode in attesa.
 /// tty dorme in recv() e si sveglia solo qui (o su relay DEV / reply async).
 /// Senza notify servirebbe pump in polling (sempre Ready → dilution scheduler).
-/// Single source in `syscall-numbers` (DocsB), via `libr`.
-use libr::KBD_NOTIFY;
+/// Single source in `syscall-numbers` (DocsB), via `civis`.
+use civis::KBD_NOTIFY;
 
 /// Device type per DEV_OPEN (stesso di prima: il path non cambia; valore in
 /// `syscall-numbers`, importato sopra).
 
 // ── Ring I/O (Fase 10.2, pattern console/devfs: servire i client) ───
 
-const CLI_REQ: u64 = libr::CLI_REQ_VA;
-const CLI_RESP: u64 = libr::CLI_RESP_VA;
-// Geometria ring + errore IPC (A1) + frame helpers (A2): single source in `libr`.
-use libr::ERR;
-use libr::{req_frame_read, resp_frame_write};
+const CLI_REQ: u64 = civis::CLI_REQ_VA;
+const CLI_RESP: u64 = civis::CLI_RESP_VA;
+// Geometria ring + errore IPC (A1) + frame helpers (A2): single source in `civis`.
+use civis::ERR;
+use civis::{req_frame_read, resp_frame_write};
 
 // ── Stato ───────────────────────────────────────────────────────────
 
@@ -162,7 +162,7 @@ impl Tty {
     /// Stampa SEMPRE: un reset inatteso deve essere visibile (lo stallo
     /// silenzioso di Fase 15 e' costato un giorno di diagnosi).
     fn reset_to_lookup(&mut self) {
-        println!("[porta] reset boot SM (phase={:?})", self.phase as u8);        libr::fs_abort_pending();
+        println!("[porta] reset boot SM (phase={:?})", self.phase as u8);        civis::fs_abort_pending();
         self.pending = None;
         self.phase = Phase::LookupFs;
         self.kbd_fd = -1;
@@ -198,7 +198,7 @@ impl Tty {
         loop {
             match self.phase {
                 Phase::LookupFs => {
-                    if libr::service_lookup(libr::Service::Cardo).is_ok() {
+                    if civis::service_lookup(civis::Service::Cardo).is_ok() {
                         self.phase = Phase::BufReg;
                         continue;
                     } else {
@@ -213,7 +213,7 @@ impl Tty {
             // re-lookup dopo stale) serve un nuovo BUF_REG o ogni op prende
             // NOHANDSHAKE per sempre (osservato Fase 15). Idempotente.
             Phase::BufReg => {
-                if let Ok(req) = libr::fs_buf_reg_async() {
+                if let Ok(req) = civis::fs_buf_reg_async() {
                     self.pending = Some(Pending { req, kind: OpKind::BufReg });
                 } else {
                     for _ in 0..100_000 {
@@ -225,7 +225,7 @@ impl Tty {
             Phase::OpenKbd => {
                 // NOTA: il FILE device ("/dev/kbd/kbd"), mai la radice del
                 // mount ("/dev/kbd" ha rel="" → dev_type fallisce, EISDIR).
-                if let Ok(req) = libr::open_async("/dev/kbd/kbd", 0) {
+                if let Ok(req) = civis::open_async("/dev/kbd/kbd", 0) {
                     self.pending = Some(Pending { req, kind: OpKind::OpenKbd });
                 } else {
                     // Fallimento (backpressure o peer in restart): backoff,
@@ -237,7 +237,7 @@ impl Tty {
                 return;
             }
             Phase::OpenCon => {
-                if let Ok(req) = libr::open_async("/dev/console/console", 0) {
+                if let Ok(req) = civis::open_async("/dev/console/console", 0) {
                     self.pending = Some(Pending { req, kind: OpKind::OpenCon });
                 } else {
                     for _ in 0..100_000 {
@@ -247,7 +247,7 @@ impl Tty {
                 return;
             }
             Phase::Register => {
-                if let Ok(req) = libr::fs_register_async(b"/dev/input") {
+                if let Ok(req) = civis::fs_register_async(b"/dev/input") {
                     self.pending = Some(Pending { req, kind: OpKind::Register });
                 } else {
                     for _ in 0..100_000 {
@@ -269,7 +269,7 @@ impl Tty {
 
     /// Raccoglie una reply async che matcha `pending`. Ritorna true se era
     /// nostra (consumata), false altrimenti.
-    fn collect_if_mine(&mut self, m: &libr::IpcMsg) -> bool {
+    fn collect_if_mine(&mut self, m: &civis::IpcMsg) -> bool {
         let p = match self.pending {
             Some(p) if m.req_id > 0 && m.req_id == p.req => p,
             _ => return false,
@@ -283,7 +283,7 @@ impl Tty {
                 // 1-in-volo va resettato comunque (fs_collect_msg lo fa per le
                 // altre op): senza, ogni op successiva viene rifiutata per
                 // sempre (osservato: stallo silenzioso al boot).
-                libr::fs_abort_pending();
+                civis::fs_abort_pending();
                 if m.w0 == 0 {
                     self.err_streak = 0;
                     self.phase = Phase::OpenKbd;
@@ -294,7 +294,7 @@ impl Tty {
                 }
             }
             OpKind::OpenKbd => {
-                match libr::fs_collect_msg(m, &mut tmp, 64, false) {
+                match civis::fs_collect_msg(m, &mut tmp, 64, false) {
                     Ok(fd) => {
                         self.kbd_fd = fd;
                         self.err_streak = 0;
@@ -308,7 +308,7 @@ impl Tty {
                 }
             }
             OpKind::OpenCon => {
-                match libr::fs_collect_msg(m, &mut tmp, 64, false) {
+                match civis::fs_collect_msg(m, &mut tmp, 64, false) {
                     Ok(fd) => {
                         self.con_fd = fd;
                         self.err_streak = 0;
@@ -322,7 +322,7 @@ impl Tty {
                 }
             }
             OpKind::Register => {
-                match libr::fs_collect_msg(m, &mut tmp, 64, false) {
+                match civis::fs_collect_msg(m, &mut tmp, 64, false) {
                     Ok(0) => {
                         self.err_streak = 0;
                         self.phase = Phase::Steady;
@@ -335,7 +335,7 @@ impl Tty {
                 }
             }
             OpKind::PumpRead => {
-                match libr::fs_collect_msg(m, &mut tmp, 64, true) {
+                match civis::fs_collect_msg(m, &mut tmp, 64, true) {
                     Ok(n) if n > 0 => {
                         self.err_streak = 0;
                         self.decode_bytes(&tmp[..n as usize]);
@@ -352,14 +352,14 @@ impl Tty {
                     // consecutivi reset_to_lookup riapre i peer.
                     self.note_error();
                     self.pump_now = true;
-                    self.pump_wait_until = libr::get_ticks().wrapping_add(2);
+                    self.pump_wait_until = civis::get_ticks().wrapping_add(2);
                     }
                     // Ok(0) = vuoto legittimo: niente da fare, nessun errore.
                     Ok(_) => {}
                 }
             }
             OpKind::ConWrite => {
-                match libr::fs_collect_msg(m, &mut tmp, 64, false) {
+                match civis::fs_collect_msg(m, &mut tmp, 64, false) {
                     Ok(r) => {
                         self.err_streak = 0;
                         let adv = (r as usize).min(self.out.len());
@@ -429,18 +429,18 @@ impl Tty {
         }
         // Backoff dopo un invio fallito (come flush): non riprovare a vuoto
         // ogni giro (igiene Livello 1).
-        let now = libr::get_ticks();
+        let now = civis::get_ticks();
         if now.wrapping_sub(self.pump_wait_until) < 0 {
             return;
         }
         self.pump_now = false;
-        if let Ok(req) = libr::read_async(self.kbd_fd, 64) {
+        if let Ok(req) = civis::read_async(self.kbd_fd, 64) {
             self.pending = Some(Pending { req, kind: OpKind::PumpRead });
         } else {
             // Invio fallito (backpressure): riprova con backoff, come flush.
             // Senza, un pump perso resta perso fino alla prossima notify.
             self.pump_now = true;
-            self.pump_wait_until = libr::get_ticks().wrapping_add(2);
+            self.pump_wait_until = civis::get_ticks().wrapping_add(2);
         }
     }
 
@@ -454,14 +454,14 @@ impl Tty {
         }
         // Backoff dopo un invio fallito (backpressure/restart): non riprovare
         // a vuoto ogni giro (igiene Livello 1).
-        let now = libr::get_ticks();
+        let now = civis::get_ticks();
         if now.wrapping_sub(self.flush_wait_until) < 0 {
             return;
         }
-        // Bound operativo del frame (single source in `libr`, audit CAP P4):
+        // Bound operativo del frame (single source in `civis`, audit CAP P4):
         // `write_async` rifiuta oltre `RING_MAX_PAYLOAD`, mai magic number.
-        let n = self.out.len().min(libr::RING_MAX_PAYLOAD);
-        if let Ok(req) = libr::write_async(self.con_fd, &self.out[..n]) {
+        let n = self.out.len().min(civis::RING_MAX_PAYLOAD);
+        if let Ok(req) = civis::write_async(self.con_fd, &self.out[..n]) {
             self.pending = Some(Pending { req, kind: OpKind::ConWrite });
         } else {
             self.flush_wait_until = now.wrapping_add(2);
@@ -469,13 +469,13 @@ impl Tty {
     }
 }
 
-libr::entry!(real_main);
+civis::entry!(real_main);
 fn real_main(_sp: u64) -> ! {
-    println!("[porta] starting, pid={}", libr::getpid());
+    println!("[porta] starting, pid={}", civis::getpid());
 
     // Registra il servizio Tty per nome (supervisione init-restart; i client
     // usano il FS, nessuno risolve questo nome per parlare).
-    if libr::service_register(libr::Service::Porta).is_ok() {
+    if civis::service_register(civis::Service::Porta).is_ok() {
         println!("[porta] registered as service Porta");
     }
 
@@ -491,8 +491,8 @@ fn real_main(_sp: u64) -> ! {
             // Prima pump: svuota eventuali tasti arrivati prima di noi (kbd li
             // accoda anche senza tty registrato).
             tty.pump_now = true;
-            // SVC_READY fire-and-forget in `libr` (A3, init aspetta a boot).
-            libr::signal_ready(1);
+            // SVC_READY fire-and-forget in `civis` (A3, init aspetta a boot).
+            civis::signal_ready(1);
         }
 
         // 2. Pump + flush (solo Steady, mai bloccanti: tutto async).
@@ -508,7 +508,7 @@ fn real_main(_sp: u64) -> ! {
         //    (come gli ensure loop degli altri driver), mai block.
         let can_sleep = tty.pending.is_some() || tty.phase == Phase::Steady;
         if !can_sleep {
-            match libr::recv_poll() {
+            match civis::recv_poll() {
                 Some(m) => tty.handle_msg(m),
                 None => {
                     for _ in 0..10_000 {
@@ -521,7 +521,7 @@ fn real_main(_sp: u64) -> ! {
         }
         // 3b. BLOCCANTE: tty dorme qui quando idle o in attesa di reply
         //    (zero dilution scheduler).
-        match libr::recv() {
+        match civis::recv() {
             Ok(m) => tty.handle_msg(m),
             Err(_) => {
                 // Peer morto senza EXIT recapitato, o wake spurio: ricontrolla
@@ -536,14 +536,14 @@ fn real_main(_sp: u64) -> ! {
 /// relay DEV (serve e rispondi subito). Estratta perche' usata sia dal ramo
 /// poll (boot senza pending) che da quello bloccante.
 impl Tty {
-    fn handle_msg(&mut self, m: libr::IpcMsg) {
+    fn handle_msg(&mut self, m: civis::IpcMsg) {
         if m.req_id > 0 {
             // Risposta async: nostra (collect) o stale (scarta: niente frame
             // nostro nel ring, nessun consumo da fare).
             self.collect_if_mine(&m);
             return;
         }
-        if m.tag == libr::EXIT_NOTIFY {
+        if m.tag == civis::EXIT_NOTIFY {
             // cardo morto e rinato (o altro peer): riparte il boot async
             // (riapre i peer, ri-registra). Mai reply.
             println!("[porta] peer morto, riparto dal lookup");
@@ -601,12 +601,12 @@ impl Tty {
             DEV_CLOSE => Some(0),
             _ => None,
         };
-        let _ = libr::reply(0, result.unwrap_or(ERR), 0);
+        let _ = civis::reply(0, result.unwrap_or(ERR), 0);
     }
 }
 
 #[panic_handler]
 fn panic(_info: &core::panic::PanicInfo) -> ! {
     println!("[porta] panic");
-    libr::exit(1)
+    civis::exit(1)
 }

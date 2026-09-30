@@ -63,59 +63,59 @@ pub fn t_detach() -> bool {
 /// cambiare, le chiavi stabili no.
 pub fn t_stable_id() -> bool {
     helpers::drain_stray();
-    if libr::mkdir("/u2").is_err() {
+    if civis::mkdir("/u2").is_err() {
         println!("[usertests] t36: mkdir /u2 FAILED");
         return false;
     }
     // 1. Mount per UUID.
-    if libr::mount("UUID=C0FFEE01", "/u2").is_err() {
+    if civis::mount("UUID=C0FFEE01", "/u2").is_err() {
         println!("[usertests] t36: mount UUID=C0FFEE01 FAILED");
         return false;
     }
-    let Ok(fd) = libr::open("/u2/MARKER.TXT", 0) else {
+    let Ok(fd) = civis::open("/u2/MARKER.TXT", 0) else {
         println!("[usertests] t36: open MARKER via UUID FAILED");
-        let _ = libr::umount("/u2");
+        let _ = civis::umount("/u2");
         return false;
     };
     let mut mb = [0u8; 32];
     let n = helpers::t33_read_all(fd, &mut mb);
-    let _ = libr::close(fd);
+    let _ = civis::close(fd);
     if n != helpers::DISK2_MARKER.len() || mb[..n] != *helpers::DISK2_MARKER {
         println!("[usertests] t36: MARKER via UUID corrotto (disco sbagliato?)");
-        let _ = libr::umount("/u2");
+        let _ = civis::umount("/u2");
         return false;
     }
-    if libr::umount("/u2").is_err() {
+    if civis::umount("/u2").is_err() {
         println!("[usertests] t36: umount /u2 FAILED");
         return false;
     }
     // 2. Mount per LABEL.
-    if libr::mount("LABEL=SECOND", "/u2").is_err() {
+    if civis::mount("LABEL=SECOND", "/u2").is_err() {
         println!("[usertests] t36: mount LABEL=SECOND FAILED");
         return false;
     }
-    let Ok(fd) = libr::open("/u2/MARKER.TXT", 0) else {
+    let Ok(fd) = civis::open("/u2/MARKER.TXT", 0) else {
         println!("[usertests] t36: open MARKER via LABEL FAILED");
-        let _ = libr::umount("/u2");
+        let _ = civis::umount("/u2");
         return false;
     };
     let mut mb = [0u8; 32];
     let n = helpers::t33_read_all(fd, &mut mb);
-    let _ = libr::close(fd);
-    let _ = libr::umount("/u2");
+    let _ = civis::close(fd);
+    let _ = civis::umount("/u2");
     if n != helpers::DISK2_MARKER.len() || mb[..n] != *helpers::DISK2_MARKER {
         println!("[usertests] t36: MARKER via LABEL corrotto");
         return false;
     }
     // 3. Open raw dei by-path: settore 0 con firma + seriale atteso.
     for path in ["/dev/disk/by-uuid/C0FFEE01", "/dev/disk/by-label/SECOND"] {
-        let Ok(fd) = libr::open(path, 0) else {
+        let Ok(fd) = civis::open(path, 0) else {
             println!("[usertests] t36: open raw {} FAILED", path);
             return false;
         };
         let mut sec = [0u8; 512];
-        let r = libr::read_fs(fd, &mut sec, 512);
-        let _ = libr::close(fd);
+        let r = civis::read_fs(fd, &mut sec, 512);
+        let _ = civis::close(fd);
         if r != Ok(512) || sec[510] != 0x55 || sec[511] != 0xAA {
             println!("[usertests] t36: settore 0 raw {} invalido", path);
             return false;
@@ -128,7 +128,7 @@ pub fn t_stable_id() -> bool {
     }
     // 4. Listing sintetizzato.
     let mut eb = [0u8; 512];
-    if libr::readdir("/dev", &mut eb, 512).is_err()
+    if civis::readdir("/dev", &mut eb, 512).is_err()
         || !helpers::readdir_contains(&eb, b"disk")
         || !helpers::readdir_contains(&eb, b"sda")
     {
@@ -136,14 +136,14 @@ pub fn t_stable_id() -> bool {
         return false;
     }
     let mut eb = [0u8; 256];
-    if libr::readdir("/dev/disk/by-uuid", &mut eb, 256).is_err()
+    if civis::readdir("/dev/disk/by-uuid", &mut eb, 256).is_err()
         || !helpers::readdir_contains(&eb, helpers::DISK2_UUID.as_bytes())
     {
         println!("[usertests] t36: readdir by-uuid senza C0FFEE01");
         return false;
     }
     let mut eb = [0u8; 256];
-    if libr::readdir("/dev/disk/by-label", &mut eb, 256).is_err()
+    if civis::readdir("/dev/disk/by-label", &mut eb, 256).is_err()
         || !helpers::readdir_contains(&eb, helpers::DISK2_LABEL.as_bytes())
     {
         println!("[usertests] t36: readdir by-label senza SECOND");
@@ -166,7 +166,7 @@ pub fn t_disk() -> bool {
     }
     // Bounce via init (Fase 35: block e' figlio di init, kill diretto qui
     // fallirebbe col kill parent-scoped).
-    let p1 = match libr::init_bounce(libr::Service::Block) {
+    let p1 = match civis::init_bounce(civis::Service::Block) {
         Ok(p) => p,
         Err(_) => {
             println!("[usertests] t32: bounce block FAILED");
@@ -174,15 +174,15 @@ pub fn t_disk() -> bool {
         }
     };
     // Fase A: sparizione dallo slot (morte osservata dal registry).
-    if !libr::poll_wait(1000, libr::POLL_PERIOD_TICKS, || {
-        libr::service_pid(libr::Service::Block).is_err()
+    if !civis::poll_wait(1000, civis::POLL_PERIOD_TICKS, || {
+        civis::service_pid(civis::Service::Block).is_err()
     }) {
         println!("[usertests] t32: block mai sparito (timeout)");
         return false;
     }
     // Fase B: ricomparsa (init ha riavviato + registrato).
-    let p2 = match libr::poll_value(1000, libr::POLL_PERIOD_TICKS, || {
-        libr::service_pid(libr::Service::Block).ok()
+    let p2 = match civis::poll_value(1000, civis::POLL_PERIOD_TICKS, || {
+        civis::service_pid(civis::Service::Block).ok()
     }) {
         Some(p) => p,
         None => {
@@ -192,25 +192,25 @@ pub fn t_disk() -> bool {
     };
     println!("[usertests] t32: block riavviato (pid {} -> {})", p1, p2);
     // Fase C: operativita' raw dopo il restart.
-    if !libr::poll_wait(1000, libr::POLL_PERIOD_TICKS, helpers::disk_sector0_ok) {
+    if !civis::poll_wait(1000, civis::POLL_PERIOD_TICKS, helpers::disk_sector0_ok) {
         println!("[usertests] t32: /dev/sda mai tornato (timeout)");
         return false;
     }
     // Smoke /fat via riconnessione (il driver e' nuovo, il mount e' quello di boot).
-    let Ok(fdf) = libr::open_wait("/fat/HELLO.TXT", 0, 1000, libr::POLL_PERIOD_TICKS) else {
+    let Ok(fdf) = civis::open_wait("/fat/HELLO.TXT", 0, 1000, civis::POLL_PERIOD_TICKS) else {
         println!("[usertests] t32: open /fat/HELLO.TXT post-restart FAILED");
         return false;
     };
     let mut fb = [0u8; 32];
-    let n = libr::read_fs(fdf, &mut fb, 32).unwrap_or(0);
-    let _ = libr::close(fdf);
+    let n = civis::read_fs(fdf, &mut fb, 32).unwrap_or(0);
+    let _ = civis::close(fdf);
     if n != helpers::FAT_HELLO.len() || fb[..helpers::FAT_HELLO.len()] != *helpers::FAT_HELLO {
         println!("[usertests] t32: /fat/HELLO.TXT post-restart corrotto");
         return false;
     }
     // Fase 51 (P2 vocabolario disco): topologia via protocollo (relay R_
     // verso DISK_*), non dal log. QEMU ne ha 2 (fat+fat2, come t36).
-    let list = match libr::disk_list() {
+    let list = match civis::disk_list() {
         Ok(v) => v,
         Err(_) => {
             println!("[usertests] t32: disk_list FAILED");
@@ -226,7 +226,7 @@ pub fn t_disk() -> bool {
             println!("[usertests] t32: disco {} senza settori", i);
             return false;
         }
-        let d = match libr::disk_info(i as u32) {
+        let d = match civis::disk_info(i as u32) {
             Ok(d) => d,
             Err(_) => {
                 println!("[usertests] t32: disk_info({}) FAILED", i);
@@ -265,22 +265,22 @@ pub fn t_disk() -> bool {
         );
     }
     // Indice oltre i dischi: rifiuto, mai frame parziale.
-    if libr::disk_info(99).is_ok() {
+    if civis::disk_info(99).is_ok() {
         println!("[usertests] t32: disk_info(99) accettato?!");
         return false;
     }
     // Fase 52 (P3 durabilita'): ciclo modi R_SYNC (ritorna il precedente,
     // umask-like, deterministico da qualunque stato: None -> Group ->
     // PerWrite -> None) + modo ignoto rifiutato senza stato.
-    match libr::disk_sync(libr::SYNC_GROUP) {
+    match civis::disk_sync(civis::SYNC_GROUP) {
         Ok(_) => {}
         Err(_) => {
             println!("[usertests] t32: disk_sync(GROUP) FAILED");
             return false;
         }
     }
-    match libr::disk_sync(libr::SYNC_PERWRITE) {
-        Ok(prev) if prev == libr::SYNC_GROUP as u64 => {}
+    match civis::disk_sync(civis::SYNC_PERWRITE) {
+        Ok(prev) if prev == civis::SYNC_GROUP as u64 => {}
         Ok(prev) => {
             println!("[usertests] t32: prev inatteso ({}, atteso GROUP)", prev);
             return false;
@@ -290,8 +290,8 @@ pub fn t_disk() -> bool {
             return false;
         }
     }
-    match libr::disk_sync(libr::SYNC_NONE) {
-        Ok(prev) if prev == libr::SYNC_PERWRITE as u64 => {}
+    match civis::disk_sync(civis::SYNC_NONE) {
+        Ok(prev) if prev == civis::SYNC_PERWRITE as u64 => {}
         Ok(prev) => {
             println!("[usertests] t32: prev inatteso ({}, atteso PERWRITE)", prev);
             return false;
@@ -301,25 +301,25 @@ pub fn t_disk() -> bool {
             return false;
         }
     }
-    if libr::disk_sync(9).is_ok() {
+    if civis::disk_sync(9).is_ok() {
         println!("[usertests] t32: disk_sync(9) accettato?!");
         return false;
     }
     // Barriera Group riuscita sopra (primo disk_sync): i FLUSH sono
     // atterrati senza Err. Sensore spazio: FAT con blocchi/libéri coerenti,
     // ramfs illimitata (MAX) con bsize 512.
-    let mut vfs = libr::StatVfs { bsize: 0, blocks: 0, bfree: 0, bavail: 0 };
-    if libr::statvfs("/fat", &mut vfs).is_err() || vfs.bsize == 0 || vfs.blocks == 0 || vfs.bfree > vfs.blocks {
+    let mut vfs = civis::StatVfs { bsize: 0, blocks: 0, bfree: 0, bavail: 0 };
+    if civis::statvfs("/fat", &mut vfs).is_err() || vfs.bsize == 0 || vfs.blocks == 0 || vfs.bfree > vfs.blocks {
         println!("[usertests] t32: statvfs /fat assurdo ({}/{}/{})", vfs.bsize, vfs.blocks, vfs.bfree);
         return false;
     }
     println!("[usertests] t32: statvfs /fat bsize={} blocks={} bfree={}", vfs.bsize, vfs.blocks, vfs.bfree);
-    if libr::statvfs("/", &mut vfs).is_err() || vfs.bsize != 512 || vfs.bfree != u64::MAX {
+    if civis::statvfs("/", &mut vfs).is_err() || vfs.bsize != 512 || vfs.bfree != u64::MAX {
         println!("[usertests] t32: statvfs / assurdo ({}/{}/{})", vfs.bsize, vfs.blocks, vfs.bfree);
         return false;
     }
     // Device/sintetici: nessuno spazio da contabilizzare.
-    if libr::statvfs("/dev/null", &mut vfs).is_ok() {
+    if civis::statvfs("/dev/null", &mut vfs).is_ok() {
         println!("[usertests] t32: statvfs /dev/null accettato?!");
         return false;
     }
@@ -350,7 +350,7 @@ pub fn t_hardening() -> bool {
     ) {
         Some(x) => x,
         None => {
-            let _ = libr::kill(b_pid as i64, 0);
+            let _ = civis::kill(b_pid as i64, 0);
             let _ = helpers::wait_exit(b_chan);
             println!("[usertests] t50: spawn harden FAILED");
             return false;
@@ -359,33 +359,33 @@ pub fn t_hardening() -> bool {
     let (ok, detail) = helpers::recv_done(&[h_chan]);
     if !ok {
         println!("[usertests] t50: helper harden FAIL (detail={})", detail);
-        let _ = libr::kill(b_pid as i64, 0);
+        let _ = civis::kill(b_pid as i64, 0);
         let _ = helpers::wait_exit(b_chan);
         return false;
     }
     // La vittima deve essere ancora viva (il kill ostile non e' passato).
-    if libr::ps_info(b_pid as u32).is_none() {
+    if civis::ps_info(b_pid as u32).is_none() {
         println!("[usertests] t50: vittima uccisa da kill non-figlio!");
         return false;
     }
     // (B) map_physical di RAM del kernel (0x100000) rifiutato.
-    if libr::map_physical(0x10_0000, helpers::VA_A, 1).is_ok() {
+    if civis::map_physical(0x10_0000, helpers::VA_A, 1).is_ok() {
         println!("[usertests] t50: map_physical RAM kernel NON rifiutato!");
-        let _ = libr::kill(b_pid as i64, 0);
+        let _ = civis::kill(b_pid as i64, 0);
         let _ = helpers::wait_exit(b_chan);
         return false;
     }
     // (C) kill di un servizio non-figlio (vela, figlio di init) rifiutato.
-    if let Ok(vela_pid) = libr::service_pid(libr::Service::Vela) {
-        if libr::kill(vela_pid, 0).is_ok() {
+    if let Ok(vela_pid) = civis::service_pid(civis::Service::Vela) {
+        if civis::kill(vela_pid, 0).is_ok() {
             println!("[usertests] t50: kill di un servizio non-figlio NON rifiutato!");
-            let _ = libr::kill(b_pid as i64, 0);
+            let _ = civis::kill(b_pid as i64, 0);
             let _ = helpers::wait_exit(b_chan);
             return false;
         }
     }
     // Cleanup: la vittima e' nostra figlia (kill consentito).
-    let _ = libr::kill(b_pid as i64, 0);
+    let _ = civis::kill(b_pid as i64, 0);
     let _ = helpers::wait_exit(b_chan);
     true
 }
@@ -409,17 +409,17 @@ pub fn t_identity() -> bool {
     helpers::drain_stray();
     // (A) hash dal kernel == manifest di build, per due servizi da disco.
     for (svc, expected, name) in [
-        (libr::Service::Gpu, crate::HASH_GPU, "Gpu"),
-        (libr::Service::Vela, crate::HASH_VELA, "Vela"),
+        (civis::Service::Gpu, crate::HASH_GPU, "Gpu"),
+        (civis::Service::Vela, crate::HASH_VELA, "Vela"),
     ] {
-        let chan = match libr::service_lookup(svc) {
+        let chan = match civis::service_lookup(svc) {
             Ok(c) => c as u64,
             Err(_) => {
                 println!("[usertests] t51: lookup {} FAILED", name);
                 return false;
             }
         };
-        match libr::peer_info(chan) {
+        match civis::peer_info(chan) {
             Ok(h) if h == expected => {}
             Ok(h) => {
                 println!("[usertests] t51: peer_info({})={:#x} != manifest {:#x}", name, h, expected);
@@ -447,25 +447,25 @@ pub fn t_identity() -> bool {
         Some(x) => x,
         None => {
             println!("[usertests] t51: spawn K2 FAILED");
-            let _ = libr::kill(k1_pid as i64, 0);
+            let _ = civis::kill(k1_pid as i64, 0);
             let _ = helpers::wait_exit(k1_chan);
             return false;
         }
     };
-    let (h1, h2) = (libr::peer_info(k1_chan), libr::peer_info(k2_chan));
+    let (h1, h2) = (civis::peer_info(k1_chan), civis::peer_info(k2_chan));
     // spawn_cfg riporta in ack.w0 il pid (testcli risponde T_ACK con getpid,
     // come usa t50): kill diretto, nostre figlie.
     if h1.is_err() || h1 != h2 {
         println!("[usertests] t51: hash instabili tra istanze");
-        let _ = libr::kill(k1_pid as i64, 0);
+        let _ = civis::kill(k1_pid as i64, 0);
         let _ = helpers::wait_exit(k1_chan);
-        let _ = libr::kill(k2_pid as i64, 0);
+        let _ = civis::kill(k2_pid as i64, 0);
         let _ = helpers::wait_exit(k2_chan);
         return false;
     }
-    let _ = libr::kill(k1_pid as i64, 0);
+    let _ = civis::kill(k1_pid as i64, 0);
     let _ = helpers::wait_exit(k1_chan);
-    let _ = libr::kill(k2_pid as i64, 0);
+    let _ = civis::kill(k2_pid as i64, 0);
     let _ = helpers::wait_exit(k2_chan);
     // (C) same-image: X1 registra /dev/t51, X2 (stesso binario, non init-child)
     // lo rimpiazza da vivo. Kill X1 → il mount deve sopravvivere (driver X2).
@@ -488,7 +488,7 @@ pub fn t_identity() -> bool {
         Some(x) => x,
         None => {
             println!("[usertests] t51: spawn X2 FAILED");
-            let _ = libr::kill(libr::peer_pid(x1_chan).unwrap_or(-1), 0);
+            let _ = civis::kill(civis::peer_pid(x1_chan).unwrap_or(-1), 0);
             let _ = helpers::wait_exit(x1_chan);
             return false;
         }
@@ -497,26 +497,26 @@ pub fn t_identity() -> bool {
         println!("[usertests] t51: T_READY X2 mancante");
         return false;
     }
-    let x1_pid = libr::peer_pid(x1_chan).unwrap_or(-1);
-    let x2_pid = libr::peer_pid(x2_chan).unwrap_or(-1);
-    let Ok(fd) = libr::open("/dev/t51/null", 0) else {
+    let x1_pid = civis::peer_pid(x1_chan).unwrap_or(-1);
+    let x2_pid = civis::peer_pid(x2_chan).unwrap_or(-1);
+    let Ok(fd) = civis::open("/dev/t51/null", 0) else {
         println!("[usertests] t51: open pre-kill FAILED");
-        let _ = libr::kill(x1_pid, 0);
+        let _ = civis::kill(x1_pid, 0);
         let _ = helpers::wait_exit(x1_chan);
-        let _ = libr::kill(x2_pid, 0);
+        let _ = civis::kill(x2_pid, 0);
         let _ = helpers::wait_exit(x2_chan);
         return false;
     };
-    let _ = libr::close(fd);
-    let _ = libr::kill(x1_pid, 0);
+    let _ = civis::close(fd);
+    let _ = civis::kill(x1_pid, 0);
     let _ = helpers::wait_exit(x1_chan);
-    let Ok(fd) = libr::open("/dev/t51/null", 0) else {
+    let Ok(fd) = civis::open("/dev/t51/null", 0) else {
         println!("[usertests] t51: open post-kill X1 FAILED (replace same-image non passato?)");
-        let _ = libr::kill(x2_pid, 0);
+        let _ = civis::kill(x2_pid, 0);
         let _ = helpers::wait_exit(x2_chan);
         return false;
     };
-    let _ = libr::close(fd);
+    let _ = civis::close(fd);
     // (D) squat: X2 resta vivo e proprietario; Y (binario diverso) tenta il
     // replace → rifiutato. Kill X2 → mount purgato → open deve FALLIRE (se il
     // replace fosse passato, Y servirebbe e l'open riuscirebbe).
@@ -526,33 +526,33 @@ pub fn t_identity() -> bool {
         Some(x) => x,
         None => {
             println!("[usertests] t51: spawn Y FAILED");
-            let _ = libr::kill(x2_pid, 0);
+            let _ = civis::kill(x2_pid, 0);
             let _ = helpers::wait_exit(x2_chan);
             return false;
         }
     };
     if helpers::recv_ready(y_chan).is_none() {
         println!("[usertests] t51: T_READY Y mancante");
-        let _ = libr::kill(x2_pid, 0);
+        let _ = civis::kill(x2_pid, 0);
         let _ = helpers::wait_exit(x2_chan);
         return false;
     }
-    let y_pid = libr::peer_pid(y_chan).unwrap_or(-1);
-    let _ = libr::kill(x2_pid, 0);
+    let y_pid = civis::peer_pid(y_chan).unwrap_or(-1);
+    let _ = civis::kill(x2_pid, 0);
     let _ = helpers::wait_exit(x2_chan);
     // (E) canale morto → Err (stesso canale di X2, peer reclamato).
-    if libr::peer_info(x2_chan).is_ok() {
+    if civis::peer_info(x2_chan).is_ok() {
         println!("[usertests] t51: peer_info a canale morto NON rifiutato!");
-        let _ = libr::kill(y_pid, 0);
+        let _ = civis::kill(y_pid, 0);
         let _ = helpers::wait_exit(y_chan);
         return false;
     }
-    let fd = libr::open("/dev/t51/null", 0);
-    let _ = libr::kill(y_pid, 0);
+    let fd = civis::open("/dev/t51/null", 0);
+    let _ = civis::kill(y_pid, 0);
     let _ = helpers::wait_exit(y_chan);
     if let Ok(fd) = fd {
         println!("[usertests] t51: open dopo purge RIUSCITO (squat passato?)");
-        let _ = libr::close(fd);
+        let _ = civis::close(fd);
         return false;
     }
     true
@@ -567,7 +567,7 @@ pub fn t_identity() -> bool {
 /// init); (3) un byte flippato cambia il digest (init lo rifiuterebbe);
 /// (4) la chiave assente da' errore (mai dati inventati).
 pub fn t_sys_native() -> bool {
-    let fat = match libr::load_file("/fat/bin/gpu.bin") {
+    let fat = match civis::load_file("/fat/bin/gpu.bin") {
         Some(b) if !b.is_empty() => b,
         _ => {
             println!("[usertests] t58: /fat/bin/gpu.bin illeggibile");
@@ -580,12 +580,12 @@ pub fn t_sys_native() -> bool {
     // run senza drive: skip adattivo (mai FAIL per assenza).
     let mut opened = false;
     for dev in ["/dev/sdc1", "/dev/sdd1", "/dev/sdc", "/dev/sdd"] {
-        if libr::arca_open(dev).is_ok() {
+        if civis::arca_open(dev).is_ok() {
             opened = true;
             break;
         }
     }
-    if libr::arca_use_disk(true).is_err() {
+    if civis::arca_use_disk(true).is_err() {
         if opened {
             println!("[usertests] t58: USEDISK fallito");
             return false;
@@ -593,7 +593,7 @@ pub fn t_sys_native() -> bool {
         println!("[usertests] t58: nessun volume ArcaFS (ARCA_IMG=0?): salto");
         return true;
     }
-    let obj = match libr::obj_get(b"sys", b"bin/gpu.bin") {
+    let obj = match civis::obj_get(b"sys", b"bin/gpu.bin") {
         Ok(v) => v,
         Err(_) => {
             println!("[usertests] t58: obj sys/bin/gpu.bin assente");
@@ -614,20 +614,20 @@ pub fn t_sys_native() -> bool {
         println!("[usertests] t58: digest invariato dopo flip?!");
         return false;
     }
-    if libr::obj_get(b"sys", b"bin/shell-missing.bin").is_ok() {
+    if civis::obj_get(b"sys", b"bin/shell-missing.bin").is_ok() {
         println!("[usertests] t58: chiave assente restituisce dati?!");
         return false;
     }
     // Bound nomi (hygiene Fase 55): bucket > 16B e chiave > 255B rifiutati
     // loud su entrambi i lati (mai troncamento `as u8`).
     let long_bucket = [b'B'; 17];
-    if libr::obj_put(&long_bucket, b"k", b"v").is_ok() {
+    if civis::obj_put(&long_bucket, b"k", b"v").is_ok() {
         println!("[usertests] t58: bucket oltre bound accettato?!");
         return false;
     }
     let long_key = [b'K'; 256];
-    if libr::obj_put(b"sys", &long_key, b"v").is_ok()
-        || libr::obj_get(b"sys", &long_key).is_ok()
+    if civis::obj_put(b"sys", &long_key, b"v").is_ok()
+        || civis::obj_get(b"sys", &long_key).is_ok()
     {
         println!("[usertests] t58: chiave oltre bound accettata?!");
         return false;

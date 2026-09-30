@@ -2,7 +2,7 @@
 
 > Piattaforma di riferimento: **KVM** (`-accel kvm -cpu host`). I tempi TCG
 > sono emulati e NON di riferimento. Orologio: TSC in ring 3 (CR4.TSD mai
-> impostato), calibrato sul PIT via `libr::tsc_calibrate` (~4.45 GHz sul
+> impostato), calibrato sul PIT via `civis::tsc_calibrate` (~4.45 GHz sul
 > riferimento 23/24, ~1.6 GHz sull'host della campagna 25: confrontare solo
 > misure dello STESSO host). Nessuna cache nel percorso dati fino a 24
 > (25 aggiunge la cache settoriale, vedi sotto).
@@ -43,7 +43,7 @@
 
 A metà 24.2 i bench crollavano progressivamente (write ramfs 25 µs →
 2 ms) in proporzione alle op FAT precedenti — con gate verde e risultati
-corretti. Diagnosi (strumento temporaneo `libr::heap::heap_stats`,
+corretti. Diagnosi (strumento temporaneo `civis::heap::heap_stats`,
 mantenuto): la free-list first-fit di cardo cresceva di ~1 blocco a op
 FAT (temp `Vec` 4K/512 B liberati tra blocchi vivi, mai coalescibili) e
 ogni allocazione paga O(n) + O(n²) di `coalesce()` su tutte le op
@@ -171,7 +171,7 @@ Metodologia (lezioni apprese incluse):
   b4/b5 restano gli anchor storici (grow-walk / oow). ramfs: serie singola
   (hot=cold in RAM, niente DISK/cache). Iter decrescenti con la size.
 - Audit CAP single-source: `RING_DATA_CAP=4088` + `RING_MAX_PAYLOAD=4000`
-  restano l'unica sorgente in `libr` (unico straggler trovato e fissato:
+  restano l'unica sorgente in `civis` (unico straggler trovato e fissato:
   `porta` clippava a letterale `4000`). Bound distinti intoccati: server
   `expect` 4096 (scratch per-op), `DISK_MAX_SECTORS` 7×512=3584 (fit ring),
   DEV relay 4096 (pre-esistente).

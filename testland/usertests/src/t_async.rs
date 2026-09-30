@@ -5,16 +5,16 @@ use super::*;
 /// che i dati letti in modo async combacino con il contenuto atteso.
 pub fn t_fs_async() -> bool {
     helpers::drain_stray();
-    let Ok(fd) = libr::open("hello.txt", 0) else {
+    let Ok(fd) = civis::open("hello.txt", 0) else {
         println!("[usertests] t_fs_async: open hello.txt FAILED");
         return false;
     };
     // La read deve stare in un solo frame (<= RING_MAX_PAYLOAD ~4000).
-    let req = match libr::read_async(fd, 64) {
+    let req = match civis::read_async(fd, 64) {
         Ok(req) => req,
         Err(_) => {
             println!("[usertests] t_fs_async: read_async FAILED");
-            let _ = libr::close(fd);
+            let _ = civis::close(fd);
             return false;
         }
     };
@@ -24,15 +24,15 @@ pub fn t_fs_async() -> bool {
         core::hint::spin_loop();
     }
     let mut buf = [0u8; 128];
-    let n = match libr::fs_collect(req, &mut buf, 128) {
+    let n = match civis::fs_collect(req, &mut buf, 128) {
         Ok(n) => n,
         Err(e) => {
             println!("[usertests] t_fs_async: collect FAILED ({:?})", e);
-            let _ = libr::close(fd);
+            let _ = civis::close(fd);
             return false;
         }
     };
-    let _ = libr::close(fd);
+    let _ = civis::close(fd);
     if !(n >= helpers::HELLO.len() && buf[..helpers::HELLO.len()] == *helpers::HELLO) {
         println!("[usertests] t_fs_async: collect n={} (atteso >= {})", n, helpers::HELLO.len());
         return false;
@@ -40,21 +40,21 @@ pub fn t_fs_async() -> bool {
     // ADR-0019 26.3: stessa lettura via wrapper async `FsRead` (stesso
     // file, fd riaperto perche' la prima lettura ha avanzato la posizione).
     // Deve coincidere byte per byte con la collect manuale sopra.
-    let Ok(fd2) = libr::open("hello.txt", 0) else {
+    let Ok(fd2) = civis::open("hello.txt", 0) else {
         println!("[usertests] t_fs_async: reopen hello.txt FAILED");
         return false;
     };
     let mut buf2 = [0u8; 128];
-    let f = match libr::task::FsRead::new(fd2, &mut buf2, 128) {
+    let f = match civis::task::FsRead::new(fd2, &mut buf2, 128) {
         Ok(f) => f,
         Err(_) => {
             println!("[usertests] t_fs_async: FsRead::new FAILED");
-            let _ = libr::close(fd2);
+            let _ = civis::close(fd2);
             return false;
         }
     };
-    let n2 = libr::task::block_on(f);
-    let _ = libr::close(fd2);
+    let n2 = civis::task::block_on(f);
+    let _ = civis::close(fd2);
     if n2 as usize == n && buf2[..helpers::HELLO.len()] == buf[..helpers::HELLO.len()] {
         true
     } else {
@@ -87,7 +87,7 @@ pub fn t_ipc_async() -> bool {
     let mut req_ids = [0i64; K];
     for i in 0..K {
         let payload = (i as u64) + 100;
-        match libr::send_async(chan, helpers::T_REQ, payload, 0) {
+        match civis::send_async(chan, helpers::T_REQ, payload, 0) {
             Ok(r) => req_ids[i] = r,
             Err(_) => {
                 println!("[usertests] t_ipc_async: send_async#{} FAILED", i);
@@ -99,19 +99,19 @@ pub fn t_ipc_async() -> bool {
     for i in 0..K {
         let payload = (i as u64) + 100;
         loop {
-            match libr::wait_reply(req_ids[i]) {
+            match civis::wait_reply(req_ids[i]) {
                 Ok(m) => {
                     if m.req_id != req_ids[i] || m.w0 != 2 * payload {
                         fifo_ok = false;
                     }
                     break;
                 }
-                Err(libr::WaitReplyError::ServerDied { pid, .. }) if pid != srv_pid => {
+                Err(civis::WaitReplyError::ServerDied { pid, .. }) if pid != srv_pid => {
                     // Stale: EXIT_NOTIFY tardiva di un helper precedente, non
                     // del nostro server. Consumata, si continua ad attendere.
                     continue;
                 }
-                Err(libr::WaitReplyError::ServerDied { pid, code }) => {
+                Err(civis::WaitReplyError::ServerDied { pid, code }) => {
                     println!(
                         "[usertests] t_ipc_async: echo server died (pid={}, code={})",
                         pid, code
@@ -129,7 +129,7 @@ pub fn t_ipc_async() -> bool {
     if !fifo_ok {
         println!("[usertests] t_ipc_async: FIFO replies MISMATCH");
         // Chiude comunque il server prima di fallire.
-        let _ = libr::send(chan, helpers::T_STOP, 0, 0);
+        let _ = civis::send(chan, helpers::T_STOP, 0, 0);
         let _ = helpers::recv_expect(chan, helpers::T_DONE);
         return false;
     }
@@ -143,7 +143,7 @@ pub fn t_ipc_async() -> bool {
     let mut bp_reqs = [0i64; 16];
     for i in 0..16 {
         let payload = 1000 + i as u64;
-        match libr::send_async(chan, helpers::T_REQ, payload, 0) {
+        match civis::send_async(chan, helpers::T_REQ, payload, 0) {
             Ok(r) => {
                 if sent_ok < 16 {
                     bp_reqs[sent_ok] = r;
@@ -158,7 +158,7 @@ pub fn t_ipc_async() -> bool {
     }
     if !seen_bp || sent_ok == 0 {
         println!("[usertests] t_ipc_async: backpressure NOT observed (ok={})", sent_ok);
-        let _ = libr::send(chan, helpers::T_STOP, 0, 0);
+        let _ = civis::send(chan, helpers::T_STOP, 0, 0);
         let _ = helpers::recv_expect(chan, helpers::T_DONE);
         return false;
     }
@@ -166,18 +166,18 @@ pub fn t_ipc_async() -> bool {
     for i in 0..sent_ok {
         let payload = 1000 + i as u64;
         loop {
-            match libr::wait_reply(bp_reqs[i]) {
+            match civis::wait_reply(bp_reqs[i]) {
                 Ok(m) => {
                     if m.req_id != bp_reqs[i] || m.w0 != 2 * payload {
                         bp_ok = false;
                     }
                     break;
                 }
-                Err(libr::WaitReplyError::ServerDied { pid, .. }) if pid != srv_pid => {
+                Err(civis::WaitReplyError::ServerDied { pid, .. }) if pid != srv_pid => {
                     // Stale (vedi sopra): consumata, si continua.
                     continue;
                 }
-                Err(libr::WaitReplyError::ServerDied { pid, code }) => {
+                Err(civis::WaitReplyError::ServerDied { pid, code }) => {
                     println!(
                         "[usertests] t_ipc_async: echo server died (pid={}, code={})",
                         pid, code
@@ -194,13 +194,13 @@ pub fn t_ipc_async() -> bool {
     }
     if !bp_ok {
         println!("[usertests] t_ipc_async: backpressure replies MISMATCH");
-        let _ = libr::send(chan, helpers::T_STOP, 0, 0);
+        let _ = civis::send(chan, helpers::T_STOP, 0, 0);
         let _ = helpers::recv_expect(chan, helpers::T_DONE);
         return false;
     }
 
     // Chiude il server e attende il suo T_DONE.
-    if libr::send(chan, helpers::T_STOP, 0, 0).is_err() {
+    if civis::send(chan, helpers::T_STOP, 0, 0).is_err() {
         return false;
     }
     helpers::recv_expect(chan, helpers::T_DONE)
@@ -222,18 +222,18 @@ pub fn t_task_block_on() -> bool {
         }
     };
     let payload = 4242u64;
-    let req = match libr::send_async(chan, helpers::T_REQ, payload, 0) {
+    let req = match civis::send_async(chan, helpers::T_REQ, payload, 0) {
         Ok(r) => r,
         Err(_) => {
             println!("[usertests] t41: send_async FAILED");
-            let _ = libr::send(chan, helpers::T_STOP, 0, 0);
+            let _ = civis::send(chan, helpers::T_STOP, 0, 0);
             let _ = helpers::recv_expect(chan, helpers::T_DONE);
             return false;
         }
     };
-    let ok = match libr::task::block_on(libr::task::WaitReply::on_chan(req, chan)) {
+    let ok = match civis::task::block_on(civis::task::WaitReply::on_chan(req, chan)) {
         Ok(m) => m.req_id == req && m.w0 == 2 * payload,
-        Err(libr::WaitReplyError::ServerDied { pid, code }) => {
+        Err(civis::WaitReplyError::ServerDied { pid, code }) => {
             println!("[usertests] t41: echo server died (pid={}, code={})", pid, code);
             false
         }
@@ -243,7 +243,7 @@ pub fn t_task_block_on() -> bool {
         println!("[usertests] t41: reply MISMATCH");
     }
     // Teardown come t21 (anche a FAIL: niente helper appeso).
-    if libr::send(chan, helpers::T_STOP, 0, 0).is_err() {
+    if civis::send(chan, helpers::T_STOP, 0, 0).is_err() {
         return false;
     }
     ok && helpers::recv_expect(chan, helpers::T_DONE)
@@ -270,35 +270,35 @@ pub fn t_task_run() -> bool {
         Some(x) => x,
         None => {
             println!("[usertests] t42: spawn MODE_SRV(B) FAILED");
-            let _ = libr::send(chan_a, helpers::T_STOP, 0, 0);
+            let _ = civis::send(chan_a, helpers::T_STOP, 0, 0);
             let _ = helpers::recv_expect(chan_a, helpers::T_DONE);
             return false;
         }
     };
     let (pa, pb) = (7101u64, 7202u64);
-    let req_b = match libr::send_async(chan_b, helpers::T_REQ, pb, 0) {
+    let req_b = match civis::send_async(chan_b, helpers::T_REQ, pb, 0) {
         Ok(r) => r,
         Err(_) => {
             println!("[usertests] t42: send_async(B) FAILED");
             return false;
         }
     };
-    let req_a = match libr::send_async(chan_a, helpers::T_REQ, pa, 0) {
+    let req_a = match civis::send_async(chan_a, helpers::T_REQ, pa, 0) {
         Ok(r) => r,
         Err(_) => {
             println!("[usertests] t42: send_async(A) FAILED");
             return false;
         }
     };
-    let [ra, rb] = libr::task::run([
-        libr::task::WaitReply::on_chan(req_a, chan_a),
-        libr::task::WaitReply::on_chan(req_b, chan_b),
+    let [ra, rb] = civis::task::run([
+        civis::task::WaitReply::on_chan(req_a, chan_a),
+        civis::task::WaitReply::on_chan(req_b, chan_b),
     ]);
     let ok_a = matches!(ra, Ok(m) if m.req_id == req_a && m.w0 == 2 * pa);
     let ok_b = matches!(rb, Ok(m) if m.req_id == req_b && m.w0 == 2 * pb);
     // Teardown A (anche a FAIL): T_STOP + T_DONE per entrambi, come t21.
-    let stop_a = libr::send(chan_a, helpers::T_STOP, 0, 0).is_ok() && helpers::recv_expect(chan_a, helpers::T_DONE);
-    let stop_b = libr::send(chan_b, helpers::T_STOP, 0, 0).is_ok() && helpers::recv_expect(chan_b, helpers::T_DONE);
+    let stop_a = civis::send(chan_a, helpers::T_STOP, 0, 0).is_ok() && helpers::recv_expect(chan_a, helpers::T_DONE);
+    let stop_b = civis::send(chan_b, helpers::T_STOP, 0, 0).is_ok() && helpers::recv_expect(chan_b, helpers::T_DONE);
     if !(ok_a && ok_b && stop_a && stop_b) {
         println!("[usertests] t42: routing MISMATCH (a={} b={})", ok_a, ok_b);
         return false;
@@ -311,7 +311,7 @@ pub fn t_task_run() -> bool {
             return false;
         }
     };
-    let req_c = match libr::send_async(chan_c, helpers::T_REQ, 0, 0) {
+    let req_c = match civis::send_async(chan_c, helpers::T_REQ, 0, 0) {
         Ok(r) => r,
         Err(_) => {
             println!("[usertests] t42: send_async(C) FAILED");
@@ -319,15 +319,15 @@ pub fn t_task_run() -> bool {
         }
     };
     let code = -9i64;
-    if libr::kill(pid_c as i64, code).is_err() {
+    if civis::kill(pid_c as i64, code).is_err() {
         println!("[usertests] t42: kill(pid={}) FAILED", pid_c);
         return false;
     }
     // Filtro canale: le EXIT_NOTIFY di A/B (usciti sopra, altri canali) sono
     // stale e il router le scarta; solo la morte di C arriva qui.
-    match libr::task::block_on(libr::task::WaitReply::on_chan(req_c, chan_c)) {
-        Err(libr::WaitReplyError::ServerDied { pid, code: c }) if pid == pid_c && c == code => true,
-        Err(libr::WaitReplyError::ServerDied { pid, code: c }) => {
+    match civis::task::block_on(civis::task::WaitReply::on_chan(req_c, chan_c)) {
+        Err(civis::WaitReplyError::ServerDied { pid, code: c }) if pid == pid_c && c == code => true,
+        Err(civis::WaitReplyError::ServerDied { pid, code: c }) => {
             println!("[usertests] t42: ServerDied errato (pid={}, code={})", pid, c);
             false
         }
@@ -373,7 +373,7 @@ pub fn t_task_join_nested() -> bool {
     let pays = [pa, pb, pc];
     // Invii in ordine inverso (C, B, A): l'arrivo non segue l'albero.
     for &ci in &[2usize, 1, 0] {
-        match libr::send_async(chans[ci], helpers::T_REQ, pays[ci], 0) {
+        match civis::send_async(chans[ci], helpers::T_REQ, pays[ci], 0) {
             Ok(r) => reqs[ci] = r,
             Err(_) => {
                 println!("[usertests] t43: send_async FAILED");
@@ -381,21 +381,21 @@ pub fn t_task_join_nested() -> bool {
             }
         }
     }
-    let nested = libr::task::join(
-        libr::task::join(
-            libr::task::WaitReply::on_chan(reqs[0], chan_a),
-            libr::task::WaitReply::on_chan(reqs[1], chan_b),
+    let nested = civis::task::join(
+        civis::task::join(
+            civis::task::WaitReply::on_chan(reqs[0], chan_a),
+            civis::task::WaitReply::on_chan(reqs[1], chan_b),
         ),
-        libr::task::WaitReply::on_chan(reqs[2], chan_c),
+        civis::task::WaitReply::on_chan(reqs[2], chan_c),
     );
-    let ((ra, rb), rc) = libr::task::block_on(nested);
+    let ((ra, rb), rc) = civis::task::block_on(nested);
     let ok = matches!(ra, Ok(m) if m.req_id == reqs[0] && m.w0 == 2 * pa)
         && matches!(rb, Ok(m) if m.req_id == reqs[1] && m.w0 == 2 * pb)
         && matches!(rc, Ok(m) if m.req_id == reqs[2] && m.w0 == 2 * pc);
     // Teardown (anche a FAIL): T_STOP + T_DONE per tutti, come t21.
     let mut stop_ok = true;
     for &ch in &chans {
-        stop_ok &= libr::send(ch, helpers::T_STOP, 0, 0).is_ok() && helpers::recv_expect(ch, helpers::T_DONE);
+        stop_ok &= civis::send(ch, helpers::T_STOP, 0, 0).is_ok() && helpers::recv_expect(ch, helpers::T_DONE);
     }
     if !ok {
         println!("[usertests] t43: nested routing MISMATCH");

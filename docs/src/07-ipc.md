@@ -167,7 +167,7 @@ Fase 12 il kernel espone un **registry di servizi** e indirizza i messaggi per
   (ABI a 6 registri non inlinabile): la Fase 13 lo introduce come campo interno
   del messaggio, senza toccare i registri di ritorno.
 - **Migrazione**: fs/console/devfs/disk/kbd/tty si registrano per nome;
-  `libr` risolve `Fs` per nome (`fs_chan` con retry bounded); il driver
+  `civis` risolve `Fs` per nome (`fs_chan` con retry bounded); il driver
   userspace `kbd` risolve `Gpu` per nome; init sincronizza il boot
   attendendo l'ACK "Fs pronto" da cardo. Le demo storiche
   srv/cli (basate su PID dedotto) sono state rimosse dal catalogo binari.
@@ -196,7 +196,7 @@ in volo, mantenendo **intatto** il percorso sincrono (rete di sicurezza).
   prova ad accodare al peer (`try_push`); coda piena (backpressure) o canale
   morto → -1 senza consegnare nulla. Ritorna il `req_id` assegnato.
 - **`recv_nonblock`** (34): come `recv` ma coda vuota → -1 subito.
-- **Il client raccoglie** con `wait_reply(req_id)` in `libr`: `recv` bloccante
+- **Il client raccoglie** con `wait_reply(req_id)` in `civis`: `recv` bloccante
   finche' non arriva il messaggio con `req_id == req_id`.
 
 ### Vincoli del primo passo (rilassabili in futuro)
@@ -208,7 +208,7 @@ in volo, mantenendo **intatto** il percorso sincrono (rete di sicurezza).
   `wait_reply` non riordina: un messaggio diverso da quello atteso → errore.
 - **FS async = 1 operazione in volo per processo**: il formato dei frame nel
   ring SPSC non ha lunghezza payload esplicita (derivata da `ring_available`) →
-  un solo frame nel ring alla volta. `libr` espone `read_async`/`fs_collect`
+  un solo frame nel ring alla volta. `civis` espone `read_async`/`fs_collect`
   con un guard (`FS_PENDING`) che rifiuta ogni altra op FS finche' non si
   raccoglie. La risposta FS async e' un ack + frame nel response ring.
 - **Reply async persa se la coda del target e' piena** (limitazione nota: il
@@ -217,9 +217,9 @@ in volo, mantenendo **intatto** il percorso sincrono (rete di sicurezza).
 ### Esempio (IPC puro)
 
 ```rust
-let req = libr::send_async(chan, T_REQ, 42, 0)?;   // non blocca
+let req = civis::send_async(chan, T_REQ, 42, 0)?;   // non blocca
 // ... altro lavoro ...
-let m = libr::wait_reply(req)?;                    // blocca finche' arriva
+let m = civis::wait_reply(req)?;                    // blocca finche' arriva
 // m.req_id == req, m.w0 = risposta del server
 ```
 
@@ -240,7 +240,7 @@ let m = libr::wait_reply(req)?;                    // blocca finche' arriva
   notify/relay/reply (event-driven). Dettagli in
   [ADR-0011](./adr/0011-userspace-keyboard-terminal.md).
 
-## async/await in `libr` (ADR-0019, sopra le syscall 33/34 invariate)
+## async/await in `civis` (ADR-0019, sopra le syscall 33/34 invariate)
 
 Sintassi `async/await` (solo `core::future`) con **router centrale**: i task
 non chiamano mai `recv` direttamente — `block_on`/`run` sono gli unici a
@@ -285,7 +285,7 @@ bound provabile); `reclaim_one` le notifica DOPO il teardown fisico.
   e restart dei server (init-restart, Fase 14.12) implementati.
 - **Mai rispondere a `EXIT_NOTIFY`** (`drain_stray` la scarta senza reply):
   il mittente e' morto e non c'e' nessuno a leggere la risposta.
-- **Retry client su server morto** (Fase 14, init-restart): `libr::fs_send`
+- **Retry client su server morto** (Fase 14, init-restart): `civis::fs_send`
   invalida il canale cachato alla prima send fallita, ri-risolve per nome
   (bounded ~200 tick: attende un eventuale restart) e ritenta UNA volta sola.
   Caveat write at-least-once documentato. `service_pid(service)` (syscall 36)
@@ -302,11 +302,11 @@ bound provabile); `reclaim_one` le notifica DOPO il teardown fisico.
   Se in futuro un driver avrà peer diretti con stato per-client, ricavarne
   la tabella per `(chan, fd)` e purgarla come cardo.
 
-## Tag di protocollo (single source in `syscall-numbers`, via `libr`)
+## Tag di protocollo (single source in `syscall-numbers`, via `civis`)
 
-Tutti i tag sotto vivono in `syscall-numbers` e sono riesportati da `libr`
-(i server/test usano i path `libr::`, mai i valori). Centralizzazione DocsB:
-prima `FS_REGISTER`/`FS_BUF_REG` vivevano in `libr`+cardo+block,
+Tutti i tag sotto vivono in `syscall-numbers` e sono riesportati da `civis`
+(i server/test usano i path `civis::`, mai i valori). Centralizzazione DocsB:
+prima `FS_REGISTER`/`FS_BUF_REG` vivevano in `civis`+cardo+block,
 `SVC_READY`/`TEST_DONE` in init, `KBD_NOTIFY` in tty+kbd (piu' letterali
 nei test).
 

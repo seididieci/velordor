@@ -3,7 +3,7 @@
 //! Legge il CMOS/RTC (`0x70/0x71`, porte concesse da init) una volta
 //! all'avvio e serve `TIME_NOW` (secondi epoch UTC + centesimi) sul servizio
 //! `Time`. Il tempo poi avanza sul monotono PIT, mai piu' sull'hardware.
-//! Clienti: cardo (mtime), log futuri, qualunque servizio (via `libr::time`).
+//! Clienti: cardo (mtime), log futuri, qualunque servizio (via `civis::time`).
 
 #![no_std]
 #![no_main]
@@ -11,16 +11,16 @@
 mod cmos;
 mod server;
 
-use libr::println;
+use civis::println;
 
-libr::entry!(real_main);
+civis::entry!(real_main);
 fn real_main(_sp: u64) -> ! {
-    println!("[usertime] starting, pid={}", libr::getpid());
+    println!("[usertime] starting, pid={}", civis::getpid());
     server::run()
 }
 
 #[panic_handler]
 fn panic(_info: &core::panic::PanicInfo) -> ! {
     println!("[usertime] panic");
-    libr::exit(1)
+    civis::exit(1)
 }

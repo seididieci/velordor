@@ -3,7 +3,7 @@ use super::*;
 // ── Mount (registrazione FS puramente async) ────────────────────────
 // Vedi doc in testa: MAI send sincrone verso cardo. Ring FS propri (allocati
 // raw, mappati qui, mai iniettati da nessuno) + FS_BUF_REG / R_REGISTER via
-// send_async + collect per req_id. Una sola op FS in volo (come libr).
+// send_async + collect per req_id. Una sola op FS in volo (come civis).
 
 /// Stato della registrazione FS: handshake poi un prefix alla volta.
 /// SENZA throttle: ogni tentativo fallito si riprova al prossimo wakeup (i
@@ -39,7 +39,7 @@ impl FsReg {
     /// Reset dopo morte di cardo (EXIT_NOTIFY): mounts purgati di la', i ring
     /// resettati di qua', si ricomincia da handshake + primo nodo.
     pub(crate) fn reset(&mut self) {
-        libr::println!("[block] reset registrazione FS (cardo morto)");
+        civis::println!("[block] reset registrazione FS (cardo morto)");
         self.chan = None;
         self.bufreg_done = false;
         self.pending = None;
@@ -65,7 +65,7 @@ impl FsReg {
         // Canale (re-lookup se assente/stale: la send_async fallita lo azzera).
         let chan = match self.chan {
             Some(c) => c,
-            None => match libr::service_lookup(libr::Service::Cardo) {
+            None => match civis::service_lookup(civis::Service::Cardo) {
                 Ok(c) => {
                     self.chan = Some(c as u64);
                     self.bufreg_done = false;
@@ -77,7 +77,7 @@ impl FsReg {
             },
         };
         if !self.bufreg_done {
-            match libr::send_async(chan, FS_BUF_REG, self.fs_req_phys, self.fs_resp_phys) {
+            match civis::send_async(chan, FS_BUF_REG, self.fs_req_phys, self.fs_resp_phys) {
                 Ok(req) => {
                     self.pending = Some(req);
                 }
@@ -94,7 +94,7 @@ impl FsReg {
         if !rings::fs_req_write(R_REGISTER, bytes.len() as u64, 0, bytes) {
             return;
         }
-        match libr::send_async(chan, FS_REGISTER, 0, 0) {
+        match civis::send_async(chan, FS_REGISTER, 0, 0) {
             Ok(req) => {
                 self.pending = Some(req);
             }
@@ -123,7 +123,7 @@ impl FsReg {
         match rings::fs_resp_read() {
             Some(0) => {
                 self.pending = None;
-                libr::println!("[block] registered {} with cardo", prefixes[self.idx]);
+                civis::println!("[block] registered {} with cardo", prefixes[self.idx]);
                 self.idx += 1;
             }
             _ => {

@@ -256,7 +256,7 @@ il cap:
 Il 30% rimanente resta ai processi fixed-priority (e assorbe gli overrun).
 Oltre il cap la richiesta viene **rifiutata** (syscall ritorna -1).
 
-## Syscall CBS e wrappers libr (Fase 11.4)
+## Syscall CBS e wrappers civis (Fase 11.4)
 
 | Numero | Syscall | Semantica |
 |--------|---------|-----------|
@@ -264,7 +264,7 @@ Oltre il cap la richiesta viene **rifiutata** (syscall ritorna -1).
 | 29 | `cbs_attach(server_id)` | lega il server al processo corrente |
 | 30 | `cbs_get_info(server_id)` | budget/period/remaining del server (debug/test; niente bandwidth) |
 
-Wrapper in `libr` (`libs/libr/src/lib.rs`):
+Wrapper in `civis` (`libs/civis/src/lib.rs`):
 
 ```rust
 pub fn cbs_create(budget_ticks: u32, period_ticks: u32) -> Result<i64, ()>;
@@ -275,8 +275,8 @@ pub fn cbs_get_info(server_id: i64) -> Option<CbsInfo>;   // budget/period/remai
 ### Uso tipico (processo "audio")
 
 ```rust
-match libr::cbs_create(2, 10) {           // Q=2, P=10 → 20% garantito
-    Ok(id) => { libr::cbs_attach(id).ok()?; }
+match civis::cbs_create(2, 10) {           // Q=2, P=10 → 20% garantito
+    Ok(id) => { civis::cbs_attach(id).ok()?; }
     Err(()) => return,                     // admission rifiutato
 }
 loop {
@@ -288,7 +288,7 @@ loop {
 ## Verifica
 
 **Stato attuale**: CBS implementato nel kernel (`ordo/aegis.rs` + integrazione
-`on_tick`), syscall 28-30 e wrappers libr completi, test specifici CBS (t18
+`on_tick`), syscall 28-30 e wrappers civis completi, test specifici CBS (t18
 admission + t19 bandwidth) implementati e verdi. Lo scheduler RT e' l'unico
 scheduler (il classico a 3 priorita' e' stato rimosso dopo la validazione) —
 il CBS non interferisce con i processi che non lo usano.

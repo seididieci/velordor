@@ -3,7 +3,7 @@ use super::spawn::SPAWN_IMAGE_MAX;
 
 /// exec_image(img_ptr, img_len, args_ptr, args_len): sostituisce l'immagine
 /// del CHIAMANTE con l'ELF in sua memoria (Fase 37; argv in 37.1.2). Il kernel
-/// non tocca mai il FS (ADR-0005): caricare da path e' compito di `libr::exec`
+/// non tocca mai il FS (ADR-0005): caricare da path e' compito di `civis::exec`
 /// (load_file + questa syscall). `args_len == 0` = nessun argv (argc=0, come
 /// `exec_image`); altrimenti blocco `[argc:8][envc:8][payload]` entro
 /// `ARGS_MAX` (env = byte opachi, mai ispezionati: kernel neutro).

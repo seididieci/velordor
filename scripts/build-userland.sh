@@ -16,6 +16,11 @@ BUILD="userland/build"
 TARGET_DIR="$BUILD/target"
 export CARGO_TARGET_DIR="$TARGET_DIR"
 
+# Fase 58.4: i .bin sono per-dir (nativi qui, POSIX in flavours/posix/build).
+# Pulisco i .bin stantii (es. binari POSIX prima dello spostamento) cosi' il
+# manifest degli hash non li vede due volte (E0428 duplicate const).
+rm -f "$BUILD"/*.bin
+
 # Suite di test: di default init la SALTA (feature `skip_tests`, boot di
 # produzione dritto alla shell). Con RUN_TESTS=1 (run-tests.sh) init
 # viene compilato con `--no-default-features` ed esegue la suite completa.
@@ -40,22 +45,22 @@ build_one userland/gpu     userland/gpu/src/gpu.ld         gpu.bin         gpu
 build_one userland/kbd     userland/kbd/src/kbd.ld         kbd.bin         kbd
 build_one userland/porta   userland/porta/src/porta.ld     porta.bin       porta
 build_one userland/uptime  userland/uptime/src/uptime.ld   useruptime.bin  useruptime
-# Server di personalita' POSIX (Fase 40.3, P1): skeleton supervisionato, prima
-# di gen-service-hashes cosi' il manifest Strato 2 lo copre (HASH_USERPOSIX).
-build_one userland/posix    userland/posix/src/posix.ld     userposix.bin   userposix
-build_one userland/shell   userland/shell/src/shell.ld     usershell.bin   usershell
 # Fornitore di data/ora (Fase 50, P1 orologio): prima di gen-service-hashes
 # cosi' il manifest Strato 2 lo copre (HASH_USERTIME).
 build_one userland/time     userland/time/src/time.ld       usertime.bin    usertime
 # Gateway centrale di logging L1 (Fase 57, ADR-0039): prima di
 # gen-service-hashes cosi' il manifest Strato 2 lo copre (HASH_VESTIGIA).
 build_one userland/vestigia userland/vestigia/src/vestigia.ld vestigia.bin   vestigia
-# Primo programma lanciabile dalla shell (Fase 37.2, `run`): NON e' un
-# servizio (init non lo spawna), vive in /bin come gli altri binari da disco.
-build_one userland/runhello userland/runhello/src/runhello.ld userrunhello.bin userrunhello
-# Tool guest ArcaFS (Fase 54, P5): `list`/`stat` dalla shell, in /bin come
-# runhello. Prima di gen-service-hashes (policy restrittiva per hash).
-build_one userland/arca    userland/arca/src/arca.ld         userarca.bin    userarca
+# Tool guest ArcaFS (Fase 54, P5; Fase 58.4: dir `userland/tools/`): `list`/
+# `stat` dalla shell, in /bin. Nativo (solo meccanismo) ma usa `libr::entry!`
+# per onorare il redirect. Prima di gen-service-hashes (policy restrittiva).
+build_one userland/tools/arca userland/tools/arca/src/arca.ld userarca.bin userarca
+
+# Personalita' POSIX (Fase 58.4, ADR-0041): server/shell/cli vivono in
+# flavours/posix/ e producono flavours/posix/build/*.bin. Costruiti PRIMA di
+# gen-service-hashes cosi' il manifest Strato 2 li copre (HASH_USERPOSIX,
+# HASH_USERSHELL, HASH_USERRUNHELLO).
+bash scripts/build-posix.sh
 
 # Manifest degli hash dei servizi (Fase 36, Strato 2): FNV-1a sui `.bin`
 # appena prodotti. fs e init vengono DOPO perche' lo includono a compile time

@@ -2,7 +2,8 @@
 
 > I conteggi di suite citati negli ADR e nelle sotto-fasi del libro sono
 > **snapshot all'epoca** di ciascuna fase (es. 17/17, 21/21, 32/32). Il gate
-> corrente e' quello qui sotto (5/5 + 7/7 + 40/40 + 58/58 + shell) e in `AGENTS.md`.
+> corrente e' quello qui sotto (5/5 + 7/7 + 40/40 + 4/4 + 54/54 + shell) e in
+> `AGENTS.md`.
 
 La regressione automatica del sistema gira **dentro QEMU** a ogni boot: i
 binari di test sono processi user reali, spawnati da `init` in sequenza prima
@@ -11,14 +12,18 @@ della shell.
 ## Layout
 
 ```
-userland/   SOLO binari "ad uso utente": init, console, fs, devfs, shell, uptime,
-            kbd, tty, disk (Fase 15/16)
-libs/libr   libreria di sistema condivisa (runtime + allocatore)
-testland/   test suite + repro + demo storiche
+userland/   servizi NATIVI: init, block, cardo, gpu, kbd, vela, porta,
+            vestigia, time, uptime; tools/arca
+libs/civis  meccanismo di sistema condiviso (runtime + allocatore)
+flavours/posix/
+            personalita' POSIX (ADR-0041): libr (crate di traduzione),
+            server (posix-server), shell, cli (runhello)
+  tests         userposixtests — personalita' POSIX (errno/fd/redirect/jobctl) → PASS 4/4
+testland/   test suite meccanismo + repro + demo storiche
   testfs        usertestfs   — ramfs (read/write/mkdir/errori)   → PASS 5/5
   testfat       usertestfat  — FAT32 scrivibile (Fase 20) + /dev/null, /dev/zero → PASS 7/7
   testsarca     usertestsarca — ArcaFS P5+A1+56.1+56.2a+56.2b+56.2c (B+tree COW + commit, recovery/GC + sys-dal-volume) + logging L1 Fase 57 (gateway `Log` RAM-first, bucket per identita', seal, stats, bounce) → PASS 40/40
-  usertests     usertests    — suite completa (58 test)          → PASS 58/58
+  usertests     usertests    — suite meccanismo (54 test)        → PASS 54/54
   usertest-client usertestcli  — helper a modalita' (ECHO/ZEROREAD/NULLW/SRV/CHURN/KILLME/SRVDIE/SYNCWAIT/MNTDIE/OPENDIE/MAPHAMMER/FLOOD/NEST/FAULT_*/SHMDEMO/COWDEMO/FORKDEMO/ORPHAN/HARDEN/REG51/EXECDEMO/DUPCLAIM/DUPGRANT/DUPSIBCLAIM/SEEKDENY/SUSPENDENY/SIGCATCH/GRANTDENY)
   usertest-spin  usertestspin  — busy-loop a budget di tick (batch 512 spin puri, priorita' via SpawnMeta) + ramo SQUAT (sonda di squat FS_REGISTER, t51)
   utcbstest     utcbstest    — helper CBS: crea server e si attacha (Fase 11.5)
@@ -46,7 +51,10 @@ cardo (path e file di lavoro) e la sequenza rende output e PID deterministici
 (con i ring SPSC per-processo, Fase 10.2, nessuna race da buffer condivisi).
 La shell e' spawnata per ultima. `run-tests.sh` esporta `ARCA_IMG=1`: il gate
 ha terzo e quarto drive ArcaFS (MBR + GPT in partizione), quindi `testsarca`
-gira 33/33 (senza drive il core resta PASS, n/n adattivo).
+gira 40/40 (senza drive il core resta PASS, n/n adattivo).
+
+Ordine di suite: testfs, testfat, testsarca, **posixtests**, usertests
+(posixtests PRIMA di usertests cosi' t54 precede i drop di diritti di t34).
 
 Righe di gate:
 
@@ -54,7 +62,8 @@ Righe di gate:
 [testfs] PASS 5/5
 [testfat] PASS 7/7
 [testsarca] PASS 40/40
-[usertests] PASS 58/58
+[posixtests] PASS 4/4
+[usertests] PASS 54/54
 ```
 
 ## Test shell interattivi (QEMU + sendkey, fuori dal gate kernel)
@@ -101,8 +110,8 @@ di init non matcha i binari su disco e il boot fallisce loud).
 > passati dai test restano rispettati; il boot aggiunge `-cpu host` come
 > `bench.sh`.
 
-## Cosa copre `usertests` (58 test; t34 per ultimo: i drop dei diritti sono
-irrevocabili sul canale della suite)
+## Cosa copre `usertests` (54 test meccanismo; t34 per ultimo: i drop dei
+diritti sono irrevocabili sul canale della suite)
 
 | Test | Cosa verifica |
 |------|----------------|
@@ -157,14 +166,23 @@ irrevocabili sul canale della suite)
 | t50 | hardening (Fase 35, ADR-0026): un helper prova a killare un fratello (non suo figlio) e a registrare un servizio di sistema (`Init`) → entrambi rifiutati; usertests prova `map_physical` di RAM del kernel (0x100000) → rifiutato; prova a killare devfs (non suo figlio) → rifiutato (servizio vivo) |
 | t51 | identita' misurata (Fase 36, ADR-0027): `peer_info` su Console/Devfs == manifest generato; stabilita' hash tra istanze; same-image positivo (X2 rimpiazza X1 vivo non-init-child, il mount sopravvive al kill); squat con hash diverso rifiutato (mount purgato, open fallisce); `peer_info` a canale morto → Err (helper REG51 + ramo SQUAT di spin) |
 | t52 | exec in-place (Fase 37.0 nucleo + 37.1 argv, env in 43a): helper EXECDEMO diventa testspin su T_GO — stesso PID (T_ACK pre/post), hash rimisurato (diverso da prima, uguale a spin fresco), nuova immagine operativa (T_DONE); gamba argv+env (w1=1, exec ["ARGPROBE","hello","world"] + `T52E=envok`) con report T_DONE(argc,fnv) dal fresh `_start` (env verificato dalla sonda: assente = T_DONE(0,0)); reap via `poll_gone` (i `recv_done` consumano le EXIT_NOTIFY: `wait_exit` dopo sarebbe hang) |
-| t53 | fondamenta posix (Fase 39, ADR-0030; skeleton 40.3; pipe 42, ADR-0032): `Posix` registrato e supervisionato (lookup ok, pid figlio di init), tabella `to_errno` totale (17 varianti: 15 + `Empty`/`Closed`→EAGAIN/EPIPE), `R_PIPE_CREATE` 0x20, gate di registrazione sul nuovo slot 8 via helper HARDEN esteso (kill + register Init + register Posix rifiutati) |
-| t54 | fd virtuali + redirect a livello libr/server (Fase 40.5): `O_TRUNC` (size 0 + rewrite), `O_APPEND` (offset ignorato), `lseek` SET/CUR/END + oltre-EOF lecito + negativo/whence-ignota/remoto = `Invalid` con offset invariato, codici esatti (`NotFound`/`IsDir`/`Exists`/`Invalid`, grant remoto e claim ignoto), handoff DUP modello B (claim con offset copiato, single-use, cancel, attestazione parentela via sibling: helper DUPCLAIM/DUPGRANT/DUPSIBCLAIM), routing stdio diretto (println→file, stdin drain+EOF, restore), diniego SEEK via diritti (helper SEEKDENY → `Failed`); fixture `/t54*` con cleanup |
-| t55 | suspend/resume (Fase 44a, ADR-0035): gate (self/morto rifiutati, idempotenza, resume no-op), figlio running con TIME congelato su ~40 tick + resume→T_DONE/exit 0, figlio bloccato con `send_async` accodata senza sveglia + reply su resume, hardening non-parent (helper SUSPENDENY) |
-| t56 | cancel cooperativo + escalation (Fase 44b, ADR-0036): catcher esce 42 al `JOB_CANCEL` senza kill; KILLME vivo oltre il grace poi esce 130 via `kill(EXIT_SIGINT)` |
 | t57 | policy su identita' (Fase 45, ADR-0037): helper noto (riga test-policy ALL) — GET default ALL, drop GRANT→grant negato, drop PIPE→pipe_create negata, op valida dopo; attore ignoto `foreign.bin` fuori tabella policy — mount/grant/pipe_create negati dal default fail-closed (0x19F), open+read+write+seek lecite; read valida dopo i rifiuti (anti-wedge ring) |
 | t58 | bucket `sys` nativo + BLAKE2s (Fase 55, N0; 56.2c: bind tollerante all'auto-bind, skip adattivo senza volume): oggetto sys/bin/gpu.bin byte-identico a /fat/bin/gpu.bin, blake2s == manifest `BLAKE_*` (stesso predicato di `verify_image` in init), byte flippato → digest diverso (rifiuto), chiave assente → errore, bound nomi oltre 16/255B rifiutati (hygiene, mai troncamento) |
 | t34 | diritti per-canale lato server (Fase 17, per ultimo: drop irrevocabili): GET default ALL+root, drop WRITE (write -1/read ok), drop MOUNT+subtree /fat (mount/open-fuori -1, open-dentro+read+readdir-dentro ok, readdir-fuori -1), widen rifiutato + GET conferma |
 | testsarca | ArcaFS P5+A1+56.1+56.2b+56.2c (Fase 54/55/56, binario separato `usertestsarca`, 40 check): vettori BLAKE2s (empty/abc/lungo), `R_GET_HASH` ramfs == ricalcolo, tamper→hash diverso, round-trip `R_OBJ_PUT/GET` piccolo, chunking 10000B, chiave assente→errore, scan per magic ACFS (whole-disk + sda1..sda4), mount `/arca` + open/readdir rifiutati + umount, protective-MBR GPT (byte 450) + ACFS in partizione GPT + mount/umount, versioni (catena + latest), snap create, rollback come nuova head, snap delete, retention 8, delete oggetto, clone bucket, stat/get_id, open volume + alloc distinti + write/read nodi + stat volume + free/realloc LIFO + rifiuti allocatore, bind motore + seed `sys` (USEDISK, commit per-op), semantica 56.1 identica su blocchi (round-trip, chunking 10000B, catena, snap, rollback, retention 8, delete, clone, stat/get_id), split multi-livello 120 chiavi, overflow 3000B + chiavi lunghe + bound, refcount pin oltre delete, crash kill-cardo + remount LOAD (dati committati intatti, gen monotona, R/W riparte), logging L1 Fase 57 (Vestigia registrato, append + read latest own-bucket, msg 1024B, rifiuti + giorno ignoto, seal + delete, stats con flush-proof, bounce + rewarm). Con `ARCA_IMG=0` (run manuale) salta 22-33 e resta PASS sul core |
+
+## Cosa copre `posixtests` (4 test; personalita' POSIX, ADR-0041)
+
+Binario separato `userposixtests` (`flavours/posix/tests`), spawnato da init
+PRIMA di `usertests`. Fissa la traduzione POSIX (errno, fd virtuali/redirect,
+job control) sopra il meccanismo `civis`.
+
+| Test | Cosa verifica |
+|------|----------------|
+| t53 | fondamenta posix (Fase 39, ADR-0030; skeleton 40.3; pipe 42, ADR-0032): `Posix` registrato e supervisionato (lookup ok, pid figlio di init), tabella `to_errno` totale (17 varianti: 15 + `Empty`/`Closed`→EAGAIN/EPIPE), `R_PIPE_CREATE` 0x20, gate di registrazione sul nuovo slot 8 via helper HARDEN esteso (kill + register Init + register Posix rifiutati) |
+| t54 | fd virtuali + redirect a livello libr/server (Fase 40.5): `O_TRUNC` (size 0 + rewrite), `O_APPEND` (offset ignorato), `lseek` SET/CUR/END + oltre-EOF lecito + negativo/whence-ignota/remoto = `Invalid` con offset invariato, codici esatti (`NotFound`/`IsDir`/`Exists`/`Invalid`, grant remoto e claim ignoto), handoff DUP modello B (claim con offset copiato, single-use, cancel, attestazione parentela via sibling: helper DUPCLAIM/DUPGRANT/DUPSIBCLAIM), routing stdio diretto (println→file, stdin drain+EOF, restore), diniego SEEK via diritti (helper SEEKDENY → `Failed`); fixture `/t54*` con cleanup |
+| t55 | suspend/resume (Fase 44a, ADR-0035): gate (self/morto rifiutati, idempotenza, resume no-op), figlio running con TIME congelato su ~40 tick + resume→T_DONE/exit 0, figlio bloccato con `send_async` accodata senza sveglia + reply su resume, hardening non-parent (helper SUSPENDENY) |
+| t56 | cancel cooperativo + escalation (Fase 44b, ADR-0036): catcher esce 42 al `JOB_CANCEL` senza kill; KILLME vivo oltre il grace poi esce 130 via `kill(EXIT_SIGINT)` |
 
 > Il CBS e' sempre attivo (lo scheduler RT e' l'unico): t18/t19 sono test
 > reali, non ci sono modalita' "vuote".
@@ -190,7 +208,7 @@ irrevocabili sul canale della suite)
   (`usertestspin`/`utspin_norm`/`utspin_high`) sullo stesso binario embedded;
   oggi solo init/disk/fs restano embedded.
 - **Polling throttled nei test di restart (t27/t28)**: le attese di
-  operativita' riprovano ogni ~20 tick via `libr::poll_wait`/`open_wait`,
+  operativita' riprovano ogni ~20 tick via `civis::poll_wait`/`open_wait`,
   MAI in busy-loop su syscall FS. Igiene da buon vicinato (Livello 1):
   ogni tentativo e' un round-trip servito da cardo e non c'e' motivo di
   inondarlo. NOTA di onesta': l'attribuzione causale del vecchio FAIL t27
@@ -202,5 +220,5 @@ irrevocabili sul canale della suite)
 - **Binario copiato per processo** (`user_binary.rs::copy_binary`): i frame del
   binario embedded vengono copiati in frame privati a ogni spawn. Mappare gli
   stessi frame a piu' processi condividerebbe `.bss`/`.data` mutabili (es. la
-  free-list dell'allocatore di `libr`) e corromperebbe lo stato di due istanze
+  free-list dell'allocatore di `civis`) e corromperebbe lo stato di due istanze
   della stessa bin.

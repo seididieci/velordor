@@ -114,7 +114,7 @@ struct NamedBinary {
 /// Fase 38.0d (ATA DMA): + spazio di configurazione PCI (`0xCF8-0xCFF`, per
 /// trovare il PIIX3-IDE e programmarne la BAR4 — col boot diretto PVH nessun
 /// BIOS lo fa) + finestra Bus-Master `0xC000-0xC00F` scelta da block
-/// (`libr::pci::BM_BASE`, QEMU-scoped: sopra il legacy nulla e' programmato).
+/// (`civis::pci::BM_BASE`, QEMU-scoped: sopra il legacy nulla e' programmato).
 /// Il conf arriva a `0xCFF` (NON `0xCFC`): la CPU controlla TUTTE le porte
 /// della width e un DWORD a `0xCFC` tocca `CFD/CFE/CFF` — con fine `0xCFC`
 /// l'`inl` fa #GP (osservato: `out` a `CF8` ok, `in` a `CFC` kill). Stessa

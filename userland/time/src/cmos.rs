@@ -28,9 +28,9 @@ const REG_STATUS_B: u8 = 0x0B;
 /// valore corrente (mai abilitare/disabilitare l'NMI di nascosto).
 fn cmos_read(reg: u8) -> u8 {
     unsafe {
-        let addr = libr::pio::inb(CMOS_ADDR);
-        libr::pio::outb(CMOS_ADDR, (addr & 0x80) | (reg & 0x7F));
-        libr::pio::inb(CMOS_DATA)
+        let addr = civis::pio::inb(CMOS_ADDR);
+        civis::pio::outb(CMOS_ADDR, (addr & 0x80) | (reg & 0x7F));
+        civis::pio::inb(CMOS_DATA)
     }
 }
 
@@ -100,7 +100,7 @@ fn read_stable() -> RtcRaw {
 /// (monotono salvo, wall-clock da verificare nei test).
 pub fn read_epoch() -> Option<(u64, i64)> {
     let raw = read_stable();
-    let tick_base = libr::get_ticks();
+    let tick_base = civis::get_ticks();
     let status_b = cmos_read(REG_STATUS_B);
     // Status B: bit 2 = 24h (senza: 12h + bit 7 PM su hour), bit 1 = binario
     // (senza: BCD). Campionati dopo i dati: se un update li ha cambiati nel
@@ -141,7 +141,7 @@ pub fn read_epoch() -> Option<(u64, i64)> {
     {
         return None;
     }
-    let days = libr::time::days_from_civil(year, month, day);
+    let days = civis::time::days_from_civil(year, month, day);
     let epoch = days * 86_400 + hour * 3600 + min * 60 + sec;
     if epoch < 0 {
         return None;

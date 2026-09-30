@@ -16,6 +16,10 @@ BUILD="testland/build"
 TARGET_DIR="$BUILD/target"
 export CARGO_TARGET_DIR="$TARGET_DIR"
 
+# Fase 58.5: i .bin test stanno in testland/build (meccanismo) e
+# flavours/posix/tests/build (personalita' POSIX). Pulisco i .bin stantii.
+rm -f "$BUILD"/*.bin flavours/posix/tests/build/*.bin
+
 # Manifest hash dei servizi (Fase 36): generato da build-userland.sh (che gira
 # sempre prima, vedi run.sh). Riesportato qui per i crate test che lo
 # includono (usertests t51: peer_info atteso); se manca, fail loud subito.
@@ -41,6 +45,11 @@ build_one testland/bench testland/bench/src/bench.ld userbench.bin userbench
 # policy (gen-test-policy.sh lo salta per nome) per provare il default
 # restrittivo fail-closed sugli hash fuori manifest.
 build_one testland/foreign testland/foreign/src/foreign.ld userforeign.bin userforeign
+
+# Suite test della personalita' POSIX (Fase 58.5, ADR-0041): binario in
+# flavours/posix/tests, output in flavours/posix/tests/build (BUILD override;
+# CARGO_TARGET_DIR resta quello testland). Coperta da gen-test-policy.sh.
+BUILD="flavours/posix/tests/build" build_one flavours/posix/tests flavours/posix/tests/src/posixtests.ld userposixtests.bin userposixtests
 
 # Tabella policy test (Fase 45, sandbox build): hash testland -> ALL, inclusa
 # SOLO da cardo (niente ciclo: i test non la includono). Segue il rebuild di

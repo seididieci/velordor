@@ -1,4 +1,4 @@
-//! Demo utente (Fase 6.4): processo in ring 3 che usa `libr` per chiamare le
+//! Demo utente (Fase 6.4): processo in ring 3 che usa `civis` per chiamare le
 //! syscall del kernel.
 //!
 //! Flusso:
@@ -14,18 +14,18 @@
 #![no_std]
 #![no_main]
 
-use libr;
-use libr::{println};
+use civis;
+use civis::{println};
 
 /// Scrive il messaggio iniziale con il pid del processo.
 fn start() {
-    let pid = libr::getpid();
+    let pid = civis::getpid();
     println!("[demo] hello from userland, pid={}", pid);
 }
 
 /// Entry della demo: messaggio iniziale poi busy-loop con tick periodici.
 /// Il kernel carica RIP a USER_CODE = indirizzo di `_start` (inizio `.text`).
-libr::entry!(real_main);
+civis::entry!(real_main);
 fn real_main(_sp: u64) -> ! {
     start();
 
@@ -36,7 +36,7 @@ fn real_main(_sp: u64) -> ! {
         // Ogni ~100M iterazioni scrive un tick: tempo abbastanza lungo per
         // lasciar girare gli altri processi tra un tick e l'altro.
         if counter % 100_000_000 == 0 {
-            let _ = libr::write(1, msg.as_ptr(), msg.len());
+            let _ = civis::write(1, msg.as_ptr(), msg.len());
             counter = 0;
         }
     }
@@ -45,5 +45,5 @@ fn real_main(_sp: u64) -> ! {
 #[panic_handler]
 fn panic(_info: &core::panic::PanicInfo) -> ! {
     println!("[demo] panic");
-    libr::exit(1)
+    civis::exit(1)
 }

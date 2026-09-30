@@ -346,7 +346,7 @@ pub fn seed_put(
     key: &[u8],
     data: &[u8],
 ) -> Option<usize> {
-    if bucket.len() > libr::OBJ_BUCKET_MAX || key.len() > libr::OBJ_KEY_MAX {
+    if bucket.len() > civis::OBJ_BUCKET_MAX || key.len() > civis::OBJ_KEY_MAX {
         return None;
     }
     eng.put_chunk(bucket, key, 0, data, crate::wall::wall_secs(), RETAIN)
@@ -358,7 +358,7 @@ pub fn seed_put(
 
 #[inline(never)]
 fn bounds_invalid(bucket: &[u8], key: &[u8]) -> bool {
-    bucket.len() > libr::OBJ_BUCKET_MAX || key.len() > libr::OBJ_KEY_MAX
+    bucket.len() > civis::OBJ_BUCKET_MAX || key.len() > civis::OBJ_KEY_MAX
 }
 
 #[inline(never)]

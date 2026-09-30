@@ -17,10 +17,10 @@
 
 extern crate alloc;
 
-// Port I/O (A4): single source in `libr::pio` (i call site `io::*` restano).
-use libr::pio as io;
+// Port I/O (A4): single source in `civis::pio` (i call site `io::*` restano).
+use civis::pio as io;
 
-use libr::println;
+use civis::println;
 
 // ── IPC tags da cardo ──────────────────────────────────────────────
 
@@ -31,19 +31,19 @@ use libr::println;
 // Ready → dilution dello scheduler, vedi diagnosi t30 Fase 15).
 
 // ── IPC tags + device type (DocsD: single source in `syscall-numbers`) ─
-use libr::{DEV_CLOSE, DEV_KBD, DEV_OPEN, DEV_READ, DEV_READDIR, DEV_WRITE};
+use civis::{DEV_CLOSE, DEV_KBD, DEV_OPEN, DEV_READ, DEV_READDIR, DEV_WRITE};
 
 /// Notify a tty: scancode in attesa (w1 = quanti, hint).
-/// Single source in `syscall-numbers` (DocsB), via `libr`.
-use libr::KBD_NOTIFY;
+/// Single source in `syscall-numbers` (DocsB), via `civis`.
+use civis::KBD_NOTIFY;
 
 // ── Ring I/O (Fase 10.2, stesso pattern di vela) ───────────────────
 // La response del client va nella finestra CLI_RESP_VA (mappata da cardo
 // con i ring del client a ogni relay DEV).
 
-const RESP_RING_VA: u64 = libr::CLI_RESP_VA;
-// Geometria ring + errore IPC (A1): single source in `libr` (ERR ancora usato).
-use libr::ERR;
+const RESP_RING_VA: u64 = civis::CLI_RESP_VA;
+// Geometria ring + errore IPC (A1): single source in `civis` (ERR ancora usato).
+use civis::ERR;
 
 // ── Porte PS/2 + coda scancode (R3): casa `vela::input` (mossi tali e quali,
 // il driver li riusa da li' — primo accumulo Vela).
@@ -146,19 +146,19 @@ fn drain_hw(q: &mut ScanQueue) {
     }
 }
 
-// Frame helper response (A2): single source in `libr` (prima identica qui).
-use libr::resp_frame_write;
+// Frame helper response (A2): single source in `civis` (prima identica qui).
+use civis::resp_frame_write;
 
 /// Assicura il mount "/dev/kbd" presso cardo (stesso pattern di vela,
 /// `ensure_mounted`): attende Fs via soli lookup, poi UN tentativo; se
 /// fallisce ricomincia. Unbounded: senza Fs il driver e' comunque inutile.
 fn ensure_mounted() {
-    libr::ensure_fs_mount(|| libr::fs_register(b"/dev/kbd"));
+    civis::ensure_fs_mount(|| civis::fs_register(b"/dev/kbd"));
 }
 
-libr::entry!(real_main);
+civis::entry!(real_main);
 fn real_main(_sp: u64) -> ! {
-    println!("[kbd] starting, pid={}", libr::getpid());
+    println!("[kbd] starting, pid={}", civis::getpid());
 
     // Hardware prima di tutto: da qui in poi gli IRQ1 arrivano e il kernel ci
     // sveglia (il servizio non e' ancora registrato: i wake vanno persi ma
@@ -167,7 +167,7 @@ fn real_main(_sp: u64) -> ! {
 
     // Registra il servizio Kbd per nome (ADR-0008): il kernel risolve l'owner
     // su IRQ1 per il wake.
-    if libr::service_register(libr::Service::Kbd).is_ok() {
+    if civis::service_register(civis::Service::Kbd).is_ok() {
         println!("[kbd] registered as service Kbd");
     }
 
@@ -177,7 +177,7 @@ fn real_main(_sp: u64) -> ! {
 
     // Avvisa il parent (init) di essere pronto (SVC_READY fire-and-forget,
     // come vela: a boot init aspetta, su restart nessuno — mai sync).
-    libr::signal_ready(1);
+    civis::signal_ready(1);
 
     let mut queue = ScanQueue::new();
     let mut next_fd: u32 = 1;
@@ -189,10 +189,10 @@ fn real_main(_sp: u64) -> ! {
         // Wake IRQ o messaggio: in ogni caso prima drena l'hardware (vedi
         // doc in testa). `recv` su wake spurio ritorna Err: nessun problema,
         // il drain e' comunque avvenuto.
-        match libr::recv() {
+        match civis::recv() {
             Ok(m) => {
                 // cardo morto e rinato: re-mount (come vela, t28). Mai reply.
-                if m.tag == libr::EXIT_NOTIFY {
+                if m.tag == civis::EXIT_NOTIFY {
                     println!("[kbd] peer morto, re-mount /dev/kbd");
                     ensure_mounted();
                     drain_hw(&mut queue);
@@ -205,7 +205,7 @@ fn real_main(_sp: u64) -> ! {
                 // Niente `continue` qui: si cade nel drain_hw + notify comuni
                 // sotto, altrimenti lo scancode resta nel controller e tty non
                 // viene mai avvisata.
-                if m.tag != libr::IRQ_NOTIFY_KBD {
+                if m.tag != civis::IRQ_NOTIFY_KBD {
                     let result: Option<u64> = match m.tag {
                         DEV_OPEN => {
                             if m.w0 == DEV_KBD {
@@ -237,7 +237,7 @@ fn real_main(_sp: u64) -> ! {
                         }
                         _ => None,
                     };
-                    let _ = libr::reply(0, result.unwrap_or(ERR), 0);
+                    let _ = civis::reply(0, result.unwrap_or(ERR), 0);
                 }
             }
             Err(_) => {}
@@ -249,14 +249,14 @@ fn real_main(_sp: u64) -> ! {
         // (notify persa per coda piena: si riprova qui, mai polling dedicato).
         // Senza notify, tty dovrebbe pompare sempre → sempre Ready → dilution.
         if queue.len() > 0 {
-            let now = libr::get_ticks();
+            let now = civis::get_ticks();
             if had == 0 || now.wrapping_sub(last_notify_tick) >= 2 {
                 if porta_chan < 0 {
-                    porta_chan = libr::service_lookup(libr::Service::Porta)
+                    porta_chan = civis::service_lookup(civis::Service::Porta)
                         .unwrap_or(-1);
                 }
                 if porta_chan >= 0 {
-                    if libr::send_async(porta_chan as u64, KBD_NOTIFY, queue.len() as u64, 0).is_ok() {
+                    if civis::send_async(porta_chan as u64, KBD_NOTIFY, queue.len() as u64, 0).is_ok() {
                         last_notify_tick = now;
                     } else {
                         // tty riavviato (canale morto): re-lookup al prossimo giro.
@@ -271,5 +271,5 @@ fn real_main(_sp: u64) -> ! {
 #[panic_handler]
 fn panic(_info: &core::panic::PanicInfo) -> ! {
     println!("[kbd] panic");
-    libr::exit(1)
+    civis::exit(1)
 }

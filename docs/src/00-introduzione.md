@@ -83,13 +83,16 @@ cargo build --release
 ```
 velordor/
 ├── kernel/         # Il kernel (src/, boot.asm, linker.ld con nota PVH)
-├── libs/libr/      # Libreria di sistema condivisa (userland + testland)
+├── libs/civis/     # Meccanismo di sistema condiviso (userland + testland)
+├── libs/vela/      # Codice driver condiviso (hub/block/input/gpu)
+├── flavours/posix/ # Personalita' POSIX (ADR-0041): libr (crate), server,
+│                   # shell, cli, tests
 ├── syscall-numbers/# Costanti syscall + costanti condivise (kernel+user)
-├── scripts/        # Build userland/testland, mkfat, ...
-├── run.sh          # Build userland + testland + kernel + QEMU (PVH)
-├── userland/       # Servizi utente: init, console, fs, devfs, shell, uptime,
-│                   # kbd, tty, disk (tutti supervisionati da init)
-├── testland/       # Test suite + repro + demo (usertests, testfs, testfat, ...)
+├── scripts/        # Build userland/flavours/testland, mkfat, ...
+├── run.sh          # Build userland + posix + testland + kernel + QEMU (PVH)
+├── userland/       # Servizi NATIVI: init, block, cardo, gpu, kbd, vela,
+│                   # porta, vestigia, time, uptime; tools/arca
+├── testland/       # Test suite meccanismo + repro + demo (usertests, testfs, ...)
 └── docs/           # Documentazione mdbook (src/ = capitoli + adr/)
 ```
 

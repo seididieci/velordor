@@ -1,7 +1,7 @@
 //! vela — Hub `/dev` (Fase 9.3 + 9.6, R5).
 //!
 //! Gestisce `/dev/null` e `/dev/zero`. Si registra presso cardo all'avvio con
-//! la IPC FS_REGISTER (prefix="/dev/null" + "/dev/zero", via `libr::fs_register`). cardo instrada
+//! la IPC FS_REGISTER (prefix="/dev/null" + "/dev/zero", via `civis::fs_register`). cardo instrada
 //! le richieste di apertura/lettura/scrittura/chiusura verso questo processo e
 //! mappa la pagina FS del client a `USER_FS_BUFFER` in questo processo prima di
 //! inoltrarle: i dati (write) sono letti da li', i risultati (read/readdir)
@@ -12,21 +12,21 @@
 
 extern crate alloc;
 use alloc::collections::BTreeMap;
-use libr;
+use civis;
 
 // ── IPC tags + device types (DocsD: single source in `syscall-numbers`) ─
-use libr::{DEV_CLOSE, DEV_NULL, DEV_OPEN, DEV_READ, DEV_READDIR, DEV_WRITE, DEV_ZERO};
+use civis::{DEV_CLOSE, DEV_NULL, DEV_OPEN, DEV_READ, DEV_READDIR, DEV_WRITE, DEV_ZERO};
 
 // ── Ring I/O (Fase 10.2) ─────────────────────────────────────────
 // La response ring del client e' mappata a RESP_RING_VA da cardo (map_in);
 // la request ring a REQ_RING_VA (usata per consumare i frame dei WRITE).
-// Frame helpers in `libr` (A2).
+// Frame helpers in `civis` (A2).
 
-const REQ_RING_VA: u64 = libr::CLI_REQ_VA;
-const RESP_RING_VA: u64 = libr::CLI_RESP_VA;
-// Geometria ring + errore IPC (A1): single source in `libr`.
-use libr::ERR;
-use libr::{req_frame_consume, resp_frame_write};
+const REQ_RING_VA: u64 = civis::CLI_REQ_VA;
+const RESP_RING_VA: u64 = civis::CLI_RESP_VA;
+// Geometria ring + errore IPC (A1): single source in `civis`.
+use civis::ERR;
+use civis::{req_frame_consume, resp_frame_write};
 
 // ── Device table ────────────────────────────────────────────────────
 
@@ -61,7 +61,7 @@ impl DevTable {
 
 // ── Entry point ─────────────────────────────────────────────────────
 
-use libr::println;
+use civis::println;
 
 /// Assicura i mount "/dev/null" + "/dev/zero" presso cardo (Fase 14, t28;
 /// prefix espliciti per-device da 16d, come ogni altro driver: niente
@@ -74,15 +74,15 @@ use libr::println;
 /// condizione ("Fs non c'e'"). Unbounded come `fs_chan`: senza Fs il driver
 /// e' comunque inutile. Idempotente grazie al replace-on-register in cardo.
 fn ensure_mounted() {
-    libr::ensure_fs_mount(|| libr::fs_register_multi(&[b"/dev/null", b"/dev/zero"]));
+    civis::ensure_fs_mount(|| civis::fs_register_multi(&[b"/dev/null", b"/dev/zero"]));
 }
 
-libr::entry!(real_main);
+civis::entry!(real_main);
 fn real_main(_sp: u64) -> ! {
-    println!("[vela] starting, pid={}", libr::getpid());
+    println!("[vela] starting, pid={}", civis::getpid());
 
     // Registra il servizio Devfs per nome (ADR-0008).
-    if libr::service_register(libr::Service::Vela).is_ok() {
+    if civis::service_register(civis::Service::Vela).is_ok() {
         println!("[vela] registered as service Vela");
     }
 
@@ -94,21 +94,21 @@ fn real_main(_sp: u64) -> ! {
 
     // Avvisa il parent (init) di essere pronto (SVC_READY, come cardo):
     // serve al supervisore init-restart per l'attesa prontezza (Fase 14).
-    // Fire-and-forget in `libr` (A3): a boot init non aspetta vela → una
+    // Fire-and-forget in `civis` (A3): a boot init non aspetta vela → una
     // send sync resterebbe bloccata per sempre. Retry bounded, mai hang.
-    libr::signal_ready(1);
+    civis::signal_ready(1);
 
     let mut devtable = DevTable::new();
 
     loop {
-        let msg = match libr::recv() {
+        let msg = match civis::recv() {
             Ok(m) => m,
             Err(_) => continue,
         };
 
         // cardo morto e rinato (t28): re-mount. L'unico peer mortale e'
         // cardo: ricontrolla incondizionato (idempotente). Mai reply.
-        if msg.tag == libr::EXIT_NOTIFY {
+        if msg.tag == civis::EXIT_NOTIFY {
             println!("[vela] peer morto, re-mount /dev/null + /dev/zero");
             ensure_mounted();
             continue;
@@ -176,12 +176,12 @@ fn real_main(_sp: u64) -> ! {
             _ => None,
         };
 
-        let _ = libr::reply(0, result.unwrap_or(ERR), 0);
+        let _ = civis::reply(0, result.unwrap_or(ERR), 0);
     }
 }
 
 #[panic_handler]
 fn panic(_info: &core::panic::PanicInfo) -> ! {
     println!("[vela] panic");
-    libr::exit(1)
+    civis::exit(1)
 }

@@ -10,17 +10,17 @@ pub fn t_ipc_echo() -> bool {
     // il client verifica che la risposta sia proprio la SUA request *2.
     let mut got = 0usize;
     loop {
-        match libr::recv() {
+        match civis::recv() {
             Ok(m) => {
                 if m.tag == helpers::T_REQ && m.channel == chan {
-                    let _ = libr::reply(helpers::T_ACK, m.w0 * 2, 0);
+                    let _ = civis::reply(helpers::T_ACK, m.w0 * 2, 0);
                     got += 1;
                     if got == 8 {
                         break;
                     }
                 } else {
                     // Estraneo: rispondi e scarta (residuo di test precedente).
-                    let _ = libr::reply(helpers::T_ACK, 0, 0);
+                    let _ = civis::reply(helpers::T_ACK, 0, 0);
                 }
             }
             Err(_) => return false,
@@ -44,20 +44,20 @@ pub fn t_ipc_multiclient() -> bool {
     let mut done = 0usize;
     let mut ok_done = true;
     while reqs < n_clients * rounds || done < n_clients {
-        match libr::recv() {
+        match civis::recv() {
             Ok(m) => match m.tag {
                 helpers::T_REQ => {
-                    let _ = libr::reply(helpers::T_ACK, m.w0 * 2, 0);
+                    let _ = civis::reply(helpers::T_ACK, m.w0 * 2, 0);
                     reqs += 1;
                 }
                 helpers::T_DONE => {
-                    let _ = libr::reply(helpers::T_ACK, 0, 0);
+                    let _ = civis::reply(helpers::T_ACK, 0, 0);
                     if m.w0 != 1 || !chans.contains(&m.channel) {
                         ok_done = false;
                     }
                     done += 1;
                 }
-                tag if libr::is_exit_notify(&m) => {
+                tag if civis::is_exit_notify(&m) => {
                     // Un helper e' terminato dopo il suo T_DONE (Fase 14):
                     // notifica kernel→parent, niente da rispondere.
                     let _ = tag;
@@ -91,7 +91,7 @@ pub fn t_vela_concurrent_churn() -> bool {
     }
     // Tutti hanno aperto: GO rilascia le read insieme.
     for &c in &chans {
-        let _ = libr::send(c, helpers::T_GO, 0, 0);
+        let _ = civis::send(c, helpers::T_GO, 0, 0);
     }
     // Churn heap mentre i client leggono /dev/zero (regressione lazy+IPC).
     let mut churn_ok = true;
@@ -117,7 +117,7 @@ pub fn t_vela_concurrent_churn() -> bool {
 
 pub fn t_sched_preempt() -> bool {
     helpers::drain_stray();
-    let mapped = libr::map_physical(libr::MAP_TEST_PHYS, helpers::SPIN_VA, 1).is_ok();
+    let mapped = civis::map_physical(civis::MAP_TEST_PHYS, helpers::SPIN_VA, 1).is_ok();
     let ctr = helpers::SPIN_VA as *mut u64;
     unsafe { core::ptr::write_volatile(ctr, 0) };
 
@@ -128,7 +128,7 @@ pub fn t_sched_preempt() -> bool {
 
     // Parent spinge in ring 3 SENZA mai bloccare: il figlio (Normal) può
     // avanzare solo se il timer lo preempta (RR tra Normal).
-    libr::spin_ticks(110);
+    civis::spin_ticks(110);
     let progress = unsafe { core::ptr::read_volatile(ctr) };
 
     let (done, _dchan) = helpers::recv_done(&[chan]);
@@ -160,12 +160,12 @@ pub fn t_sched_priority() -> bool {
 /// essere rifiutata, una entro il cap deve essere accettata.
 pub fn t_cbs_admission() -> bool {
     // 80% bandwidth → supera il cap → deve fallire.
-    if libr::cbs_create(8, 10).is_ok() {
+    if civis::cbs_create(8, 10).is_ok() {
         println!("[usertests] t_cbs_admission: 80% should have been rejected");
         return false;
     }
     // 5% → dentro il cap → deve riuscire.
-    let s1 = match libr::cbs_create(1, 20) {
+    let s1 = match civis::cbs_create(1, 20) {
         Ok(id) => id,
         Err(_) => {
             println!("[usertests] t_cbs_admission: cbs_create(1,20) FAILED");
@@ -173,12 +173,12 @@ pub fn t_cbs_admission() -> bool {
         }
     };
     // +70% = 75% totale → deve fallire.
-    if libr::cbs_create(7, 10).is_ok() {
+    if civis::cbs_create(7, 10).is_ok() {
         println!("[usertests] t_cbs_admission: 75% total should have been rejected");
         return false;
     }
     // +10% = 15% totale → deve riuscire.
-    if libr::cbs_create(1, 10).is_err() {
+    if civis::cbs_create(1, 10).is_err() {
         println!("[usertests] t_cbs_admission: 15% total should have been accepted");
         return false;
     }
@@ -199,7 +199,7 @@ pub fn t_cbs_bandwidth() -> bool {
     helpers::drain_stray();
     // Precondizione: il CBS e' sempre attivo (scheduler RT unico). Se la
     // creazione di un server fallisce il test e' FAILED.
-    if libr::cbs_create(1, 10).is_err() {
+    if civis::cbs_create(1, 10).is_err() {
         println!("[usertests] t_cbs_bandwidth: cbs_create FAILED");
         return false;
     }
@@ -230,9 +230,9 @@ pub fn t_cbs_bandwidth() -> bool {
     let mut hog_obs: i64 = -1;
     let mut received = 0u32;
     while received < 2 {
-        match libr::recv() {
+        match civis::recv() {
             Ok(m) => {
-                let _ = libr::reply(helpers::T_ACK, 0, 0);
+                let _ = civis::reply(helpers::T_ACK, 0, 0);
                 if m.tag == helpers::T_DONE && m.channel == audio_chan && audio_obs < 0 {
                     audio_obs = m.w1 as i64;
                     received += 1;

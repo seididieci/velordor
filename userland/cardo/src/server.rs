@@ -9,7 +9,7 @@ use super::*;
 /// sarebbe un ciclo). Solo diagnostica nei log, mai decisioni (la policy
 /// confronta gli hash, non i nomi).
 fn driver_name_of(chan: u64) -> &'static str {
-    match libr::peer_info(chan) {
+    match civis::peer_info(chan) {
         Ok(h) if h == HASH_GPU => "gpu",
         Ok(h) if h == HASH_VELA => "vela",
         Ok(h) if h == HASH_BLOCK => "block",
@@ -134,7 +134,7 @@ fn seed_sys_disk(
     }
 }
 
-libr::entry!(real_main);
+civis::entry!(real_main);
 #[inline(never)]
 fn real_main(_sp: u64) -> ! {
     println!("[cardo] starting");
@@ -144,7 +144,7 @@ fn real_main(_sp: u64) -> ! {
     // prima del mount evita che chi spawa dopo aspetti inutilmente.
     // (L'ACK READY a init parte invece DOPO il populate, prima del loop:
     // READY significa "davvero pronto".)
-    let reg_ok = libr::service_register(libr::Service::Cardo).is_ok();
+    let reg_ok = civis::service_register(civis::Service::Cardo).is_ok();
     if reg_ok {
         println!("[cardo] registered as service Fs");
     } else {
@@ -246,19 +246,19 @@ fn real_main(_sp: u64) -> ! {
     // pronto" (vale anche per i restart: init procede a filesystem completo).
     // READY fire-and-forget (send_async, init-restart): init consuma senza
     // reply → una send sync resterebbe bloccata. Retry bounded, mai hang.
-    libr::signal_ready(reg_ok as u64);
+    civis::signal_ready(reg_ok as u64);
 
     // 24.2-diagnosi: contatore rimosso (era temporaneo); heap_stats resta in
-    // libr per future diagnosi.
+    // civis per future diagnosi.
     loop {
-        let msg = match libr::recv() {
+        let msg = match civis::recv() {
             Ok(m) => m,
             Err(_) => continue,
         };
-        // Scratch arena per-op (libr): TUTTI i borrow sotto muoiono entro
+        // Scratch arena per-op (civis): TUTTI i borrow sotto muoiono entro
         // questa iterazione (handler sincroni, reply prima del prossimo
         // recv). Mai tenere `&` scratch oltre il fondo del loop.
-        libr::scratch::reset();
+        civis::scratch::reset();
 
         // Il client e' identificato dal canale da cui arriva la richiesta
         // (ADR-0008): ogni client ha il proprio canale verso Fs. La reply e'
@@ -273,11 +273,11 @@ fn real_main(_sp: u64) -> ! {
             rings.insert(chan, (msg.w0, msg.w1));
             // Fase 45: classifica il peer ORA (tetto in cache, niente
             // syscall per-op). L'handshake resta aperto a tutti: la policy
-            // nega op, mai la registrazione (libr ritenta comunque).
+            // nega op, mai la registrazione (civis ritenta comunque).
             let ceil = policy::ceiling_for(chan);
             policy.insert(chan, ceil);
             println!("[cardo] client chan {} registered rings req={:#x} resp={:#x} ceiling={:#x}", chan, msg.w0, msg.w1, ceil);
-            let _ = libr::reply(0, 0, 0);
+            let _ = civis::reply(0, 0, 0);
             continue;
         }
 
@@ -287,17 +287,17 @@ fn real_main(_sp: u64) -> ! {
             let (req_phys, _resp_phys) = match rings.get(&chan) {
                 Some(&r) => r,
                 // Senza handshake (server riavviato): il driver rifa FS_BUF_REG
-                // e ripete (libr, come sopra).
-                None => { let _ = libr::reply(0, ERR_NOHANDSHAKE, 0); continue; }
+                // e ripete (civis, come sopra).
+                None => { let _ = civis::reply(0, ERR_NOHANDSHAKE, 0); continue; }
             };
             // Mappa il request ring del driver per leggere il prefix
-            if libr::map_physical(req_phys, rings::REQ_RING_VA, 1).is_err() {
-                let _ = libr::reply(0, ERR, 0);
+            if civis::map_physical(req_phys, rings::REQ_RING_VA, 1).is_err() {
+                let _ = civis::reply(0, ERR, 0);
                 continue;
             }
             let (op_tag, _w0, _w1, payload_len) = match rings::req_ring_read() {
                 Some(f) => f,
-                None => { let _ = libr::reply(0, ERR, 0); continue; }
+                None => { let _ = civis::reply(0, ERR, 0); continue; }
             };
             if op_tag == R_REGISTER && payload_len > 0 && payload_len <= 514 {
                 let mut prefix_buf = [0u8; 514];
@@ -310,9 +310,9 @@ fn real_main(_sp: u64) -> ! {
                 // restart da disco rilegge gli stessi byte, quindi riesce
                 // senza init) o da un figlio di init (bootstrap): impedisce a
                 // un processo qualsiasi di squattare `/dev/null` dopo un kill.
-                let caller = libr::peer_pid(chan).unwrap_or(-1);
+                let caller = civis::peer_pid(chan).unwrap_or(-1);
                 let init_child = caller >= 0
-                    && matches!(libr::ps_info(caller as u32), Some(e) if e.parent == Some(1));
+                    && matches!(civis::ps_info(caller as u32), Some(e) if e.parent == Some(1));
                 // Payload = uno o piu' prefix NUL-separati (Fase 16d): vela
                 // registra "/dev/null\0/dev/zero" con UNA sola IPC, cosi' non
                 // esiste una finestra in cui un mount e' forwardable mentre il
@@ -340,14 +340,14 @@ fn real_main(_sp: u64) -> ! {
                     // quello del driver vivo — restart da disco senza init).
                     let existing = mounts.iter().find(|m| m.prefix.as_str() == prefix).map(|m| m.driver_chan);
                     let stale = match existing {
-                        Some(dc) => libr::peer_pid(dc).is_err(), // driver morto
+                        Some(dc) => civis::peer_pid(dc).is_err(), // driver morto
                         None => true,
                     };
                     // Stesso binario? Solo a driver vivo e non-init-child (nei
                     // casi facili la risposta e' gia' nota: niente syscall).
                     let same_image = match existing {
                         Some(dc) if !stale && !init_child => {
-                            match (libr::peer_info(chan), libr::peer_info(dc)) {
+                            match (civis::peer_info(chan), civis::peer_info(dc)) {
                                 (Ok(a), Ok(b)) => a == b,
                                 _ => false,
                             }
@@ -374,19 +374,19 @@ fn real_main(_sp: u64) -> ! {
             // Mappa il response ring del client per scrivere la risposta
             rings::map_client_resp_ring(&rings, chan);
             rings::resp_ring_write(0, 0, &[]);
-            let _ = libr::reply(0, 0, 0);
+            let _ = civis::reply(0, 0, 0);
             continue;
         }
 
         // Morte di un peer (client o driver): purga tutto lo stato per-canale
         // (notifica unificata, Fase 14). Senza reply: il peer e' morto.
-        if tag == libr::EXIT_NOTIFY {
+        if tag == civis::EXIT_NOTIFY {
             let mut remotes = Vec::new();
             let mut pipe_ends = Vec::new();
             ftable.purge(chan, &mut remotes, &mut pipe_ends);
             for (srv, rfd) in remotes {
                 // Best-effort: il driver potrebbe essere morto a sua volta.
-                let _ = libr::send(srv, DEV_CLOSE, rfd as u64, 0);
+                let _ = civis::send(srv, DEV_CLOSE, rfd as u64, 0);
             }
             // Estremita' pipe del morto: decrementa (l'ultima libera il
             // buffer; i peer vivi vedono EOF/Closed invece di un hang).
@@ -433,19 +433,19 @@ fn real_main(_sp: u64) -> ! {
         // Ogni altra operazione deve essere un FS_NOTIFY.
         if tag != FS_NOTIFY {
             // Tag ignoto: ERR come prima (nessun cambio semantico).
-            let _ = libr::reply(0, ERR, 0);
+            let _ = civis::reply(0, ERR, 0);
             continue;
         }
         // Client senza handshake ring (es. server riavviato dopo la sua
         // registrazione, t28): segnale dedicato cosi' il client rifa
-        // FS_BUF_REG e ripete l'op UNA volta (libr, Fase 14).
+        // FS_BUF_REG e ripete l'op UNA volta (civis, Fase 14).
         if !rings.contains_key(&chan) {
-            let _ = libr::reply(0, ERR_NOHANDSHAKE, 0);
+            let _ = civis::reply(0, ERR_NOHANDSHAKE, 0);
             continue;
         }
         // Mappa i ring del client nello spazio di cardo.
         if !rings::map_client_req_ring(&rings, chan) || !rings::map_client_resp_ring(&rings, chan) {
-            let _ = libr::reply(0, ERR, 0);
+            let _ = civis::reply(0, ERR, 0);
             continue;
         }
 
@@ -456,7 +456,7 @@ fn real_main(_sp: u64) -> ! {
             None => {
                 // Ring vuoto a notifica arrivata: spuria/stale, niente da
                 // consumare e niente da riallineare (tail==head gia').
-                let _ = libr::reply(0, ERR, 0);
+                let _ = civis::reply(0, ERR, 0);
                 continue;
             }
         };
@@ -502,7 +502,7 @@ fn real_main(_sp: u64) -> ! {
             _ => {
                 // Tag impossibile: scarta tutto e riallinea (vedi req_resync).
                 rings::req_resync();
-                let _ = libr::reply(0, ERR, 0);
+                let _ = civis::reply(0, ERR, 0);
                 continue;
             }
         };
@@ -511,7 +511,7 @@ fn real_main(_sp: u64) -> ! {
             // visibilmente (mai wedge). Il payload perso appartiene a un'epoca
             // disallineata; il client ritenta (tty) o vede -1 (sync).
             rings::req_resync();
-            let _ = libr::reply(0, ERR, 0);
+            let _ = civis::reply(0, ERR, 0);
             continue;
         }
 
@@ -528,7 +528,7 @@ fn real_main(_sp: u64) -> ! {
             if rights::rights_ops(&rights, chan) & ceiling & bit == 0 {
                 rings::req_ring_consume(20 + expect);
                 rings::resp_ring_write(ERR, 0, &[]);
-                let _ = libr::reply(0, ERR, 0);
+                let _ = civis::reply(0, ERR, 0);
                 continue;
             }
         }
@@ -540,7 +540,7 @@ fn real_main(_sp: u64) -> ! {
         if op_tag == R_WRITE && ftable.get_remote(chan, w0 as u32).is_some() {
             let result = handlers::handle_write_remote(&ftable, &rings, chan, w0 as u32, w1 as usize);
             rings::resp_ring_write(mount::to_reply_res(result), 0, &[]);
-            let _ = libr::reply(0, mount::to_reply_res(result), 0);
+            let _ = civis::reply(0, mount::to_reply_res(result), 0);
             continue;
         }
 
@@ -551,12 +551,12 @@ fn real_main(_sp: u64) -> ! {
         // Il payload vive in scratch (mai heap: e' il temp per-op piu' grosso,
         // fino a 4096 B per chunk di write; consumato entro l'iterazione).
         // `expect` ≤ 4096 per il bound sopra: sta nel backing iniziale.
-        let payload: &mut [u8] = match libr::scratch::alloc_bytes(expect) {
+        let payload: &mut [u8] = match civis::scratch::alloc_bytes(expect) {
             Some(p) => p,
             None => {
                 // OOM vera sullo scratch: come frame impossibile (mai wedge).
                 rings::req_resync();
-                let _ = libr::reply(0, ERR, 0);
+                let _ = civis::reply(0, ERR, 0);
                 continue;
             }
         };
@@ -589,7 +589,7 @@ fn real_main(_sp: u64) -> ! {
         };
         if !subtree_ok {
             rings::resp_ring_write(ERR, 0, &[]);
-            let _ = libr::reply(0, ERR, 0);
+            let _ = civis::reply(0, ERR, 0);
             continue;
         }
 
@@ -718,7 +718,7 @@ fn real_main(_sp: u64) -> ! {
                 // `sys` da /fat al primo bind. Gestito qui: muove stati che
                 // `handle_arca_debug` non vede. `[7][0]` = no-op (il backend
                 // e' unico: niente routing da commutare).
-                if payload.first() == Some(&libr::ARCA_SUB_USEDISK) {
+                if payload.first() == Some(&civis::ARCA_SUB_USEDISK) {
                     if payload.len() != 2 || payload[1] > 1 {
                         Err(ERR_INVALID)
                     } else if payload[1] == 0 {
@@ -736,7 +736,7 @@ fn real_main(_sp: u64) -> ! {
                             None => Err(ERR),
                         }
                     }
-                } else if payload.first() == Some(&libr::ARCA_SUB_OPEN) {
+                } else if payload.first() == Some(&civis::ARCA_SUB_OPEN) {
                     // OPEN lega lo scaffold RAW come `VolumeStore` (stesso
                     // handle che USEDISK muove nel motore: mai duplicato).
                     // Dopo il bind il re-open e' rifiutato (secondo handle =
@@ -772,13 +772,13 @@ fn real_main(_sp: u64) -> ! {
                         Ok(btree_drv::ArcaDebugOut::Scalar(v)) => Ok(v),
                         Ok(btree_drv::ArcaDebugOut::Read(block, data)) => {
                             rings::resp_ring_write(block, 0, &data[..]);
-                            let _ = libr::reply(0, block, 0);
+                            let _ = civis::reply(0, block, 0);
                             continue;
                         }
                         Ok(btree_drv::ArcaDebugOut::Stats(high, live, free)) => {
                             let f = free.to_le_bytes();
                             rings::resp_ring_write(high, live, &f);
-                            let _ = libr::reply(0, high, live);
+                            let _ = civis::reply(0, high, live);
                             continue;
                         }
                         Err(e) => Err(e),
@@ -804,11 +804,11 @@ fn real_main(_sp: u64) -> ! {
                 match out {
                     Ok((id, size, frame)) => {
                         rings::resp_ring_write(id, size, &frame);
-                        let _ = libr::reply(0, id, size);
+                        let _ = civis::reply(0, id, size);
                     }
                     Err(e) => {
                         rings::resp_ring_write(e, 0, &[]);
-                        let _ = libr::reply(0, e, 0);
+                        let _ = civis::reply(0, e, 0);
                     }
                 }
                 continue;
@@ -822,11 +822,11 @@ fn real_main(_sp: u64) -> ! {
                 match out {
                     Ok((size, nv, mtime)) => {
                         rings::resp_ring_write(size, nv, &mtime);
-                        let _ = libr::reply(0, size, nv);
+                        let _ = civis::reply(0, size, nv);
                     }
                     Err(e) => {
                         rings::resp_ring_write(e, 0, &[]);
-                        let _ = libr::reply(0, e, 0);
+                        let _ = civis::reply(0, e, 0);
                     }
                 }
                 continue;
@@ -890,12 +890,12 @@ fn real_main(_sp: u64) -> ! {
                 match handlers::handle_pipe_create(&mut ftable, &mut pipes, chan, w0 as usize) {
                     Ok((r, w)) => {
                         rings::resp_ring_write(r, w, &[]);
-                        let _ = libr::reply(0, r, 0);
+                        let _ = civis::reply(0, r, 0);
                     }
                     Err(e) => {
                         let res = mount::to_reply_res(Err(e));
                         rings::resp_ring_write(res, 0, &[]);
-                        let _ = libr::reply(0, res, 0);
+                        let _ = civis::reply(0, res, 0);
                     }
                 }
                 continue;
@@ -932,6 +932,6 @@ fn real_main(_sp: u64) -> ! {
             }
         }
 
-        let _ = libr::reply(0, mount::to_reply_res(result), 0);
+        let _ = civis::reply(0, mount::to_reply_res(result), 0);
     }
 }

@@ -3,8 +3,9 @@
 ## Panoramica
 
 Velordor ha una **shell interattiva** (`usershell`) con comandi built-in e vari
-**servizi userspace** che eseguono in Ring 3. Tutti usano `libr` come libreria
-condivisa. POSIX e' API di `libr`, non ABI del sistema ([ADR-0015](./adr/0015-posix-api-libr-protocollo-interno.md)):
+**servizi userspace** che eseguono in Ring 3. Tutti usano `civis` come meccanismo
+condiviso (e i programmi POSIX anche `libr`). POSIX e' API di `libr`, non ABI del
+sistema ([ADR-0015](./adr/0015-posix-api-libr-protocollo-interno.md)):
 i builtin usano nomi POSIX ma il protocollo cardo sottostante e' interno.
 
 > **Fase 18 completata**: builtin utente (18.1: echo/clear/wc/hexdump/kill +
@@ -95,7 +96,7 @@ shell); grant cancellati a morte osservata. Dettagli e alternative scartate
 
 ### Parser (Fase 41)
 
-Sintassi bash-like (subset), implementata in `userland/shell/src/parser.rs`
+Sintassi bash-like (subset), implementata in `flavours/posix/shell/src/parser.rs`
 (client-side, zero cambi IPC/protocollo):
 
 | Sintassi | Effetto |
@@ -135,8 +136,8 @@ redirect file/heredoc espliciti vincono sui pipe-link per-slot:
 Meccanismo (ADR-0032): pipe-buffer **in cardo** (feature dell'OS:
 `FileEntry::Pipe` + `PipeTable` cap 8192, `R_PIPE_CREATE` 0x20,
 `ERR_EMPTY`/`ERR_CLOSED` → `EAGAIN`/`EPIPE` al bordo POSIX); specifica POSIX
-(`pipe()`/`dup2()`, composizione) in `libr`/shell. Handoff stadi = grant con
-reservation al grant (stesso nonce COW di ADR-0031); `libr` riprova throttled
+(`pipe()`/`dup2()`, composizione) in `civis`/shell. Handoff stadi = grant con
+reservation al grant (stesso nonce COW di ADR-0031); `civis` riprova throttled
 su `Empty` (server mai bloccante); EOF vero solo a scrittori esauriti.
 Streaming oltre la capacità via intercalazione scheduler. `&` su pipeline
 rifiutato oltre la 44a (job multi-pid, fase futura); pipe trailing ignorata.
@@ -146,7 +147,7 @@ rifiutato oltre la 44a (job multi-pid, fase futura); pipe trailing ignorata.
 Ogni programma lanciato riceve `argv` + `envp` (blocco
 `[argc][envc][argv][magic?][env]`, budget unico `ARGS_MAX`; il kernel stende
 byte opachi — neutralità verificabile, ADR-0033). La shell passa tutte le
-VARS + `PWD=cwd` (se assente); i programmi leggono con `libr::{Env,
+VARS + `PWD=cwd` (se assente); i programmi leggono con `civis::{Env,
 env_from_stack}` (`runhello` dumpa l'env con `runhello: env:K=v`).
 
 | Sintassi | Effetto |
@@ -190,7 +191,7 @@ pipeline gira nel figlio (effetti scoped, `$?` iniziale 0).
 
 ### runhello
 
-Primo programma lanciabile (`userland/runhello`, `/bin/runhello.bin` su disco
+Primo programma lanciabile (`flavours/posix/cli/runhello`, `/bin/runhello.bin` su disco
 — non un servizio: init non lo spawna). Stampa gli argv (uno per riga) su
 seriale ed esce 0; con argomento `fail` esce 3 (dopo aver stampato). Con
 stdin redirectato stampa anche `runhello: stdin:<byte>` (Fase 40.4d). Serve ai
@@ -267,9 +268,9 @@ Server minimale per device speciali:
 - `/dev/null` — read = 0 byte, write = scarta
 - `/dev/zero` — read = N byte zeropadded, write = scarta
 
-## Libreria (libr)
+## Libreria (civis)
 
-Tutti i programmi userspace usano `libr` (`libs/libr/`). Include:
+Tutti i programmi userspace usano `civis` (`libs/civis/`). Include:
 - Heap on-demand (free-list, sbrk syscall 25)
 - Wrappers FS su ring SPSC: `open`, `read_fs`, `write_fs`, `close`, `readdir`,
   `mkdir` (+ varianti async Fase 13: `read_async`/`fs_collect`)

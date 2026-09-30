@@ -97,21 +97,21 @@ pub fn report(total: &mut u32, ok: &mut u32, name: &str, pass: bool) {
 /// (canale verso il figlio, ack.w0). Qualunque processo puo' spawnare senza
 /// porte (primitiva generale); le porte restano privilegio di init.
 pub fn spawn_cfg(path: &str, name: &str, prio: u8, mode: u64, param: u64) -> Option<(u64, u64)> {
-    let img = libr::load_file(path)?;
-    let meta = libr::SpawnMeta::new(name, prio, &[])?;
-    let chan = libr::spawn_image(&img, &meta).ok()? as u64;
-    let ack = libr::send(chan, T_CFG, mode, param).ok()?;
+    let img = civis::load_file(path)?;
+    let meta = civis::SpawnMeta::new(name, prio, &[])?;
+    let chan = civis::spawn_image(&img, &meta).ok()? as u64;
+    let ack = civis::send(chan, T_CFG, mode, param).ok()?;
     Some((chan, ack.w0))
 }
 
 /// Legge `want` entry di una dir e dice se contiene `needle`.
 pub fn dir_contains(path: &str, needle: &str) -> bool {
     let mut e = [0u8; 2048];
-    let Ok(n) = libr::readdir(path, &mut e, 2048) else {
+    let Ok(n) = civis::readdir(path, &mut e, 2048) else {
         return false;
     };
     let mut found = false;
-    libr::test::each_name(&e, n, |name| {
+    civis::test::each_name(&e, n, |name| {
         if name == needle {
             found = true;
         }
@@ -123,7 +123,7 @@ pub fn read_all(fd: i64, out: &mut Vec<u8>, total: usize) -> bool {
     let mut got = 0usize;
     while got < total {
         let mut chunk = [0u8; 2000];
-        let n = match libr::read_fs(fd, &mut chunk, 2000) {
+        let n = match civis::read_fs(fd, &mut chunk, 2000) {
             Ok(n) => n,
             Err(_) => return false,
         };
@@ -143,9 +143,9 @@ pub fn read_all(fd: i64, out: &mut Vec<u8>, total: usize) -> bool {
 /// Ritorna (ok, canale del mittente).
 pub fn recv_done(chans: &[u64]) -> (bool, u64) {
     loop {
-        match libr::recv() {
+        match civis::recv() {
             Ok(m) => {
-                let _ = libr::reply(T_ACK, 0, 0);
+                let _ = civis::reply(T_ACK, 0, 0);
                 if m.tag == T_DONE && chans.contains(&m.channel) {
                     return (m.w0 == 1, m.channel);
                 }
@@ -161,9 +161,9 @@ pub fn recv_done(chans: &[u64]) -> (bool, u64) {
 /// Ritorna true se il messaggio atteso e' arrivato con w0==1.
 pub fn recv_expect(chan: u64, tag: u64) -> bool {
     loop {
-        match libr::recv() {
+        match civis::recv() {
             Ok(m) => {
-                let _ = libr::reply(T_ACK, 0, 0);
+                let _ = civis::reply(T_ACK, 0, 0);
                 if m.tag == tag && m.channel == chan {
                     return m.w0 == 1;
                 }
@@ -180,9 +180,9 @@ pub fn recv_expect(chan: u64, tag: u64) -> bool {
 /// scartate SENZA reply: il mittente e' morto, rispondere e' concettualmente
 /// sbagliato (notifica unificata, Fase 14).
 pub fn drain_stray() {
-    while let Some(m) = libr::recv_poll() {
-        if !libr::is_exit_notify(&m) {
-            let _ = libr::reply(T_ACK, 0, 0);
+    while let Some(m) = civis::recv_poll() {
+        if !civis::is_exit_notify(&m) {
+            let _ = civis::reply(T_ACK, 0, 0);
         }
     }
 }
@@ -192,8 +192,8 @@ pub fn drain_stray() {
 /// ignorati (niente reply: il canale di un figlio morto non ha peer vivo).
 pub fn wait_exit(chan: u64) -> Option<(i64, i64)> {
     loop {
-        match libr::recv() {
-            Ok(m) if m.channel == chan && libr::is_exit_notify(&m) => {
+        match civis::recv() {
+            Ok(m) if m.channel == chan && civis::is_exit_notify(&m) => {
                 return Some((m.w0 as i64, m.w1 as i64));
             }
             Ok(_) => {}
@@ -206,7 +206,7 @@ pub fn wait_exit(chan: u64) -> Option<(i64, i64)> {
 /// reaped (T_DONE + EXIT_NOTIFY). Se l'helper e' gia' morto, send fallisce e
 /// resta solo il reap. Mai hang: l'helper o risponde o e' morto.
 pub fn stop_flooder(fchan: u64) {
-    if libr::send(fchan, T_STOP, 0, 0).is_ok() {
+    if civis::send(fchan, T_STOP, 0, 0).is_ok() {
         let _ = recv_done(&[fchan]);
     }
     let _ = wait_exit(fchan);
@@ -219,12 +219,12 @@ pub const FAT_HELLO: &[u8] = b"Hello from Velordor FAT32!\n";
 /// firma boot 0x55AA a offset 510 (stesso settore del mount /fat: prova il
 /// data-plane DISK di block e il relay DEV di cardo in un colpo solo).
 pub fn disk_sector0_ok() -> bool {
-    let Ok(fd) = libr::open_wait("/dev/sda", 0, 1000, libr::POLL_PERIOD_TICKS) else {
+    let Ok(fd) = civis::open_wait("/dev/sda", 0, 1000, civis::POLL_PERIOD_TICKS) else {
         return false;
     };
     let mut buf = [0u8; 512];
-    let n = libr::read_fs(fd, &mut buf, 512).unwrap_or(0);
-    let _ = libr::close(fd);
+    let n = civis::read_fs(fd, &mut buf, 512).unwrap_or(0);
+    let _ = civis::close(fd);
     n == 512 && buf[510] == 0x55 && buf[511] == 0xAA
 }
 
@@ -233,7 +233,7 @@ pub fn t33_read_all(fd: i64, dst: &mut [u8]) -> usize {
     let mut got = 0usize;
     while got < dst.len() {
         let rest = dst.len() - got;
-        let n = match libr::read_fs(fd, &mut dst[got..], rest) {
+        let n = match civis::read_fs(fd, &mut dst[got..], rest) {
             Ok(n) => n,
             Err(_) => break,
         };
@@ -251,14 +251,14 @@ pub fn t33_read_all(fd: i64, dst: &mut [u8]) -> usize {
 /// reply, come `recv_expect`.
 pub fn recv_ready(chan: u64) -> Option<(u64, u64)> {
     loop {
-        match libr::recv() {
+        match civis::recv() {
             Ok(m) if m.channel == chan && m.tag == T_READY => {
-                let _ = libr::reply(T_ACK, 0, 0);
+                let _ = civis::reply(T_ACK, 0, 0);
                 return Some((m.w0, m.w1));
             }
-            Ok(m) if libr::is_exit_notify(&m) => {}
+            Ok(m) if civis::is_exit_notify(&m) => {}
             Ok(_) => {
-                let _ = libr::reply(T_ACK, 0, 0);
+                let _ = civis::reply(T_ACK, 0, 0);
             }
             Err(_) => return None,
         }
@@ -268,12 +268,12 @@ pub fn recv_ready(chan: u64) -> Option<(u64, u64)> {
 /// Attesa throttled che `ps_info(pid)` sparisca (processo terminato +
 /// reclamato). Batch di spin puri tra i get_ticks (igiene scheduler).
 pub fn poll_gone(pid: u64, bound_ticks: i64) -> bool {
-    let t0 = libr::get_ticks();
+    let t0 = civis::get_ticks();
     loop {
-        if libr::ps_info(pid as u32).is_none() {
+        if civis::ps_info(pid as u32).is_none() {
             return true;
         }
-        if libr::get_ticks() - t0 > bound_ticks {
+        if civis::get_ticks() - t0 > bound_ticks {
             return false;
         }
         for _ in 0..512 {
@@ -285,12 +285,12 @@ pub fn poll_gone(pid: u64, bound_ticks: i64) -> bool {
 /// Attesa throttled della prima snapshot `ps` di `pid`: ritorna il parent
 /// osservato, o None a timeout / pid mai apparso.
 pub fn poll_parent(pid: u64, bound_ticks: i64) -> Option<Option<u32>> {
-    let t0 = libr::get_ticks();
+    let t0 = civis::get_ticks();
     loop {
-        if let Some(e) = libr::ps_info(pid as u32) {
+        if let Some(e) = civis::ps_info(pid as u32) {
             return Some(e.parent);
         }
-        if libr::get_ticks() - t0 > bound_ticks {
+        if civis::get_ticks() - t0 > bound_ticks {
             return None;
         }
         for _ in 0..512 {

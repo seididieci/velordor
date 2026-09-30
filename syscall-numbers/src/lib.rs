@@ -1,7 +1,7 @@
 #![no_std]
 
 // ── Syscall numbers ────────────────────────────────────────────────────────
-// Single source of truth: kernel e userland (libr) dipendono da questo crate.
+// Single source of truth: kernel e userland (civis) dipendono da questo crate.
 
 pub const SYS_EXIT: u64 = 0;
 pub const SYS_OPEN: u64 = 3;
@@ -160,14 +160,14 @@ pub const DMA_PAGES_MAX: usize = 4;
 /// Bound del payload argv+env serializzato (Fase 37.1, esteso in 43a):
 /// blocco `[argc:8][envc:8][argv NUL-separated][env NUL-separated
 /// "NAME=val"]` oltre cui `exec` rifiuta fail-loud. Single source
-/// kernel+user (`libr` lo riesporta): 8 KiB bastano a shell e test con margine.
+/// kernel+user (`civis` lo riesporta): 8 KiB bastano a shell e test con margine.
 /// Il kernel tratta le stringhe come byte opachi (mai ispezione `=`: la
-/// convenzione `NAME=val` vive in `libr`/shell, il kernel resta neutro).
+/// convenzione `NAME=val` vive in `civis`/shell, il kernel resta neutro).
 pub const ARGS_MAX: u64 = 8 * 1024;
 /// Immagine massima spawabile/eseguibile (Fase 21: 64 frame = 256 KiB; i binari
 /// sono < 70 KiB — un singolo spawn non puo' svuotare il pool frame). Single
 /// source kernel (`sys_spawn_image`, stesso bound per `exec` in Fase 37) +
-/// user (`libr` pre-valida prima della syscall per errori precisi).
+/// user (`civis` pre-valida prima della syscall per errori precisi).
 pub const SPAWN_IMAGE_MAX: usize = 256 * 1024;
 /// Protezioni `mmap`/`mprotect` (29: NONE/R/RW con enforcement; W solo e
 /// PROT_EXEC rifiutati — eseguibile solo il codice di spawn).
@@ -198,7 +198,7 @@ pub const FAULT_EXIT_CODE: i64 = 139;
 /// Causa di morte per Ctrl-C (Fase 44b, job control): il parent che uccide
 /// un job non cooperante dopo il cancel usa questo code. 130 = 128 + 2
 /// (SIGINT, stessa convenzione POSIX di `FAULT_EXIT_CODE`). Solo convenzione
-/// al bordo (shell/libr): il kernel vede un banale exit code.
+/// al bordo (shell/civis): il kernel vede un banale exit code.
 pub const EXIT_SIGINT: i64 = 130;
 /// Base del codice user (link address del binario ELF, single source
 /// kernel+test): il loader ELF mappa i segmenti al `p_vaddr` di link e
@@ -220,7 +220,7 @@ pub const PS_SCAN_MAX: u32 = 32;
 /// IPC tag: il client ha scritto nel request ring e notifica il server.
 pub const FS_NOTIFY: u64 = 0x32;
 // ── Tag IPC userland, single source (centralizzazione DocsB: prima duplicati
-// in `libr`, cardo/block/init/tty/kbd e come letterali nei test) ────────
+// in `civis`, cardo/block/init/tty/kbd e come letterali nei test) ────────
 // - FS_REGISTER (0x30): un driver registra il prefix di mount (frame
 //   R_REGISTER nel request ring, letto da cardo).
 // - FS_BUF_REG (0x31): handshake register-only "i miei ring sono req=w0,
@@ -274,7 +274,7 @@ pub const TIME_NOW: u64 = 0x60;
 //   (stampo FS_BUF_REG; niente frame). Il server archivia (chan→phys) +
 //   peer_pid/peer_info per attribuzione. Reply (0,0).
 // - APPEND (0x62): il client ha scritto un frame `[level:1][taglen:1][tag][msg]`
-//   (livello+formato in `libr::log`; il tag e' solo hint leggibile, il bucket
+//   (livello+formato in `civis::log`; il tag e' solo hint leggibile, il bucket
 //   e' DERIVATO dal server dall'identita' del chiamante) nel proprio ring LOG
 //   e notifica con w0 = payload-len (expect, come R_OBJ_GET); il server mappa
 //   il ring via `map_physical` (stampo `map_client_req_ring` di cardo), timbra
@@ -358,7 +358,7 @@ pub const DISK_FLUSH: u64 = 0x58;
 // sta qui: wiring in A2.
 
 // ── Tag delle operazioni FS (nel frame del ring, non nell'IPC) ────────────
-// Single source of truth (Fase 17): prima duplicati in `libr`, `cardo` e
+// Single source of truth (Fase 17): prima duplicati in `civis`, `cardo` e
 // (R_REGISTER) `block`. Il formato frame e' `[tag:4][w0:8][w1:8][payload]`.
 pub const R_OPEN: u32 = 0x10;
 pub const R_READ: u32 = 0x11;
@@ -450,7 +450,7 @@ pub const STAT_DEVICE: u64 = 2;
 pub const STAT_READONLY: u64 = 0x80;
 /// Flag `open`: crea il file se non esiste (Fase 18.2: prima l'open creava
 /// sempre su ramfs ignorando i flag — ora POSIX: senza O_CREAT il file deve
-/// esistere). Viaggia in w1 del frame R_OPEN (libr lo passava gia', il server
+/// esistere). Viaggia in w1 del frame R_OPEN (civis lo passava gia', il server
 /// lo ignorava).
 pub const O_CREAT: u32 = 0x200;
 /// Flag `open` (Fase 40, P1): azzera il file esistente (size → 0). Con O_CREAT
@@ -507,7 +507,7 @@ pub const RIGHTS_ALL: u32 = 0xFFF;
 
 // ── Sentinelle di errore FS (Fase 40, P1) ─────────────────────────────
 // cardo distingue i rifiuti invece del generico ERR: il client li mappa
-// nelle varianti di dominio di `libr::posix::Error` (ADR-0030: i numeri POSIX
+// nelle varianti di dominio di `civis::posix::Error` (ADR-0030: i numeri POSIX
 // restano solo in `to_errno`, mai nel kernel/wire). Valori ALTI da `!0` a
 // scendere, MAI `-errno`: `-2` colliderebbe con ERR_NOHANDSHAKE (retry
 // handshake) e `-1` con ERR generico. `R_DUP_*` usa solo ERR_INVALID

@@ -85,7 +85,7 @@ pub fn synth_children<'a>(mounts: &'a [Mount], path: &str) -> Option<StrList<'a>
     }
 }
 
-/// Lista scratch di `&str` (backing libr, vita = iterazione corrente del
+/// Lista scratch di `&str` (backing civis, vita = iterazione corrente del
 /// loop). Capacita' esatta a monte (ogni mount contribuisce al massimo un
 /// figlio: il dedupe rende i push ≤ cap): `push` oltre cap e' no-op difensivo
 /// (mai heap di fallback — i bound sono strutturali, come i ring).
@@ -101,7 +101,7 @@ pub struct StrList<'a> {
 impl<'a> StrList<'a> {
     fn with_capacity(cap: usize) -> Option<Self> {
         // `'s = 'a`: il borrow del contenitore vive quanto i contenuti.
-        let buf = libr::scratch::alloc_slice::<'a, &'a str>(cap)?;
+        let buf = civis::scratch::alloc_slice::<'a, &'a str>(cap)?;
         Some(Self { ptr: buf.as_mut_ptr(), cap, len: 0 })
     }
 

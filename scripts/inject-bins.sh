@@ -17,15 +17,16 @@ mcopy -i "$IMG" userland/build/useruptime.bin  ::/bin/uptime.bin  || exit 1
 mcopy -i "$IMG" userland/build/vela.bin      ::/bin/vela.bin   || exit 1
 mcopy -i "$IMG" userland/build/kbd.bin     ::/bin/kbd.bin     || exit 1
 mcopy -i "$IMG" userland/build/porta.bin       ::/bin/porta.bin     || exit 1
-mcopy -i "$IMG" userland/build/usershell.bin   ::/bin/shell.bin   || exit 1
+# Personalita' POSIX (Fase 58.4, ADR-0041): binari in flavours/posix/build.
+mcopy -i "$IMG" flavours/posix/build/usershell.bin   ::/bin/shell.bin   || exit 1
 # Server di personalita' POSIX (Fase 40.3, P1): skeleton supervisionato.
-mcopy -i "$IMG" userland/build/userposix.bin   ::/bin/posix.bin   || exit 1
+mcopy -i "$IMG" flavours/posix/build/userposix.bin   ::/bin/posix.bin   || exit 1
 # Fornitore di data/ora (Fase 50, P1 orologio).
 mcopy -i "$IMG" userland/build/usertime.bin    ::/bin/time.bin    || exit 1
 # Gateway centrale di logging L1 (Fase 57, ADR-0039).
 mcopy -i "$IMG" userland/build/vestigia.bin     ::/bin/vestigia.bin     || exit 1
-mcopy -i "$IMG" userland/build/userrunhello.bin ::/bin/runhello.bin || exit 1
-# Tool guest ArcaFS (Fase 54, P5): `list`/`stat`.
+mcopy -i "$IMG" flavours/posix/build/userrunhello.bin ::/bin/runhello.bin || exit 1
+# Tool guest ArcaFS (Fase 54, P5; Fase 58.4: dir `userland/tools/`): `list`/`stat`.
 mcopy -i "$IMG" userland/build/userarca.bin   ::/bin/arca.bin    || exit 1
 mcopy -i "$IMG" testland/build/usertestfs.bin   ::/test/testfs.bin   || exit 1
 mcopy -i "$IMG" testland/build/usertestfat.bin  ::/test/testfat.bin  || exit 1
@@ -41,6 +42,9 @@ mcopy -i "$IMG" testland/build/userbench.bin    ::/test/bench.bin    || exit 1
 # Attore "ignoto" di t57 (Fase 45): fuori da ogni tabella policy (il nome
 # 8.3 resta lungo: "foreign" sta in 8 caratteri, niente spelling).
 mcopy -i "$IMG" testland/build/userforeign.bin  ::/test/foreign.bin  || exit 1
+# Suite della personalita' POSIX (Fase 58.5, ADR-0041): binario separato in
+# flavours/posix/tests/build (dest 8.3 "posixtst").
+mcopy -i "$IMG" flavours/posix/tests/build/userposixtests.bin ::/test/posixtst.bin || exit 1
 # Script shell per `source` (velocizzazione test: 1 riga digitata invece di N
 # comandi via sendkey) + pilota del builtin permanente. Nomi 8.3 come i .bin
 # (il FAT non ha LFN: oltre 8+3 mcopy fallisce loud, mai nomi troncati in

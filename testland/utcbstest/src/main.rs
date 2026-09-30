@@ -10,7 +10,7 @@
 #![no_std]
 #![no_main]
 
-use libr::println;
+use civis::println;
 
 const T_ACK: u64 = 101;
 const T_DONE: u64 = 103;
@@ -25,36 +25,36 @@ unsafe fn counter_ptr() -> *mut u64 {
     SPIN_VA as *mut u64
 }
 
-libr::entry!(real_main);
+civis::entry!(real_main);
 fn real_main(_sp: u64) -> ! {
-    let cfg: libr::IpcMsg = match libr::recv() {
+    let cfg: civis::IpcMsg = match civis::recv() {
         Ok(m) => m,
-        Err(_) => libr::exit(1),
+        Err(_) => civis::exit(1),
     };
-    let parent = libr::CHANNEL_PARENT;
+    let parent = civis::CHANNEL_PARENT;
     let budget = cfg.w0 as u32;  // Q: budget in tick
     let period = cfg.w1 as u32;  // P: periodo in tick
 
-    let my_pid = libr::getpid();
+    let my_pid = civis::getpid();
 
     // Rispondi subito al parent (spawn_cfg si blocca in attesa di ACK).
-    let _ = libr::reply(T_ACK, my_pid as u64, 0);
+    let _ = civis::reply(T_ACK, my_pid as u64, 0);
 
     // Crea il server CBS.
-    let server_id = match libr::cbs_create(budget, period) {
+    let server_id = match civis::cbs_create(budget, period) {
         Ok(id) => id,
         Err(_) => {
             println!("[utcbstest] cbs_create FAILED (Q={} P={})", budget, period);
-            let _ = libr::send(parent, T_DONE, 0, 0);
-            libr::exit(1);
+            let _ = civis::send(parent, T_DONE, 0, 0);
+            civis::exit(1);
         }
     };
 
     // Attacca il server a se stesso.
-    if libr::cbs_attach(server_id).is_err() {
+    if civis::cbs_attach(server_id).is_err() {
         println!("[utcbstest] cbs_attach FAILED (server={})", server_id);
-        let _ = libr::send(parent, T_DONE, 0, 0);
-        libr::exit(1);
+        let _ = civis::send(parent, T_DONE, 0, 0);
+        civis::exit(1);
     }
 
     println!("[utcbstest] pid={} CBS Q={} P={} bw={:.0}% server={}",
@@ -62,21 +62,21 @@ fn real_main(_sp: u64) -> ! {
         budget as f64 / period as f64 * 100.0, server_id);
 
     // Mappa pagina scratch e inizializza contatore.
-    if libr::map_physical(libr::MAP_TEST_PHYS, SPIN_VA, 1).is_ok() {
+    if civis::map_physical(civis::MAP_TEST_PHYS, SPIN_VA, 1).is_ok() {
         unsafe { core::ptr::write_volatile(counter_ptr(), 0) };
     }
 
     // Busy-loop: conta i tick osservati. Batch da 512 spin puri tra due
     // get_ticks (syscall): un get_ticks a ogni iterazione maschera IF e
     // affama il timer → il wall-clock non avanza e il loop non scade.
-    let t0 = libr::get_ticks();
+    let t0 = civis::get_ticks();
     let mut observed = 0i64;
     let mut last = t0;
     loop {
         for _ in 0..512 {
             core::hint::spin_loop();
         }
-        let now = libr::get_ticks();
+        let now = civis::get_ticks();
         if now != last {
             last = now;
             observed += 1;
@@ -89,12 +89,12 @@ fn real_main(_sp: u64) -> ! {
     }
 
     println!("[utcbstest] pid={} done observed={}/{}", my_pid, observed, SPIN_TICKS);
-    let _ = libr::send(parent, T_DONE, 1, observed as u64);
-    libr::exit(0);
+    let _ = civis::send(parent, T_DONE, 1, observed as u64);
+    civis::exit(0);
 }
 
 #[panic_handler]
 fn panic_handler(_info: &core::panic::PanicInfo) -> ! {
     println!("[utcbstest] panic");
-    libr::exit(1)
+    civis::exit(1)
 }

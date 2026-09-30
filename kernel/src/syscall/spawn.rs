@@ -31,7 +31,7 @@ pub(super) fn sys_spawn(name_ptr: u64, name_len: usize) -> i64 {
     }
 }
 
-/// Layout di `SpawnMeta` (Fase 21, 40 B, `repr(C)` anche in libr): nome NUL-
+/// Layout di `SpawnMeta` (Fase 21, 40 B, `repr(C)` anche in civis): nome NUL-
 /// padded (non vuoto), priorita', porte I/O + flags (Fase 22: solo DETACH).
 /// Il kernel valida tutto (init e' trusted ma il formato deve essere
 /// fail-loud, mai UB).
@@ -46,7 +46,7 @@ struct SpawnMeta {
 }
 
 /// Immagine massima spawabile (Fase 39: single source in `syscall-numbers`,
-/// condivisa con `libr` che pre-valida): un singolo spawn non puo' svuotare
+/// condivisa con `civis` che pre-valida): un singolo spawn non puo' svuotare
 /// il pool frame. Stesso bound per `exec` (Fase 37, stessa ragione).
 pub(crate) use syscall_numbers::SPAWN_IMAGE_MAX;
 

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tabella policy per i binari testland (Fase 45, sandbox build).
+# Tabella policy per i binari test (Fase 45, sandbox build): testland/ + la
+# suite della personalita' POSIX in flavours/posix/tests (Fase 58.5).
 #
 # Genera `build-meta/test_policy.rs` con `pub const TEST_POLICY: &[(u64,u32)]`
 # (hash FNV-1a -> mask ops, TUTTI ALL: la suite esercita ogni op). Incluso
@@ -19,19 +20,23 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-BUILD="testland/build"
+# Fase 58.5: test meccanismo in testland/build, test personalita' POSIX in
+# flavours/posix/tests/build. Entrambe le dir entrano nella tabella.
+BUILD_DIRS=(testland/build flavours/posix/tests/build)
 OUT_DIR="build-meta"
 OUT="$OUT_DIR/test_policy.rs"
 
-if [ ! -d "$BUILD" ]; then
-    echo "[gen-test-policy] ERROR: $BUILD mancante (build-tests.sh prima)" >&2
-    exit 1
-fi
+for d in "${BUILD_DIRS[@]}"; do
+    if [ ! -d "$d" ]; then
+        echo "[gen-test-policy] ERROR: $d mancante (build-tests.sh prima)" >&2
+        exit 1
+    fi
+done
 
 mkdir -p "$OUT_DIR"
 tmp="$OUT.tmp"
 
-python3 - "$BUILD" "$tmp" <<'EOF'
+python3 - "${BUILD_DIRS[@]}" "$tmp" <<'EOF'
 import glob, os, sys
 
 def fnv1a(data: bytes) -> int:
@@ -41,10 +46,11 @@ def fnv1a(data: bytes) -> int:
         h = (h * 0x100000001B3) & 0xFFFFFFFFFFFFFFFF
     return h
 
-build, tmp = sys.argv[1], sys.argv[2]
-bins = sorted(glob.glob(os.path.join(build, "*.bin")))
+dirs = sys.argv[1:-1]
+tmp = sys.argv[-1]
+bins = sorted(p for d in dirs for p in glob.glob(os.path.join(d, "*.bin")))
 if not bins:
-    sys.exit("nessun .bin in %s" % build)
+    sys.exit("nessun .bin in %s" % ", ".join(dirs))
 # L'attore "ignoto" di t57 resta fuori da OGNI tabella (prova il default);
 # cardo.bin (rebuild artefatto, vedi sopra) mai in tabella.
 bins = [p for p in bins if os.path.basename(p) not in ("userforeign.bin", "cardo.bin")]

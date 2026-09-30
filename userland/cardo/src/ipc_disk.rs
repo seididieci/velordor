@@ -24,13 +24,13 @@
 use core::cell::Cell;
 
 use crate::fat32::BlockSource;
-use libr::println;
+use civis::println;
 /// Tag DISK_* (single source in `syscall-numbers`, Fase 16c): handshake,
 /// validazione nodo, lettura settoriale, resolve nome→handle di proprieta'
 /// del driver.
-use libr::{DISK_HELLO, DISK_OPEN, DISK_READ, DISK_RESOLVE, DISK_WRITE};
+use civis::{DISK_HELLO, DISK_OPEN, DISK_READ, DISK_RESOLVE, DISK_WRITE};
 /// Topologia P2 (Fase 51): LIST/INFO (single source in `syscall-numbers`).
-use libr::{DISK_INFO, DISK_LIST, DISK_FLUSH};
+use civis::{DISK_INFO, DISK_LIST, DISK_FLUSH};
 
 /// Finestra del request ring di block (stessa VA del server: ogni processo
 /// ha le proprie page table, nessun conflitto). cardo e' l'unico writer.
@@ -40,8 +40,8 @@ const DISK_REQ_VA: u64 = 0x0000_4000_0024_0000;
 const DISK_RESP_VA: u64 = 0x0000_4000_0025_0000;
 /// Bound nomi di resolve (deve combaciare con `DISK_MAX_NAME` di block).
 const DISK_MAX_NAME: usize = 16;
-// Geometria ring + errore IPC (A1): single source in `libr`.
-use libr::{ERR, RING_DATA_CAP, RING_HEAD, RING_TAIL};
+// Geometria ring + errore IPC (A1): single source in `civis`.
+use civis::{ERR, RING_DATA_CAP, RING_HEAD, RING_TAIL};
 /// Bound attesa block a boot/restart (~5 s, come `wait_ready` di init).
 const HELLO_BOUND_TICKS: i64 = 500;
 /// 24.2 — settori max per IPC DISK (bound del ring: 8 + 7*512 = 3592 nella
@@ -143,14 +143,14 @@ impl IpcDisk {
         if let Some(c) = self.chan.get() {
             return Some(c);
         }
-        let t0 = libr::get_ticks();
+        let t0 = civis::get_ticks();
         loop {
-            if let Ok(c) = libr::service_lookup(libr::Service::Block) {
+            if let Ok(c) = civis::service_lookup(civis::Service::Block) {
                 let cu = c as u64;
-                let ok = match libr::send(cu, DISK_HELLO, 0, 0) {
+                let ok = match civis::send(cu, DISK_HELLO, 0, 0) {
                     Ok(rep) if rep.w0 != ERR => {
-                        if libr::map_physical(rep.w0, DISK_REQ_VA, 1).is_err()
-                            || libr::map_physical(rep.w1, DISK_RESP_VA, 1).is_err()
+                        if civis::map_physical(rep.w0, DISK_REQ_VA, 1).is_err()
+                            || civis::map_physical(rep.w1, DISK_RESP_VA, 1).is_err()
                         {
                             false
                         } else {
@@ -184,7 +184,7 @@ impl IpcDisk {
                 }
                 // Trovato ma HELLO fallito (restart in corso?): riprova.
             }
-            if libr::get_ticks() - t0 > HELLO_BOUND_TICKS {
+            if civis::get_ticks() - t0 > HELLO_BOUND_TICKS {
                 return None;
             }
             for _ in 0..100_000 {
@@ -204,7 +204,7 @@ impl IpcDisk {
         if self.open_ok.get() {
             return Some(cu);
         }
-        match libr::send(cu, DISK_OPEN, self.handle as u64, 0) {
+        match civis::send(cu, DISK_OPEN, self.handle as u64, 0) {
             Ok(rep) if rep.w0 != ERR => {
                 self.open_ok.set(true);
                 Some(cu)
@@ -213,7 +213,7 @@ impl IpcDisk {
             Err(_) => {
                 self.drop_conn();
                 let cu = self.connect()?;
-                match libr::send(cu, DISK_OPEN, self.handle as u64, 0) {
+                match civis::send(cu, DISK_OPEN, self.handle as u64, 0) {
                     Ok(rep) if rep.w0 != ERR => {
                         self.open_ok.set(true);
                         Some(cu)
@@ -234,7 +234,7 @@ impl IpcDisk {
         if !unsafe { Self::req_write_count(n) } {
             return false;
         }
-        match libr::send(chan, DISK_READ, self.handle as u64, lba) {
+        match civis::send(chan, DISK_READ, self.handle as u64, lba) {
             Ok(rep) => {
                 if rep.w0 == ERR {
                     return false;
@@ -309,7 +309,7 @@ impl IpcDisk {
         if !unsafe { Self::req_write_sectors(n, data) } {
             return false;
         }
-        match libr::send(chan, DISK_WRITE, self.handle as u64, lba) {
+        match civis::send(chan, DISK_WRITE, self.handle as u64, lba) {
             Ok(rep) => rep.w0 != ERR,
             Err(_) => {
                 self.drop_conn();
@@ -352,7 +352,7 @@ impl IpcDisk {
         if !unsafe { Self::req_write_name(name) } {
             return None;
         }
-        match libr::send(chan, DISK_RESOLVE, 0, 0) {
+        match civis::send(chan, DISK_RESOLVE, 0, 0) {
             Ok(rep) => {
                 if rep.w0 == ERR {
                     None
@@ -391,7 +391,7 @@ impl IpcDisk {
 
     /// Un tentativo di FLUSH (nessun retry qui: lo fa il chiamante).
     fn try_flush(&self, chan: u64, handle: u32) -> bool {
-        match libr::send(chan, DISK_FLUSH, handle as u64, 0) {
+        match civis::send(chan, DISK_FLUSH, handle as u64, 0) {
             Ok(rep) => rep.w0 != ERR,
             Err(_) => {
                 self.drop_conn();
@@ -420,7 +420,7 @@ impl IpcDisk {
     /// Frame RESP fisso 76 B `[model_len:8][model:40][serial_len:8]`
     /// `[serial:20]`; settori/flags in w0/w1 di reply.
     fn try_info(&self, chan: u64, handle: u32) -> Option<IpcDiskInfo> {
-        let rep = match libr::send(chan, DISK_INFO, handle as u64, 0) {
+        let rep = match civis::send(chan, DISK_INFO, handle as u64, 0) {
             Ok(r) => r,
             Err(_) => {
                 self.drop_conn();
@@ -471,7 +471,7 @@ impl IpcDisk {
     /// Un tentativo di LIST (nessun retry qui: lo fa il chiamante).
     /// Reply w0 = count; frame RESP con entry 16 B `[sectors:8][flags:8]`.
     fn try_list(&self, chan: u64) -> Option<alloc::vec::Vec<(u64, u64)>> {
-        let rep = match libr::send(chan, DISK_LIST, 0, 0) {
+        let rep = match civis::send(chan, DISK_LIST, 0, 0) {
             Ok(r) => r,
             Err(_) => {
                 self.drop_conn();

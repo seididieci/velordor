@@ -9,27 +9,27 @@ extern crate alloc;
 use alloc::vec;
 use alloc::vec::Vec;
 
-use libr;
-use libr::{println, print_str};
+use civis;
+use civis::{println, print_str};
 
-libr::entry!(real_main);
+civis::entry!(real_main);
 fn real_main(_sp: u64) -> ! {
-    let pid = libr::getpid();
+    let pid = civis::getpid();
     println!("[testfs] starting, pid={}", pid);
     let mut all_ok = true;
 
     // Test 1: Open and read "hello.txt" (pre-populated by cardo)
     println!("[testfs] Test 1: read hello.txt");
-    let fd = libr::open("hello.txt", 0);
+    let fd = civis::open("hello.txt", 0);
     match fd {
         Ok(fd) => {
             println!("[testfs] open fd={}", fd);
             let mut buf = [0u8; 256];
-            match libr::read_fs(fd, &mut buf, 256) {
+            match civis::read_fs(fd, &mut buf, 256) {
                 Ok(n) => {
                     print_str!("[testfs] read {} bytes: ", n);
                     if n > 0 {
-                        libr::write_raw(buf.as_ptr(), n);
+                        civis::write_raw(buf.as_ptr(), n);
                     }
                     println!();
                 }
@@ -37,7 +37,7 @@ fn real_main(_sp: u64) -> ! {
                     println!("[testfs] read failed: {:?}", e);
                 }
             }
-            let _ = libr::close(fd);
+            let _ = civis::close(fd);
         }
         Err(e) => {
             println!("[testfs] open failed: {:?}", e);
@@ -47,15 +47,15 @@ fn real_main(_sp: u64) -> ! {
     // Test 2: Readdir "/"
     println!("[testfs] Test 2: readdir /");
     let mut entries = [0u8; 1024];
-    let count = libr::readdir("/", &mut entries, 1024);
+    let count = civis::readdir("/", &mut entries, 1024);
     match count {
         Ok(count) => {
             println!("[testfs] readdir count={}", count);
-            // Print entries (null-terminated strings, traversal in `libr`, A4).
+            // Print entries (null-terminated strings, traversal in `civis`, A4).
             if count > 0 {
-                libr::test::each_name(&entries, count, |name| {
+                civis::test::each_name(&entries, count, |name| {
                     print_str!("[testfs]   ");
-                    libr::write_raw(name.as_ptr(), name.len());
+                    civis::write_raw(name.as_ptr(), name.len());
                     println!();
                 });
             }
@@ -67,26 +67,26 @@ fn real_main(_sp: u64) -> ! {
 
     // Test 3: Write a file and read it back
     println!("[testfs] Test 3: write + read verification");
-    let fd2 = libr::open("test_write.txt", libr::O_CREAT);
+    let fd2 = civis::open("test_write.txt", civis::O_CREAT);
     match fd2 {
         Ok(fd2) => {
             println!("[testfs] open fd={}", fd2);
             let msg = b"Hello from testfs!\n";
-            match libr::write_fs(fd2, msg, msg.len()) {
+            match civis::write_fs(fd2, msg, msg.len()) {
                 Ok(n) => println!("[testfs] wrote {} bytes", n),
                 Err(e) => println!("[testfs] write failed: {:?}", e),
             }
-            let _ = libr::close(fd2);
+            let _ = civis::close(fd2);
 
             // Read it back
-            match libr::open("test_write.txt", 0) {
+            match civis::open("test_write.txt", 0) {
                 Ok(fd3) => {
                     let mut buf2 = [0u8; 256];
-                    match libr::read_fs(fd3, &mut buf2, 256) {
+                    match civis::read_fs(fd3, &mut buf2, 256) {
                         Ok(n2) => {
                             print_str!("[testfs] read back {} bytes: ", n2);
                             if n2 > 0 {
-                                libr::write_raw(buf2.as_ptr(), n2);
+                                civis::write_raw(buf2.as_ptr(), n2);
                             }
                             println!();
 
@@ -104,7 +104,7 @@ fn real_main(_sp: u64) -> ! {
                             println!("[testfs] verification: FAIL (read {:?})", e);
                         }
                     }
-                    let _ = libr::close(fd3);
+                    let _ = civis::close(fd3);
                 }
                 Err(_) => {
                     all_ok = false;
@@ -120,12 +120,12 @@ fn real_main(_sp: u64) -> ! {
 
     // Test 4: mkdir + readdir verification (Fase 9.4.3)
     println!("[testfs] Test 4: mkdir prova");
-    let r = libr::mkdir("prova");
+    let r = civis::mkdir("prova");
     match r {
         Ok(()) => {
             println!("[testfs] mkdir ret=0");
             let mut entries2 = [0u8; 1024];
-            match libr::readdir("/", &mut entries2, 1024) {
+            match civis::readdir("/", &mut entries2, 1024) {
                 Ok(c2) => {
                     println!("[testfs] readdir count={}", c2);
                     let mut found = false;
@@ -194,12 +194,12 @@ fn real_main(_sp: u64) -> ! {
         println!("[testfs] FAIL");
     }
     println!("[testfs] all tests done");
-    let _ = libr::send(libr::CHANNEL_PARENT, libr::TEST_DONE, 0, 0); // init: test finito (spawn sequenziale)
-    libr::exit(0)
+    let _ = civis::send(civis::CHANNEL_PARENT, civis::TEST_DONE, 0, 0); // init: test finito (spawn sequenziale)
+    civis::exit(0)
 }
 
 #[panic_handler]
 fn panic(_info: &core::panic::PanicInfo) -> ! {
     println!("[testfs] panic");
-    libr::exit(1)
+    civis::exit(1)
 }

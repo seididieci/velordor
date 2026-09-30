@@ -46,8 +46,8 @@
 
 extern crate alloc;
 
-use libr;
-use libr::println;
+use civis;
+use civis::println;
 
 /// Conta pass/total e stampa la riga di gate `[testsarca] PASS n/n`.
 struct Checks {
@@ -70,8 +70,8 @@ impl Checks {
 /// Verifica completa del superblock ArcaFS (magic + versione + block-size +
 /// checksum FNV-1a self-verifying): un BPB FAT non puo' collidere.
 fn is_arca_super(sec: &[u8; 512]) -> bool {
-    let sb = &sec[..libr::ARCA_SUPER_LEN];
-    if sb[libr::ARCA_OFF_MAGIC..libr::ARCA_OFF_MAGIC + 4] != *libr::ARCA_MAGIC {
+    let sb = &sec[..civis::ARCA_SUPER_LEN];
+    if sb[civis::ARCA_OFF_MAGIC..civis::ARCA_OFF_MAGIC + 4] != *civis::ARCA_MAGIC {
         return false;
     }
     let u32le = |o: usize| u32::from_le_bytes([sb[o], sb[o + 1], sb[o + 2], sb[o + 3]]);
@@ -80,17 +80,17 @@ fn is_arca_super(sec: &[u8; 512]) -> bool {
             sb[o], sb[o + 1], sb[o + 2], sb[o + 3], sb[o + 4], sb[o + 5], sb[o + 6], sb[o + 7],
         ])
     };
-    u32le(libr::ARCA_OFF_VERSION) == libr::ARCA_VERSION
-        && u32le(libr::ARCA_OFF_BLOCK_SIZE) == libr::ARCA_BLOCK_SIZE
-        && libr::image_hash(&sb[..libr::ARCA_OFF_CHECK]) == u64le(libr::ARCA_OFF_CHECK)
+    u32le(civis::ARCA_OFF_VERSION) == civis::ARCA_VERSION
+        && u32le(civis::ARCA_OFF_BLOCK_SIZE) == civis::ARCA_BLOCK_SIZE
+        && civis::image_hash(&sb[..civis::ARCA_OFF_CHECK]) == u64le(civis::ARCA_OFF_CHECK)
 }
 
 /// Legge 512 B da un path /dev (open/read/close) o None.
 fn read_sector(path: &str) -> Option<[u8; 512]> {
-    let Ok(fd) = libr::open(path, 0) else { return None };
+    let Ok(fd) = civis::open(path, 0) else { return None };
     let mut sec = [0u8; 512];
-    let n = libr::read_fs(fd, &mut sec, 512);
-    let _ = libr::close(fd);
+    let n = civis::read_fs(fd, &mut sec, 512);
+    let _ = civis::close(fd);
     if n != Ok(512) {
         return None;
     }
@@ -168,10 +168,10 @@ fn find_gpt_arca() -> Option<([u8; 4], [u8; 4])> {
 /// Generazione superblock da /dev/sdc1 (retry throttled: dopo un restart il
 /// resolve del device puo' fallire i primi tentativi).
 fn read_gen() -> Option<u64> {
-    libr::poll_value(200, libr::POLL_PERIOD_TICKS, || {
+    civis::poll_value(200, civis::POLL_PERIOD_TICKS, || {
         read_sector("/dev/sdc1").map(|s| {
             u64::from_le_bytes(
-                s[libr::ARCA_OFF_GEN..libr::ARCA_OFF_GEN + 8].try_into().unwrap_or([0; 8]),
+                s[civis::ARCA_OFF_GEN..civis::ARCA_OFF_GEN + 8].try_into().unwrap_or([0; 8]),
             )
         })
     })
@@ -180,15 +180,15 @@ fn read_gen() -> Option<u64> {
 /// `R_GET_HASH` di un path (32 B) o None.
 fn get_hash(path: &str) -> Option<[u8; 32]> {
     let mut h = [0u8; 32];
-    match libr::get_hash(path, &mut h) {
+    match civis::get_hash(path, &mut h) {
         Ok(()) => Some(h),
         Err(_) => None,
     }
 }
 
-libr::entry!(real_main);
+civis::entry!(real_main);
 fn real_main(_sp: u64) -> ! {
-    println!("[testsarca] starting, pid={}", libr::getpid());
+    println!("[testsarca] starting, pid={}", civis::getpid());
     let mut c = Checks { pass: 0, total: 0 };
 
     // 1. Vettori BLAKE2s (valori generati da due implementazioni indipendenti
@@ -208,9 +208,9 @@ fn real_main(_sp: u64) -> ! {
     // 2. ramfs: content_hash via R_GET_HASH == ricalcolo indipendente.
     let payload = b"velordor-arcafs-p5-content";
     let mut rt_ok = false;
-    if let Ok(fd) = libr::open("/sarca.txt", libr::O_CREAT) {
-        let w = libr::write_fs(fd, payload, payload.len());
-        let _ = libr::close(fd);
+    if let Ok(fd) = civis::open("/sarca.txt", civis::O_CREAT) {
+        let w = civis::write_fs(fd, payload, payload.len());
+        let _ = civis::close(fd);
         if w == Ok(payload.len()) {
             let expect = blake2s::blake2s(payload);
             rt_ok = get_hash("/sarca.txt") == Some(expect);
@@ -220,10 +220,10 @@ fn real_main(_sp: u64) -> ! {
 
     // 3. tamper: contenuto diverso -> hash diverso (e non quello vecchio).
     let mut tamper_ok = false;
-    if let Ok(fd) = libr::open("/sarca.txt", libr::O_TRUNC) {
+    if let Ok(fd) = civis::open("/sarca.txt", civis::O_TRUNC) {
         let other = b"velordor-arcafs-p5-TAMPERED";
-        let w = libr::write_fs(fd, other, other.len());
-        let _ = libr::close(fd);
+        let w = civis::write_fs(fd, other, other.len());
+        let _ = civis::close(fd);
         if w == Ok(other.len()) {
             let h = get_hash("/sarca.txt");
             tamper_ok = h == Some(blake2s::blake2s(other))
@@ -231,7 +231,7 @@ fn real_main(_sp: u64) -> ! {
         }
     }
     c.ok("tamper hash cambia", tamper_ok);
-    let _ = libr::remove("/sarca.txt");
+    let _ = civis::remove("/sarca.txt");
 
     // 4-6 + 14-21 (semantica versionata): girano DOPO il bind (test 28) sul
     // backend blocchi — stessi assert 56.1, backend diverso (specifica §19).
@@ -248,15 +248,15 @@ fn real_main(_sp: u64) -> ! {
             src[5..5 + len].copy_from_slice(&name[..len]);
             let src = core::str::from_utf8(&src[..5 + len]).unwrap_or("/dev/sdc");
 
-            let mounted = libr::mount(src, "/arca").is_ok();
+            let mounted = civis::mount(src, "/arca").is_ok();
             c.ok("mount /arca", mounted);
             if mounted {
-                let opened = libr::open("/arca/anything", 0);
+                let opened = civis::open("/arca/anything", 0);
                 c.ok("open stub rifiutato", opened.is_err());
                 let mut buf = [0u8; 64];
-                let rd = libr::readdir("/arca", &mut buf, 64);
+                let rd = civis::readdir("/arca", &mut buf, 64);
                 c.ok("readdir stub rifiutato", rd.is_err());
-                c.ok("umount /arca", libr::umount("/arca").is_ok());
+                c.ok("umount /arca", civis::umount("/arca").is_ok());
             } else {
                 println!("[testsarca] mount {} FAILED (stub?)", dev);
                 c.ok("open stub rifiutato", false);
@@ -289,10 +289,10 @@ fn real_main(_sp: u64) -> ! {
             let src = core::str::from_utf8(&src[..5 + plen]).unwrap_or("/dev/sdd1");
             // Round-trip mount in un solo assert: mount ok + open rifiutato
             // (stub) + umount ok. Dettaglio nel log a fallimento parziale.
-            let gpt_ok = match libr::mount(src, "/arca") {
+            let gpt_ok = match civis::mount(src, "/arca") {
                 Ok(()) => {
-                    let open_ok = libr::open("/arca/anything", 0).is_err();
-                    let umount_ok = libr::umount("/arca").is_ok();
+                    let open_ok = civis::open("/arca/anything", 0).is_err();
+                    let umount_ok = civis::umount("/arca").is_ok();
                     if !open_ok {
                         println!("[testsarca] GPT: open su stub riuscita?!");
                     }
@@ -330,36 +330,36 @@ fn real_main(_sp: u64) -> ! {
         } else {
             // 22. open (o gia' legato all'avvio 56.2c: re-open rifiutato,
             // tollerato) + open assente rifiutata + motore attivo.
-            let _ = libr::arca_open("/dev/sdc1");
-            let v22 = libr::arca_use_disk(true).is_ok()
-                && libr::arca_open("/dev/sdZ").is_err();
+            let _ = civis::arca_open("/dev/sdc1");
+            let v22 = civis::arca_use_disk(true).is_ok()
+                && civis::arca_open("/dev/sdZ").is_err();
             c.ok("vol open + assente", v22);
             // Baseline allocatore per assert relativi (il bind all'avvio ha
             // gia' consumato blocchi: mai numeri assoluti qui).
-            let (h0, l0) = match libr::arca_stat_vol() {
+            let (h0, l0) = match civis::arca_stat_vol() {
                 Ok((h, l, _)) => (h, l),
                 Err(_) => (0, 0),
             };
 
             // 23. alloc due blocchi distinti mai-zero.
-            let b1 = libr::arca_alloc().ok();
-            let b2 = libr::arca_alloc().ok();
+            let b1 = civis::arca_alloc().ok();
+            let b2 = civis::arca_alloc().ok();
             let v23 = match (b1, b2) {
                 (Some(a), Some(b)) => a >= 1 && b >= 1 && a != b,
                 _ => false,
             };
             c.ok("alloc distinti mai-zero", v23);
             // 24. write/read round-trip 3560 B (checksum verificata dal server).
-            let mut pat = [0u8; libr::ARCA_NODE_PAYLOAD_LEN];
+            let mut pat = [0u8; civis::ARCA_NODE_PAYLOAD_LEN];
             for (i, b) in pat.iter_mut().enumerate() {
                 *b = ((i * 7) % 251) as u8;
             }
             let v24 = match (b1, b2) {
                 (Some(a), Some(b)) => {
-                    libr::arca_write_node(a, &pat).is_ok()
-                        && matches!(libr::arca_read_node(a), Ok(v) if v == pat)
-                        && libr::arca_write_node(b, &pat).is_ok()
-                        && matches!(libr::arca_read_node(b), Ok(v) if v == pat)
+                    civis::arca_write_node(a, &pat).is_ok()
+                        && matches!(civis::arca_read_node(a), Ok(v) if v == pat)
+                        && civis::arca_write_node(b, &pat).is_ok()
+                        && matches!(civis::arca_read_node(b), Ok(v) if v == pat)
                 }
                 _ => false,
             };
@@ -367,16 +367,16 @@ fn real_main(_sp: u64) -> ! {
             // 25. stat: high_water e live avanzati di 2 dai due alloc (delta
             // sulla baseline: il bind all'avvio consuma un numero ignoto).
             let v25 = matches!(
-                libr::arca_stat_vol(),
+                civis::arca_stat_vol(),
                 Ok((high, live, _)) if high == h0 + 2 && live == l0 + 2
             );
             c.ok("stat volume", v25);
             // 26. free + realloc LIFO dallo stesso blocco (live invariato).
             let v26 = match b1 {
                 Some(a) => {
-                    libr::arca_free(a).is_ok()
-                        && matches!(libr::arca_alloc(), Ok(b) if b == a)
-                        && matches!(libr::arca_stat_vol(), Ok((_, live, _)) if live == l0 + 2)
+                    civis::arca_free(a).is_ok()
+                        && matches!(civis::arca_alloc(), Ok(b) if b == a)
+                        && matches!(civis::arca_stat_vol(), Ok((_, live, _)) if live == l0 + 2)
                 }
                 _ => false,
             };
@@ -384,64 +384,64 @@ fn real_main(_sp: u64) -> ! {
             // 27. rifiuti: double-free, free(0), free ignoto, read(0).
             let v27 = match b1 {
                 Some(a) => {
-                    libr::arca_free(a).is_ok()
-                        && libr::arca_free(a).is_err()
-                        && libr::arca_free(0).is_err()
-                        && libr::arca_free(99999).is_err()
-                        && libr::arca_read_node(0).is_err()
+                    civis::arca_free(a).is_ok()
+                        && civis::arca_free(a).is_err()
+                        && civis::arca_free(0).is_err()
+                        && civis::arca_free(99999).is_err()
+                        && civis::arca_read_node(0).is_err()
                 }
                 _ => false,
             };
             c.ok("rifiuti allocatore", v27);
             // 28. bind motore B+tree + seed `sys` (server-side): da qui gli
             // op nativi parlano ai blocchi (commit per-op, shadow + flip).
-            let v28 = libr::arca_use_disk(true).is_ok()
-                && matches!(libr::obj_get(b"sys", b"bin/gpu.bin"), Ok(v) if !v.is_empty());
+            let v28 = civis::arca_use_disk(true).is_ok()
+                && matches!(civis::obj_get(b"sys", b"bin/gpu.bin"), Ok(v) if !v.is_empty());
             c.ok("bind motore + seed sys", v28);
             // 4. round-trip piccolo su disco (stesso assert 56.1).
             let small = b"nativo-arcafs-obj";
-            let put_ok = libr::obj_put(b"test", b"k1", small) == Ok(small.len() as u64);
+            let put_ok = civis::obj_put(b"test", b"k1", small) == Ok(small.len() as u64);
             c.ok(
                 "obj round-trip piccolo",
-                put_ok && matches!(libr::obj_get(b"test", b"k1"), Ok(v) if v == small),
+                put_ok && matches!(civis::obj_get(b"test", b"k1"), Ok(v) if v == small),
             );
             // 5. chunking 10000 B su disco (stateless + commit per chunk).
             let big: alloc::vec::Vec<u8> = (0..10000u32).map(|i| (i % 251) as u8).collect();
-            let put_big = libr::obj_put(b"test", b"big", &big) == Ok(big.len() as u64);
+            let put_big = civis::obj_put(b"test", b"big", &big) == Ok(big.len() as u64);
             c.ok(
                 "obj chunking 10000B",
-                put_big && matches!(libr::obj_get(b"test", b"big"), Ok(v) if v == big),
+                put_big && matches!(civis::obj_get(b"test", b"big"), Ok(v) if v == big),
             );
             // 6. chiave assente → errore (mai dati inventati).
-            c.ok("obj assente -> errore", libr::obj_get(b"test", b"nope").is_err());
+            c.ok("obj assente -> errore", civis::obj_get(b"test", b"nope").is_err());
             // 14-21. versioni + snapshot su disco (stessi assert 56.1).
             {
                 let (b, k1) = (&b"v56"[..], &b"k1"[..]);
                 let a = b"versione-A";
                 let bb = b"versione-B";
-                let v14 = libr::obj_put(b, k1, a) == Ok(a.len() as u64)
-                    && libr::obj_put(b, k1, bb) == Ok(bb.len() as u64)
-                    && matches!(libr::obj_get(b, k1), Ok(v) if v == bb)
-                    && matches!(libr::obj_stat(b, k1), Ok((_, sz, nv, _)) if sz == bb.len() as u64 && nv == 2);
+                let v14 = civis::obj_put(b, k1, a) == Ok(a.len() as u64)
+                    && civis::obj_put(b, k1, bb) == Ok(bb.len() as u64)
+                    && matches!(civis::obj_get(b, k1), Ok(v) if v == bb)
+                    && matches!(civis::obj_stat(b, k1), Ok((_, sz, nv, _)) if sz == bb.len() as u64 && nv == 2);
                 c.ok("versioni: catena + latest", v14);
                 let cc = b"versione-C";
-                let s = libr::snap_create(b).ok();
+                let s = civis::snap_create(b).ok();
                 c.ok("snap create", s.is_some());
                 let v16 = match s {
                     Some(sid) => {
-                        libr::obj_put(b, k1, cc) == Ok(cc.len() as u64)
-                            && libr::snap_rollback(b, k1, sid).is_ok()
-                            && matches!(libr::obj_get(b, k1), Ok(v) if v == bb)
-                            && matches!(libr::obj_stat(b, k1), Ok((_, _, nv, _)) if nv == 4)
+                        civis::obj_put(b, k1, cc) == Ok(cc.len() as u64)
+                            && civis::snap_rollback(b, k1, sid).is_ok()
+                            && matches!(civis::obj_get(b, k1), Ok(v) if v == bb)
+                            && matches!(civis::obj_stat(b, k1), Ok((_, _, nv, _)) if nv == 4)
                     }
                     None => false,
                 };
                 c.ok("rollback ripristina pinnata", v16);
                 let v17 = match s {
                     Some(sid) => {
-                        libr::snap_delete(sid).is_ok()
-                            && matches!(libr::obj_stat(b, k1), Ok((_, _, nv, _)) if nv == 4)
-                            && libr::snap_delete(sid).is_err()
+                        civis::snap_delete(sid).is_ok()
+                            && matches!(civis::obj_stat(b, k1), Ok((_, _, nv, _)) if nv == 4)
+                            && civis::snap_delete(sid).is_err()
                     }
                     None => false,
                 };
@@ -449,37 +449,37 @@ fn real_main(_sp: u64) -> ! {
                 let mut v18 = true;
                 for i in 0..10u8 {
                     let d = [b'D', b'0' + i];
-                    if libr::obj_put(b, k1, &d) != Ok(2) {
+                    if civis::obj_put(b, k1, &d) != Ok(2) {
                         v18 = false;
                     }
                 }
                 v18 = v18
-                    && matches!(libr::obj_get(b, k1), Ok(v) if v == [b'D', b'9'])
-                    && matches!(libr::obj_stat(b, k1), Ok((_, sz, nv, _)) if sz == 2 && nv == 8);
+                    && matches!(civis::obj_get(b, k1), Ok(v) if v == [b'D', b'9'])
+                    && matches!(civis::obj_stat(b, k1), Ok((_, sz, nv, _)) if sz == 2 && nv == 8);
                 c.ok("retention trim a 8", v18);
-                let v19 = libr::obj_delete(b, k1).is_ok()
-                    && libr::obj_get(b, k1).is_err()
-                    && libr::obj_stat(b, k1).is_err()
-                    && libr::obj_delete(b, k1).is_err();
+                let v19 = civis::obj_delete(b, k1).is_ok()
+                    && civis::obj_get(b, k1).is_err()
+                    && civis::obj_stat(b, k1).is_err()
+                    && civis::obj_delete(b, k1).is_err();
                 c.ok("delete oggetto", v19);
                 let (cb, ka, kb) = (&b"csrc"[..], &b"a"[..], &b"b"[..]);
-                let v20 = libr::obj_put(cb, ka, b"uno") == Ok(3)
-                    && libr::obj_put(cb, kb, b"due!") == Ok(4)
-                    && match libr::snap_create(cb) {
+                let v20 = civis::obj_put(cb, ka, b"uno") == Ok(3)
+                    && civis::obj_put(cb, kb, b"due!") == Ok(4)
+                    && match civis::snap_create(cb) {
                         Ok(sid) => {
-                            libr::snap_clone(sid, b"cdst") == Ok(2)
-                                && matches!(libr::obj_get(b"cdst", ka), Ok(v) if v == b"uno")
-                                && matches!(libr::obj_get(b"cdst", kb), Ok(v) if v == b"due!")
-                                && libr::snap_delete(sid).is_ok()
+                            civis::snap_clone(sid, b"cdst") == Ok(2)
+                                && matches!(civis::obj_get(b"cdst", ka), Ok(v) if v == b"uno")
+                                && matches!(civis::obj_get(b"cdst", kb), Ok(v) if v == b"due!")
+                                && civis::snap_delete(sid).is_ok()
                         }
                         Err(_) => false,
                     };
                 c.ok("clone bucket", v20);
-                let v21 = match libr::obj_stat(b"cdst", ka) {
+                let v21 = match civis::obj_stat(b"cdst", ka) {
                     Ok((id, sz, nv, _)) if id > 0 && sz == 3 && nv == 1 => {
-                        matches!(libr::obj_get_id(id), Ok(v) if v == b"uno")
-                            && matches!(libr::obj_stat_id(id), Ok((s2, n2, _)) if s2 == 3 && n2 == 1)
-                            && libr::obj_get_id(id + 1000000).is_err()
+                        matches!(civis::obj_get_id(id), Ok(v) if v == b"uno")
+                            && matches!(civis::obj_stat_id(id), Ok((s2, n2, _)) if s2 == 3 && n2 == 1)
+                            && civis::obj_get_id(id + 1000000).is_err()
                     }
                     _ => false,
                 };
@@ -496,7 +496,7 @@ fn real_main(_sp: u64) -> ! {
                 let mut kb = [b'k', 0, 0, 0, 0, 0, 0, 0];
                 kb[1..].copy_from_slice(&(i as u64).to_le_bytes()[..7]);
                 let val: alloc::vec::Vec<u8> = (0..64u32).map(|j| ((i + j) % 251) as u8).collect();
-                if libr::obj_put(b"d56", &kb, &val) != Ok(64) {
+                if civis::obj_put(b"d56", &kb, &val) != Ok(64) {
                     v29 = false;
                 }
             }
@@ -504,7 +504,7 @@ fn real_main(_sp: u64) -> ! {
                 let mut kb = [b'k', 0, 0, 0, 0, 0, 0, 0];
                 kb[1..].copy_from_slice(&(i as u64).to_le_bytes()[..7]);
                 let want: alloc::vec::Vec<u8> = (0..64u32).map(|j| ((i + j) % 251) as u8).collect();
-                if !matches!(libr::obj_get(b"d56", &kb), Ok(v) if v == want) {
+                if !matches!(civis::obj_get(b"d56", &kb), Ok(v) if v == want) {
                     v29 = false;
                 }
             }
@@ -514,26 +514,26 @@ fn real_main(_sp: u64) -> ! {
             let long_k = [b'x'; 200];
             let too_b = [b'Y'; 17];
             let too_k = [b'Z'; 256];
-            let v30 = libr::obj_put(b"d56", b"big3k", &big3k) == Ok(3000)
-                && matches!(libr::obj_get(b"d56", b"big3k"), Ok(v) if v == big3k)
-                && matches!(libr::obj_stat(b"d56", b"big3k"), Ok((_, 3000, 1, _)))
-                && libr::obj_put(b"d56", &long_k, b"v") == Ok(1)
-                && matches!(libr::obj_get(b"d56", &long_k), Ok(v) if v == b"v")
-                && libr::obj_put(&too_b, b"k", b"v").is_err()
-                && libr::obj_put(b"d56", &too_k, b"v").is_err()
-                && libr::obj_get(b"d56", &too_k).is_err();
+            let v30 = civis::obj_put(b"d56", b"big3k", &big3k) == Ok(3000)
+                && matches!(civis::obj_get(b"d56", b"big3k"), Ok(v) if v == big3k)
+                && matches!(civis::obj_stat(b"d56", b"big3k"), Ok((_, 3000, 1, _)))
+                && civis::obj_put(b"d56", &long_k, b"v") == Ok(1)
+                && matches!(civis::obj_get(b"d56", &long_k), Ok(v) if v == b"v")
+                && civis::obj_put(&too_b, b"k", b"v").is_err()
+                && civis::obj_put(b"d56", &too_k, b"v").is_err()
+                && civis::obj_get(b"d56", &too_k).is_err();
             c.ok("overflow + chiavi lunghe + bound", v30);
             // 31. refcount: snapshot pinna, delete live non invalida,
             // rollback ricrea, delete snapshot sgancia.
-            let v31 = libr::obj_put(b"dpin", b"p", b"PIN") == Ok(3)
-                && match libr::snap_create(b"dpin") {
+            let v31 = civis::obj_put(b"dpin", b"p", b"PIN") == Ok(3)
+                && match civis::snap_create(b"dpin") {
                     Ok(sid) => {
-                        libr::obj_delete(b"dpin", b"p").is_ok()
-                            && libr::obj_get(b"dpin", b"p").is_err()
-                            && libr::snap_rollback(b"dpin", b"p", sid).is_ok()
-                            && matches!(libr::obj_get(b"dpin", b"p"), Ok(v) if v == b"PIN")
-                            && libr::snap_delete(sid).is_ok()
-                            && libr::snap_delete(sid).is_err()
+                        civis::obj_delete(b"dpin", b"p").is_ok()
+                            && civis::obj_get(b"dpin", b"p").is_err()
+                            && civis::snap_rollback(b"dpin", b"p", sid).is_ok()
+                            && matches!(civis::obj_get(b"dpin", b"p"), Ok(v) if v == b"PIN")
+                            && civis::snap_delete(sid).is_ok()
+                            && civis::snap_delete(sid).is_err()
                     }
                     Err(_) => false,
                 };
@@ -547,23 +547,23 @@ fn real_main(_sp: u64) -> ! {
             let v32 = {
                 let wv: alloc::vec::Vec<u8> =
                     (0..3000u32).map(|i| (i * 11 % 251) as u8).collect();
-                let mut ok = libr::obj_put(b"dcrash", b"w", &wv) == Ok(wv.len() as u64);
+                let mut ok = civis::obj_put(b"dcrash", b"w", &wv) == Ok(wv.len() as u64);
                 let gen0 = read_gen();
                 let mut last: alloc::vec::Vec<u8> = alloc::vec::Vec::new();
                 for i in 0..10u32 {
                     let v: alloc::vec::Vec<u8> =
                         (0..3000u32).map(|j| ((i + j * 7) % 251) as u8).collect();
-                    if libr::obj_put(b"dcrash", b"bulk", &v) != Ok(v.len() as u64) {
+                    if civis::obj_put(b"dcrash", b"bulk", &v) != Ok(v.len() as u64) {
                         ok = false;
                     }
                     last = v;
                 }
-                ok = ok && libr::init_bounce(libr::Service::Cardo).is_ok();
-                ok = ok && libr::poll_wait(1000, libr::POLL_PERIOD_TICKS, || {
-                    libr::service_pid(libr::Service::Cardo).is_err()
+                ok = ok && civis::init_bounce(civis::Service::Cardo).is_ok();
+                ok = ok && civis::poll_wait(1000, civis::POLL_PERIOD_TICKS, || {
+                    civis::service_pid(civis::Service::Cardo).is_err()
                 });
-                ok = ok && libr::poll_value(1000, libr::POLL_PERIOD_TICKS, || {
-                    libr::service_pid(libr::Service::Cardo).ok()
+                ok = ok && civis::poll_value(1000, civis::POLL_PERIOD_TICKS, || {
+                    civis::service_pid(civis::Service::Cardo).ok()
                 })
                 .is_some();
                 // Re-bind sul cardo fresco (prima op: re-handshake
@@ -573,15 +573,15 @@ fn real_main(_sp: u64) -> ! {
                 // singolo tentativo in finestra di avvio. Poi i dati, non
                 // gli snapshot (tabella in RAM: persa col restart — in 56.2c
                 // persistente, ma qui non assertita).
-                let _ = libr::arca_open("/dev/sdc1");
-                ok = ok && libr::poll_wait(1000, libr::POLL_PERIOD_TICKS, || {
-                    libr::arca_use_disk(true).is_ok()
+                let _ = civis::arca_open("/dev/sdc1");
+                ok = ok && civis::poll_wait(1000, civis::POLL_PERIOD_TICKS, || {
+                    civis::arca_use_disk(true).is_ok()
                 });
-                ok = ok && matches!(libr::obj_get(b"dcrash", b"w"), Ok(v) if v == wv);
-                ok = ok && matches!(libr::obj_get(b"dcrash", b"bulk"), Ok(v) if v == last);
+                ok = ok && matches!(civis::obj_get(b"dcrash", b"w"), Ok(v) if v == wv);
+                ok = ok && matches!(civis::obj_get(b"dcrash", b"bulk"), Ok(v) if v == last);
                 ok = ok
                     && matches!(
-                        libr::obj_get(b"sys", b"bin/gpu.bin"),
+                        civis::obj_get(b"sys", b"bin/gpu.bin"),
                         Ok(v) if !v.is_empty()
                     );
                 let gen1 = read_gen();
@@ -590,8 +590,8 @@ fn real_main(_sp: u64) -> ! {
                     _ => false,
                 };
                 ok = ok
-                    && libr::obj_put(b"dcrash", b"post", b"vivo") == Ok(4)
-                    && matches!(libr::obj_get(b"dcrash", b"post"), Ok(v) if v == b"vivo");
+                    && civis::obj_put(b"dcrash", b"post", b"vivo") == Ok(4)
+                    && matches!(civis::obj_get(b"dcrash", b"post"), Ok(v) if v == b"vivo");
                 ok
             };
             c.ok("crash kill + remount dati intatti", v32);
@@ -601,8 +601,8 @@ fn real_main(_sp: u64) -> ! {
             // snapshot e' USABILE (tabella persistente → rollback prova), il
             // reclaim riporta blocchi sotto high_pre, gen monotona.
             let v33 = {
-                let mut ok = libr::obj_put(b"dgc", b"w", b"gcvivo") == Ok(6);
-                let sid = match libr::snap_create(b"dgc") {
+                let mut ok = civis::obj_put(b"dgc", b"w", b"gcvivo") == Ok(6);
+                let sid = match civis::snap_create(b"dgc") {
                     Ok(s) => Some(s),
                     Err(_) => {
                         ok = false;
@@ -611,11 +611,11 @@ fn real_main(_sp: u64) -> ! {
                 };
                 // 4 orfani staged (allocati, mai linkati).
                 for _ in 0..4 {
-                    if !matches!(libr::arca_alloc(), Ok(b) if b != 0) {
+                    if !matches!(civis::arca_alloc(), Ok(b) if b != 0) {
                         ok = false;
                     }
                 }
-                let high_pre = match libr::arca_stat_vol() {
+                let high_pre = match civis::arca_stat_vol() {
                     Ok((h, _, _)) => h,
                     Err(_) => {
                         ok = false;
@@ -623,26 +623,26 @@ fn real_main(_sp: u64) -> ! {
                     }
                 };
                 let gen_pre = read_gen();
-                ok = ok && libr::init_bounce(libr::Service::Cardo).is_ok();
-                ok = ok && libr::poll_wait(1000, libr::POLL_PERIOD_TICKS, || {
-                    libr::service_pid(libr::Service::Cardo).is_err()
+                ok = ok && civis::init_bounce(civis::Service::Cardo).is_ok();
+                ok = ok && civis::poll_wait(1000, civis::POLL_PERIOD_TICKS, || {
+                    civis::service_pid(civis::Service::Cardo).is_err()
                 });
-                ok = ok && libr::poll_value(1000, libr::POLL_PERIOD_TICKS, || {
-                    libr::service_pid(libr::Service::Cardo).ok()
+                ok = ok && civis::poll_value(1000, civis::POLL_PERIOD_TICKS, || {
+                    civis::service_pid(civis::Service::Cardo).ok()
                 })
                 .is_some();
                 // Re-bind tollerante (startup auto-lega gia': open puo'
                 // prendere il rifiuto re-open, use_disk e' idempotente).
-                let _ = libr::arca_open("/dev/sdc1");
-                ok = ok && libr::poll_wait(1000, libr::POLL_PERIOD_TICKS, || {
-                    libr::arca_use_disk(true).is_ok()
+                let _ = civis::arca_open("/dev/sdc1");
+                ok = ok && civis::poll_wait(1000, civis::POLL_PERIOD_TICKS, || {
+                    civis::arca_use_disk(true).is_ok()
                 });
                 // Snapshot sopravvissuto = usabile, non solo elencato.
                 ok = ok
                     && match sid {
                         Some(s) => {
-                            libr::snap_rollback(b"dgc", b"w", s).is_ok()
-                                && matches!(libr::obj_get(b"dgc", b"w"), Ok(v) if v == b"gcvivo")
+                            civis::snap_rollback(b"dgc", b"w", s).is_ok()
+                                && matches!(civis::obj_get(b"dgc", b"w"), Ok(v) if v == b"gcvivo")
                         }
                         None => false,
                     };
@@ -652,7 +652,7 @@ fn real_main(_sp: u64) -> ! {
                 // crescente e la testa e' l'orfano piu' alto, non per forza
                 // uno staged).
                 ok = ok
-                    && match libr::arca_alloc() {
+                    && match civis::arca_alloc() {
                         Ok(b) => b < high_pre,
                         Err(_) => false,
                     };
@@ -663,8 +663,8 @@ fn real_main(_sp: u64) -> ! {
                         _ => false,
                     };
                 ok = ok
-                    && libr::obj_put(b"dgc", b"post", b"gcok") == Ok(4)
-                    && matches!(libr::obj_get(b"dgc", b"post"), Ok(v) if v == b"gcok");
+                    && civis::obj_put(b"dgc", b"post", b"gcok") == Ok(4)
+                    && matches!(civis::obj_get(b"dgc", b"post"), Ok(v) if v == b"gcok");
                 ok
             };
             c.ok("gc orfani + snapshot sopravvissuto", v33);
@@ -674,17 +674,17 @@ fn real_main(_sp: u64) -> ! {
             // (latest o per-seq). Dopo crash/GC per scelta: il restart di
             // cardo non deve rompere il client log.
             // 34. servizio registrato e raggiungibile per nome.
-            let v34 = libr::service_lookup(libr::Service::Vestigia).is_ok();
+            let v34 = civis::service_lookup(civis::Service::Vestigia).is_ok();
             c.ok("log registrato", v34);
             // 35. append + read latest own-bucket: seq monotonico, record
             // integro (livello/tag/messaggio), epoch vera (post-Time).
-            let day = libr::vestigia::log_day();
-            let v35 = match libr::vestigia::log_append(libr::vestigia::LOG_INFO, b"t57", b"hello-57") {
-                Ok(seq) if seq >= 1 => match libr::vestigia::log_read(day, 0) {
-                    Ok((got, rec)) => match libr::vestigia::record_decode(&rec) {
+            let day = civis::vestigia::log_day();
+            let v35 = match civis::vestigia::log_append(civis::vestigia::LOG_INFO, b"t57", b"hello-57") {
+                Ok(seq) if seq >= 1 => match civis::vestigia::log_read(day, 0) {
+                    Ok((got, rec)) => match civis::vestigia::record_decode(&rec) {
                         Some((_, epoch, lvl, tag, msg)) => {
                             got == seq
-                                && lvl == libr::vestigia::LOG_INFO
+                                && lvl == civis::vestigia::LOG_INFO
                                 && tag == b"t57"
                                 && msg == b"hello-57"
                                 && epoch > 0
@@ -702,12 +702,12 @@ fn real_main(_sp: u64) -> ! {
                 for (i, b) in big.iter_mut().enumerate() {
                     *b = ((i * 13) % 251) as u8;
                 }
-                match libr::vestigia::log_append(libr::vestigia::LOG_WARN, b"t57", &big) {
-                    Ok(seq) => match libr::vestigia::log_read(day, seq) {
-                        Ok((got, rec)) => match libr::vestigia::record_decode(&rec) {
+                match civis::vestigia::log_append(civis::vestigia::LOG_WARN, b"t57", &big) {
+                    Ok(seq) => match civis::vestigia::log_read(day, seq) {
+                        Ok((got, rec)) => match civis::vestigia::record_decode(&rec) {
                             Some((_, _, lvl, tag, msg)) => {
                                 got == seq
-                                    && lvl == libr::vestigia::LOG_WARN
+                                    && lvl == civis::vestigia::LOG_WARN
                                     && tag == b"t57"
                                     && msg == big
                             }
@@ -730,15 +730,15 @@ fn real_main(_sp: u64) -> ! {
             for (i, b) in too_msg.iter_mut().enumerate() {
                 *b = (i % 251) as u8;
             }
-            let v37 = libr::vestigia::log_append(libr::vestigia::LOG_INFO, &too_tag, b"v").is_err()
-                && libr::vestigia::log_append(libr::vestigia::LOG_INFO, b"t57", &too_msg).is_err()
-                && libr::vestigia::log_append(libr::vestigia::LOG_INFO, b"t57", b"").is_err()
-                && libr::vestigia::log_read(day + 1000, 0).is_err();
+            let v37 = civis::vestigia::log_append(civis::vestigia::LOG_INFO, &too_tag, b"v").is_err()
+                && civis::vestigia::log_append(civis::vestigia::LOG_INFO, b"t57", &too_msg).is_err()
+                && civis::vestigia::log_append(civis::vestigia::LOG_INFO, b"t57", b"").is_err()
+                && civis::vestigia::log_read(day + 1000, 0).is_err();
             c.ok("log rifiuti + giorno ignoto", v37);
             // 38. seal esplicito: due snapshot monotonici, delete di cleanup.
-            let v38 = match (libr::vestigia::log_seal(), libr::vestigia::log_seal()) {
+            let v38 = match (civis::vestigia::log_seal(), civis::vestigia::log_seal()) {
                 (Ok(s1), Ok(s2)) if s1 >= 1 && s2 > s1 => {
-                    libr::snap_delete(s1).is_ok() && libr::snap_delete(s2).is_ok()
+                    civis::snap_delete(s1).is_ok() && civis::snap_delete(s2).is_ok()
                 }
                 _ => false,
             };
@@ -746,7 +746,7 @@ fn real_main(_sp: u64) -> ! {
             // 39. stats: appended conta (2 qui + 9 milestone di init riversati
             // dal flush — prova che la FLUSH ha funzionato), niente evict,
             // backend durevole col volume presente.
-            let v39 = match libr::vestigia::log_stats() {
+            let v39 = match civis::vestigia::log_stats() {
                 Ok((appended, evicted, durable, _)) => {
                     appended >= 11 && evicted == 0 && durable
                 }
@@ -756,22 +756,22 @@ fn real_main(_sp: u64) -> ! {
             // 40. restart di vestigia via init (bounce): ricompare (supervisione),
             // il client rifa lookup+REG da solo e latest e' il just-written
             // (indice RAM vergine + overlay di versioni per disegno, mai wedge).
-            let v40 = match libr::init_bounce(libr::Service::Vestigia) {
+            let v40 = match civis::init_bounce(civis::Service::Vestigia) {
                 Ok(_) => {
-                    let gone = libr::poll_wait(1000, libr::POLL_PERIOD_TICKS, || {
-                        libr::service_pid(libr::Service::Vestigia).is_err()
+                    let gone = civis::poll_wait(1000, civis::POLL_PERIOD_TICKS, || {
+                        civis::service_pid(civis::Service::Vestigia).is_err()
                     });
-                    let back = libr::poll_value(1000, libr::POLL_PERIOD_TICKS, || {
-                        libr::service_pid(libr::Service::Vestigia).ok()
+                    let back = civis::poll_value(1000, civis::POLL_PERIOD_TICKS, || {
+                        civis::service_pid(civis::Service::Vestigia).ok()
                     });
                     let alive = gone
                         && back.is_some()
-                        && libr::poll_wait(1000, libr::POLL_PERIOD_TICKS, || {
-                            libr::service_lookup(libr::Service::Vestigia).is_ok()
+                        && civis::poll_wait(1000, civis::POLL_PERIOD_TICKS, || {
+                            civis::service_lookup(civis::Service::Vestigia).is_ok()
                         });
-                    alive && match libr::vestigia::log_append(libr::vestigia::LOG_INFO, b"t57", b"post-bounce") {
-                        Ok(_) => match libr::vestigia::log_read(day, 0) {
-                            Ok((_, rec)) => match libr::vestigia::record_decode(&rec) {
+                    alive && match civis::vestigia::log_append(civis::vestigia::LOG_INFO, b"t57", b"post-bounce") {
+                        Ok(_) => match civis::vestigia::log_read(day, 0) {
+                            Ok((_, rec)) => match civis::vestigia::record_decode(&rec) {
                                 Some((_, _, _, tag, msg)) => tag == b"t57" && msg == b"post-bounce",
                                 None => false,
                             },
@@ -792,8 +792,8 @@ fn real_main(_sp: u64) -> ! {
         println!("[testsarca] FAIL {}/{}", c.pass, c.total);
     }
     println!("[testsarca] all tests done");
-    let _ = libr::send(libr::CHANNEL_PARENT, libr::TEST_DONE, 0, 0);
-    libr::exit(if c.pass == c.total { 0 } else { 1 });
+    let _ = civis::send(civis::CHANNEL_PARENT, civis::TEST_DONE, 0, 0);
+    civis::exit(if c.pass == c.total { 0 } else { 1 });
 }
 
 /// Decodifica 64 hex in `[u8; 32]` (const in test).
@@ -826,5 +826,5 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
     } else {
         println!("[testsarca] panic");
     }
-    libr::exit(1)
+    civis::exit(1)
 }

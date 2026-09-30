@@ -52,7 +52,7 @@ def main():
         found = has_line(out, b"127")
         c.check("43 $? dopo ignoto", found)
 
-        # Shebang (kernel mai coinvolto: solo shell+libr).
+        # Shebang (kernel mai coinvolto: solo shell+civis).
         out = sh.run_source(SH + "/p43d.txt")
         found = b"runhello: /fat/test/sh/h43.sh" in out and b"runhello: HI" in out
         c.check("43 shebang argv", found)

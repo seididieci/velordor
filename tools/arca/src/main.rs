@@ -4,7 +4,7 @@
 //! Offset/magic/checksum sono la single source `syscall-numbers`: questo
 //! tool non li duplica (il round-trip create→mount→stat e' il test che li
 //! tiene d'accordo). Le op guest (`list`/`get`/...) vivono in
-//! `userland/arca`; il tool completo arriva in A7.
+//! `userland/tools/arca`; il tool completo arriva in A7.
 //!
 //! Uso: `arca create <path> [--uuid HEX] [--size-mib N]`.
 //! `<path>` puo' essere un file immagine (LBA0) o un device/partizione:

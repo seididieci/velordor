@@ -16,7 +16,7 @@ extern crate alloc;
 use alloc::vec;
 use alloc::vec::Vec;
 
-use libr::println;
+use civis::println;
 
 /// Manifest degli hash dei servizi (Fase 36, identita' misurata): generato a
 /// build-time da scripts/gen-service-hashes.sh, incluso via
@@ -28,20 +28,17 @@ include!(env!("VELORDOR_SERVICE_HASHES"));
 mod helpers;
 mod t_async;
 mod t_basic;
-mod t_fdredir;
 mod t_fs;
 mod t_ipc_sched;
-mod t_jobctl;
 mod t_lifecycle;
 mod t_mapflap;
 mod t_policy;
-mod t_posix;
 mod t_stable;
 // ── main ─────────────────────────────────────────────────────────────
 
-libr::entry!(real_main);
+civis::entry!(real_main);
 fn real_main(_sp: u64) -> ! {
-    let my_pid = libr::getpid();
+    let my_pid = civis::getpid();
     println!("[usertests] suite up, pid={}", my_pid);
 
     let mut total = 0u32;
@@ -98,10 +95,6 @@ fn real_main(_sp: u64) -> ! {
     helpers::report(&mut total, &mut ok, "t50 hardening (kill/register/map ostili)", t_stable::t_hardening());
     helpers::report(&mut total, &mut ok, "t51 identita' misurata (peer_info/manifest/squat)", t_stable::t_identity());
     helpers::report(&mut total, &mut ok, "t52 exec in-place (stesso PID, hash rimisurato)", t_lifecycle::t_exec_core());
-    helpers::report(&mut total, &mut ok, "t53 fondamenta posix (lookup/errno/gate)", t_posix::t_posix_foundation());
-    helpers::report(&mut total, &mut ok, "t54 fd virtuali + redirect (trunc/append/lseek/dup/stdio)", t_fdredir::t_fd_virtual_redirect());
-    helpers::report(&mut total, &mut ok, "t55 suspend/resume + TIME congelato + gate", t_jobctl::t_suspend_resume());
-    helpers::report(&mut total, &mut ok, "t56 cancel cooperativo + escalation 130", t_jobctl::t_sigcatch_cancel());
     // t57 PRIMA di t34: nessun drop sul canale di usertests qui (t34 pretende
     // il GET default ALL); i drop GRANT/PIPE avvengono sul canale dell'helper.
     helpers::report(&mut total, &mut ok, "t57 policy identita' + dinieghi GRANT/PIPE", t_policy::t_policy());
@@ -110,18 +103,18 @@ fn real_main(_sp: u64) -> ! {
     helpers::report(&mut total, &mut ok, "t34 diritti per-canale lato server", t_fs::t_rights());
 
     println!("[usertests] SUMMARY {}/{} PASS", ok, total);
-    let _ = libr::send(libr::CHANNEL_PARENT, libr::TEST_DONE, ok as u64, 0); // init: test finito
+    let _ = civis::send(civis::CHANNEL_PARENT, civis::TEST_DONE, ok as u64, 0); // init: test finito
     if ok == total {
         println!("[usertests] PASS {}/{}", ok, total);
-        libr::exit(0);
+        civis::exit(0);
     } else {
         println!("[usertests] FAIL {}/{}", total - ok, total);
-        libr::exit(1);
+        civis::exit(1);
     }
 }
 
 #[panic_handler]
 fn panic_handler(_info: &core::panic::PanicInfo) -> ! {
     println!("[usertests] panic");
-    libr::exit(1)
+    civis::exit(1)
 }

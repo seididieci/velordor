@@ -28,9 +28,9 @@ impl<B: BlockSource> crate::provider::LocalFs for Fat32<B> {
         if path.is_empty() {
             return Err(crate::ERR_NOTFOUND);
         }
-        // O_CREAT: crea il file se non esiste (single source `libr::O_*`,
+        // O_CREAT: crea il file se non esiste (single source `civis::O_*`,
         // Fase 49: mai costanti magiche nel provider).
-        if flags & libr::O_CREAT != 0 && self.find(path).is_none() && !self.create_file(path) {
+        if flags & civis::O_CREAT != 0 && self.find(path).is_none() && !self.create_file(path) {
             return Err(crate::ERR_NOTFOUND);
         }
         let info = self.find(path).ok_or(crate::ERR_NOTFOUND)?;
@@ -40,7 +40,7 @@ impl<B: BlockSource> crate::provider::LocalFs for Fat32<B> {
         // O_TRUNC assorbito qui (Fase 49, come `RamFs::open`): niente piu'
         // find+truncate fuori trait nell'handler. Fallimento = rifiuto, mai
         // truncate parziale dichiarato riuscito (contratto `truncate`).
-        if flags & libr::O_TRUNC != 0 {
+        if flags & civis::O_TRUNC != 0 {
             if !self.truncate(&info) {
                 return Err(crate::ERR);
             }

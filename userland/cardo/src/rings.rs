@@ -6,7 +6,7 @@ pub const REQ_RING_VA: u64 = 0x0000_4000_0020_0000;
 pub const RESP_RING_VA: u64 = 0x0000_4000_0021_0000;
 
 // ── Ring I/O (Fase 10.2) ─────────────────────────────────────────
-// `ring_positions`/`ring_available` da `libr` (import sopra, A1).
+// `ring_positions`/`ring_available` da `civis` (import sopra, A1).
 
 /// Legge `count` byte dal ring a `ring_va` dalla posizione `pos`.
 unsafe fn ring_read_at(ring_va: u64, pos: u32, dst: &mut [u8], count: usize) {
@@ -104,7 +104,7 @@ pub fn resp_ring_write(result: u64, w1: u64, payload: &[u8]) {
 /// Mappa il request ring del client a REQ_RING_VA nello spazio di cardo.
 pub fn map_client_req_ring(rings: &BTreeMap<u64, (u64, u64)>, chan: u64) -> bool {
     if let Some(&(req_phys, _)) = rings.get(&chan) {
-        if libr::map_physical(req_phys, REQ_RING_VA, 1).is_ok() {
+        if civis::map_physical(req_phys, REQ_RING_VA, 1).is_ok() {
             return true;
         }
     }
@@ -114,7 +114,7 @@ pub fn map_client_req_ring(rings: &BTreeMap<u64, (u64, u64)>, chan: u64) -> bool
 /// Mappa il response ring del client a RESP_RING_VA nello spazio di cardo.
 pub fn map_client_resp_ring(rings: &BTreeMap<u64, (u64, u64)>, chan: u64) -> bool {
     if let Some(&(_, resp_phys)) = rings.get(&chan) {
-        if libr::map_physical(resp_phys, RESP_RING_VA, 1).is_ok() {
+        if civis::map_physical(resp_phys, RESP_RING_VA, 1).is_ok() {
             return true;
         }
     }

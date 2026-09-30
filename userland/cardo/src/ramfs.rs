@@ -70,7 +70,7 @@ impl RamFs {
         // trascurabile contro una free-list round-trip.
         let t = path.trim_start_matches('/');
         let n = t.split('/').count();
-        let parts_buf = libr::scratch::alloc_slice::<&str>(n)?;
+        let parts_buf = civis::scratch::alloc_slice::<&str>(n)?;
         for (i, comp) in t.split('/').enumerate() {
             parts_buf[i] = comp;
         }
@@ -95,7 +95,7 @@ impl RamFs {
         // heap: vivono nell'albero ramfs oltre la richiesta, mai scratch).
         let t = path.trim_start_matches('/');
         let n = t.split('/').count();
-        let parts_buf = libr::scratch::alloc_slice::<&str>(n)?;
+        let parts_buf = civis::scratch::alloc_slice::<&str>(n)?;
         for (i, comp) in t.split('/').enumerate() {
             parts_buf[i] = comp;
         }
@@ -226,8 +226,8 @@ impl LocalFs for RamFs {
         if path.is_empty() {
             return Err(crate::ERR_NOTFOUND);
         }
-        let creat = flags & libr::O_CREAT != 0;
-        let trunc = flags & libr::O_TRUNC != 0;
+        let creat = flags & civis::O_CREAT != 0;
+        let trunc = flags & civis::O_TRUNC != 0;
 
         // O_CREAT: crea il file se non esiste.
         if creat {

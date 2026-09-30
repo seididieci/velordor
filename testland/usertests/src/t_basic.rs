@@ -3,21 +3,21 @@ use super::*;
 // ── singoli test (ritornano true = pass) ─────────────────────────────
 
 pub fn t_getpid() -> bool {
-    libr::getpid() > 0
+    civis::getpid() > 0
 }
 
 pub fn t_ticks() -> bool {
-    let t1 = libr::get_ticks();
-    libr::spin_ticks(1);
-    let t2 = libr::get_ticks();
+    let t1 = civis::get_ticks();
+    civis::spin_ticks(1);
+    let t2 = civis::get_ticks();
     // Attendi esplicitamente che il contatore cambi (timer attivo + IF in user).
     let t2b = t2;
     let mut guard = 0u32;
-    while libr::get_ticks() == t2b && guard < 1_000_000 {
+    while civis::get_ticks() == t2b && guard < 1_000_000 {
         guard += 1;
         core::hint::spin_loop();
     }
-    t2 >= t1 && libr::get_ticks() > t2b
+    t2 >= t1 && civis::get_ticks() > t2b
 }
 
 /// Deve girare PRIMA di altre allocazioni heap rilevanti (prime pagine sbrk
@@ -67,26 +67,26 @@ pub fn t_spawn_identity() -> bool {
 }
 
 pub fn t_hello() -> bool {
-    let Ok(fd) = libr::open("hello.txt", 0) else {
+    let Ok(fd) = civis::open("hello.txt", 0) else {
         return false;
     };
     let mut buf = [0u8; 64];
-    let n = match libr::read_fs(fd, &mut buf, 64) {
+    let n = match civis::read_fs(fd, &mut buf, 64) {
         Ok(n) => n,
         Err(_) => {
-            let _ = libr::close(fd);
+            let _ = civis::close(fd);
             return false;
         }
     };
     if !(n >= helpers::HELLO.len() && buf[..helpers::HELLO.len()] == *helpers::HELLO) {
-        let _ = libr::close(fd);
+        let _ = civis::close(fd);
         return false;
     }
     // Contratto EOF (Fase 18.2-bis): leggere oltre la fine torna Ok(0)
     // (il server scrive sempre il response frame, anche vuoto).
     let mut one = [0u8; 1];
-    let eof = libr::read_fs(fd, &mut one, 1);
-    let _ = libr::close(fd);
+    let eof = civis::read_fs(fd, &mut one, 1);
+    let _ = civis::close(fd);
     if eof != Ok(0) {
         println!("[usertests] t6: read oltre EOF = {:?} (atteso Ok(0))", eof);
         return false;
@@ -95,26 +95,26 @@ pub fn t_hello() -> bool {
 }
 
 pub fn t_ramfs_write_chunk() -> bool {
-    let Ok(fd) = libr::open("utdata.bin", libr::O_CREAT) else {
+    let Ok(fd) = civis::open("utdata.bin", civis::O_CREAT) else {
         return false;
     };
     // 3 chunk da 3000 (9 KiB totali > 1 pagina ring da 4088 B): multi-call
     // write con chunking client (Fase 10.2).
     for c in 0..3u32 {
         let chunk: Vec<u8> = (0..3000).map(|i| (((c as usize) * 7 + i) % 251) as u8).collect();
-        if libr::write_fs(fd, &chunk, 3000) != Ok(3000) {
-            let _ = libr::close(fd);
+        if civis::write_fs(fd, &chunk, 3000) != Ok(3000) {
+            let _ = civis::close(fd);
             return false;
         }
     }
-    let _ = libr::close(fd);
+    let _ = civis::close(fd);
 
-    let Ok(fd2) = libr::open("utdata.bin", 0) else {
+    let Ok(fd2) = civis::open("utdata.bin", 0) else {
         return false;
     };
     let mut all = Vec::new();
     let ok = helpers::read_all(fd2, &mut all, 9000);
-    let _ = libr::close(fd2);
+    let _ = civis::close(fd2);
     if !ok || all.len() != 9000 {
         return false;
     }
@@ -129,7 +129,7 @@ pub fn t_ramfs_write_chunk() -> bool {
 }
 
 pub fn t_ramfs_mkdir() -> bool {
-    if libr::mkdir("utdir").is_err() {
+    if civis::mkdir("utdir").is_err() {
         return false;
     }
     helpers::dir_contains("/", "utdir")
@@ -137,41 +137,41 @@ pub fn t_ramfs_mkdir() -> bool {
 
 pub fn t_fs_errors() -> bool {
     // open di path vuoto → Err (path_len 0).
-    let a = libr::open("", 0).is_err();
+    let a = civis::open("", 0).is_err();
     // read/write/close su fd inesistente → Err (fd non nella tabella server).
-    let b = libr::read_fs(-1, &mut [0u8; 8], 8).is_err();
-    let c = libr::write_fs(-1, &[0u8; 8], 8).is_err();
-    let d = libr::close(-1).is_err();
+    let b = civis::read_fs(-1, &mut [0u8; 8], 8).is_err();
+    let c = civis::write_fs(-1, &[0u8; 8], 8).is_err();
+    let d = civis::close(-1).is_err();
     a && b && c && d
 }
 
 pub fn t_dev_null() -> bool {
     // Throttled (Livello 1): un device non ancora registrato non giustifica
     // mai una tempesta di open verso cardo.
-    let Ok(fd) = libr::open_wait("/dev/null", 0, 1000, libr::POLL_PERIOD_TICKS) else {
+    let Ok(fd) = civis::open_wait("/dev/null", 0, 1000, civis::POLL_PERIOD_TICKS) else {
         return false;
     };
     let data = [0x5Au8; 512];
-    let w = libr::write_fs(fd, &data, 512);
+    let w = civis::write_fs(fd, &data, 512);
     let mut b = [0u8; 16];
-    let r = libr::read_fs(fd, &mut b, 16);
-    let _ = libr::close(fd);
+    let r = civis::read_fs(fd, &mut b, 16);
+    let _ = civis::close(fd);
     w == Ok(512) && r == Ok(0)
 }
 
 pub fn t_dev_zero() -> bool {
-    let Ok(fd) = libr::open_wait("/dev/zero", 0, 1000, libr::POLL_PERIOD_TICKS) else {
+    let Ok(fd) = civis::open_wait("/dev/zero", 0, 1000, civis::POLL_PERIOD_TICKS) else {
         return false;
     };
     let mut ok = true;
     let mut buf = vec![0xFFu8; 4096];
     for _ in 0..2 {
-        let n = libr::read_fs(fd, &mut buf, 4096);
+        let n = civis::read_fs(fd, &mut buf, 4096);
         if n != Ok(4096) || buf.iter().any(|&b| b != 0) {
             ok = false;
         }
     }
-    let _ = libr::close(fd);
+    let _ = civis::close(fd);
     ok
 }
 
@@ -181,7 +181,7 @@ pub fn t_dev_zero() -> bool {
 /// negativi-con-fault fermerebbero il sistema, come il NULL test kernel.
 pub fn t_mmap() -> bool {
     // 1. Anonima 3 pagine: base bassa + allineata, pattern oltre le pagine.
-    let a = match libr::mmap(0, 3 * 4096) {
+    let a = match civis::mmap(0, 3 * 4096) {
         Ok(a) => a,
         Err(_) => return false,
     };
@@ -197,7 +197,7 @@ pub fn t_mmap() -> bool {
         }
     }
     // 2. Multi-PT: 3 MiB, spot-check per pagina (1536 fault demand-zero).
-    let big = match libr::mmap(0, 3 * 1024 * 1024) {
+    let big = match civis::mmap(0, 3 * 1024 * 1024) {
         Ok(a) => a,
         Err(_) => return false,
     };
@@ -214,42 +214,42 @@ pub fn t_mmap() -> bool {
         }
     }
     // 3. Fixed + overlap: libero ok, occupati/disallineati/len-0 rifiutati.
-    let f = match libr::mmap_fixed(0x50_0000, 8192) {
+    let f = match civis::mmap_fixed(0x50_0000, 8192) {
         Ok(x) => x,
         Err(_) => return false,
     };
     if f != 0x50_0000 {
         return false;
     }
-    if libr::mmap_fixed(a, 4096).is_ok() {
+    if civis::mmap_fixed(a, 4096).is_ok() {
         return false; // dentro `a`
     }
-    if libr::mmap(big + 4096, 4096).is_ok() {
+    if civis::mmap(big + 4096, 4096).is_ok() {
         return false; // hint dentro `big` (strict: niente fallback)
     }
-    if libr::mmap(0, 0).is_ok() {
+    if civis::mmap(0, 0).is_ok() {
         return false; // len 0
     }
-    if libr::mmap(a + 1, 4096).is_ok() {
+    if civis::mmap(a + 1, 4096).is_ok() {
         return false; // hint disallineato
     }
     // 4. Munmap: parziale rifiutato senza stato, interi ok + riuso fixed.
-    if libr::munmap(a + 4096, 4096).is_ok() {
+    if civis::munmap(a + 4096, 4096).is_ok() {
         return false; // split = Err in 28
     }
     if unsafe { core::ptr::read_volatile(a as *const u8) } != 0 {
         return false; // ancora intatta (pattern[0] = 0)
     }
-    if libr::munmap(a, 3 * 4096).is_err() {
+    if civis::munmap(a, 3 * 4096).is_err() {
         return false;
     }
-    if libr::munmap(big, 3 * 1024 * 1024).is_err() {
+    if civis::munmap(big, 3 * 1024 * 1024).is_err() {
         return false;
     }
-    if libr::munmap(f, 8192).is_err() {
+    if civis::munmap(f, 8192).is_err() {
         return false;
     }
-    let a2 = match libr::mmap_fixed(a, 3 * 4096) {
+    let a2 = match civis::mmap_fixed(a, 3 * 4096) {
         Ok(x) => x,
         Err(_) => return false,
     };
@@ -261,10 +261,10 @@ pub fn t_mmap() -> bool {
             return false; // fresca = zeri (frame nuovi, mai stale)
         }
     }
-    let _ = libr::munmap(a2, 3 * 4096);
+    let _ = civis::munmap(a2, 3 * 4096);
     // 5. Integrazione syscall: sys_write (fd 2, seriale) da buffer mappato —
     // is_user_range accetta le VMA (rifiuto = -1, non fault).
-    let m = match libr::mmap(0, 4096) {
+    let m = match civis::mmap(0, 4096) {
         Ok(x) => x,
         Err(_) => return false,
     };
@@ -272,8 +272,8 @@ pub fn t_mmap() -> bool {
     for (i, &b) in msg.iter().enumerate() {
         unsafe { core::ptr::write_volatile((m + i) as *mut u8, b); }
     }
-    let n = libr::write(2, m as *const u8, msg.len());
-    let _ = libr::munmap(m, 4096);
+    let n = civis::write(2, m as *const u8, msg.len());
+    let _ = civis::munmap(m, 4096);
     if n != msg.len() as i64 {
         return false;
     }
@@ -285,7 +285,7 @@ pub fn t_mmap() -> bool {
 /// (helper, osservato via EXIT_NOTIFY con FAULT_EXIT_CODE).
 pub fn t_mprotect() -> bool {
     // 1. mmap PROT_READ: prima lettura materializza RO (zero fresco).
-    let ro = match libr::mmap_prot(0, 4096, libr::PROT_READ) {
+    let ro = match civis::mmap_prot(0, 4096, civis::PROT_READ) {
         Ok(x) => x,
         Err(_) => return false,
     };
@@ -293,7 +293,7 @@ pub fn t_mprotect() -> bool {
         return false;
     }
     // 2. RO → RW: scrittura + rilettura.
-    if libr::mprotect(ro, 4096, libr::PROT_READ | libr::PROT_WRITE).is_err() {
+    if civis::mprotect(ro, 4096, civis::PROT_READ | civis::PROT_WRITE).is_err() {
         return false;
     }
     unsafe { core::ptr::write_volatile(ro as *mut u8, 0x5A); }
@@ -301,44 +301,44 @@ pub fn t_mprotect() -> bool {
         return false;
     }
     // 3. RW → RO: il contenuto resta leggibile.
-    if libr::mprotect(ro, 4096, libr::PROT_READ).is_err() {
+    if civis::mprotect(ro, 4096, civis::PROT_READ).is_err() {
         return false;
     }
     if unsafe { core::ptr::read_volatile(ro as *const u8) } != 0x5A {
         return false;
     }
     // 4. → NONE: le pagine cadono (nessun accesso qui, sarebbe kill).
-    if libr::mprotect(ro, 4096, libr::PROT_NONE).is_err() {
+    if civis::mprotect(ro, 4096, civis::PROT_NONE).is_err() {
         return false;
     }
     // 5. NONE → RW: riuso con zeri freschi (frame liberati a NONE, rimappati).
-    if libr::mprotect(ro, 4096, libr::PROT_READ | libr::PROT_WRITE).is_err() {
+    if civis::mprotect(ro, 4096, civis::PROT_READ | civis::PROT_WRITE).is_err() {
         return false;
     }
     if unsafe { core::ptr::read_volatile(ro as *const u8) } != 0 {
         return false;
     }
-    let _ = libr::munmap(ro, 4096);
+    let _ = civis::munmap(ro, 4096);
 
     // 6. Error paths: prot non valido (W solo) rifiutato; mprotect parziale
     // rifiutato SENZA cambiare stato; intero/invalido come atteso.
-    if libr::mmap_prot(0, 4096, libr::PROT_WRITE).is_ok() {
+    if civis::mmap_prot(0, 4096, civis::PROT_WRITE).is_ok() {
         return false;
     }
-    let a = match libr::mmap(0, 3 * 4096) {
+    let a = match civis::mmap(0, 3 * 4096) {
         Ok(x) => x,
         Err(_) => return false,
     };
-    if libr::mprotect(a, 4096, libr::PROT_READ).is_ok() {
+    if civis::mprotect(a, 4096, civis::PROT_READ).is_ok() {
         return false; // parziale su 3 VMA-contigue = rifiutato
     }
-    if libr::mprotect(a, 3 * 4096, libr::PROT_READ).is_err() {
+    if civis::mprotect(a, 3 * 4096, civis::PROT_READ).is_err() {
         return false; // intera = ok
     }
-    if libr::mprotect(a, 3 * 4096, 0x40).is_ok() {
+    if civis::mprotect(a, 3 * 4096, 0x40).is_ok() {
         return false; // prot invalido
     }
-    let _ = libr::munmap(a, 3 * 4096);
+    let _ = civis::munmap(a, 3 * 4096);
 
     // 7. Fault di protezione → kill con FAULT_EXIT_CODE (helper, EXIT_NOTIFY).
     helpers::drain_stray();
@@ -360,11 +360,11 @@ pub fn t_mprotect() -> bool {
             }
         };
         match helpers::wait_exit(chan) {
-            Some((c, _)) if c == libr::FAULT_EXIT_CODE => {}
+            Some((c, _)) if c == civis::FAULT_EXIT_CODE => {}
             Some((c, _)) => {
                 println!(
                     "[usertests] t45: {} exit code {} (atteso {})",
-                    name, c, libr::FAULT_EXIT_CODE
+                    name, c, civis::FAULT_EXIT_CODE
                 );
                 return false;
             }
@@ -379,11 +379,11 @@ pub fn t_mprotect() -> bool {
 /// marker che il parent deve vedere (visibilita' bidirezionale, pagine
 /// fisiche condivise). Poi refcount/teardown e riuso dello slot.
 pub fn t_shm() -> bool {
-    let id = match libr::shm_create(8192) {
+    let id = match civis::shm_create(8192) {
         Ok(i) => i,
         Err(_) => return false,
     };
-    let base = match libr::shm_map(id, 0, libr::PROT_READ | libr::PROT_WRITE) {
+    let base = match civis::shm_map(id, 0, civis::PROT_READ | civis::PROT_WRITE) {
         Ok(b) => b,
         Err(_) => return false,
     };
@@ -410,24 +410,24 @@ pub fn t_shm() -> bool {
     if unsafe { core::ptr::read_volatile((base + 4096) as *const u8) } != 0xAB {
         return false;
     }
-    if libr::munmap(base, 8192).is_err() {
+    if civis::munmap(base, 8192).is_err() {
         return false;
     }
     // Error path: id inesistente rifiutato.
-    if libr::shm_map(9999, 0, libr::PROT_READ).is_ok() {
+    if civis::shm_map(9999, 0, civis::PROT_READ).is_ok() {
         return false;
     }
     // Riuso: la regione e' stata liberata (helper morto + munmap), un nuovo
     // `shm_create` deve riuscire.
-    match libr::shm_create(4096) {
+    match civis::shm_create(4096) {
         Ok(id2) => {
-            let b2 = match libr::shm_map(id2, 0, libr::PROT_READ | libr::PROT_WRITE) {
+            let b2 = match civis::shm_map(id2, 0, civis::PROT_READ | civis::PROT_WRITE) {
                 Ok(b) => b,
                 Err(_) => return false,
             };
             // Fresca = zeri (frame nuovi azzerati alla creazione).
             let zero = unsafe { core::ptr::read_volatile(b2 as *const u8) } == 0;
-            let _ = libr::munmap(b2, 4096);
+            let _ = civis::munmap(b2, 4096);
             zero
         }
         Err(_) => false,
@@ -441,7 +441,7 @@ pub fn t_shm() -> bool {
 /// reclaim pendenti) → si confronta il delta attorno alle PROPRIE operazioni.
 pub fn t_text() -> bool {
     helpers::drain_stray();
-    let (h0, _m0, _l0) = libr::text_stats();
+    let (h0, _m0, _l0) = civis::text_stats();
     // 3 helper parcheggiati (vivi) dallo stesso binario `testcli`.
     let mut chans = [0u64; 3];
     let mut pids = [0i64; 3];
@@ -457,7 +457,7 @@ pub fn t_text() -> bool {
             }
         }
     }
-    let (h1, _m1, live1) = libr::text_stats();
+    let (h1, _m1, live1) = civis::text_stats();
     // Almeno 1 hit: la 2a/3a istanza condivide il testo della 1a.
     if h1 <= h0 {
         println!("[usertests] t47: no sharing (hits {}->{})", h0, h1);
@@ -465,14 +465,14 @@ pub fn t_text() -> bool {
     }
     // Cleanup: uccidi e attendi l'exit (reclaim rilascia il ref).
     for i in 0..3 {
-        if libr::kill(pids[i], 0).is_err() {
+        if civis::kill(pids[i], 0).is_err() {
             return false;
         }
         if helpers::wait_exit(chans[i]).is_none() {
             return false;
         }
     }
-    let (_h2, _m2, live2) = libr::text_stats();
+    let (_h2, _m2, live2) = civis::text_stats();
     // I 3 helper hanno rilasciato esattamente 1 ref ciascuno.
     if live1 < 3 || live1 - live2 != 3 {
         println!("[usertests] t47: release errato (live {}->{}, atteso -3)", live1, live2);
@@ -487,18 +487,18 @@ pub fn t_text() -> bool {
 /// vedere le scritture (isolamento); `cow_count` cresce di 2; alla fine la
 /// regione e' liberata (riuso slot + zeri freschi, come t46).
 pub fn t_cow() -> bool {
-    let id = match libr::shm_create(8192) {
+    let id = match civis::shm_create(8192) {
         Ok(i) => i,
         Err(_) => return false,
     };
-    let base = match libr::shm_map(id, 0, libr::PROT_READ | libr::PROT_WRITE) {
+    let base = match civis::shm_map(id, 0, civis::PROT_READ | civis::PROT_WRITE) {
         Ok(b) => b,
         Err(_) => return false,
     };
     for i in 0..8192usize {
         unsafe { core::ptr::write_volatile((base + i) as *mut u8, (i % 251) as u8); }
     }
-    let c0 = libr::cow_count();
+    let c0 = civis::cow_count();
     helpers::drain_stray();
     let (chan, _pid) = match helpers::spawn_cfg(
         "/fat/test/testcli.bin", "utcli", 16, helpers::M_COWDEMO, id as u64,
@@ -521,37 +521,37 @@ pub fn t_cow() -> bool {
     if unsafe { core::ptr::read_volatile((base + 4096) as *const u8) } != (4096 % 251) as u8 {
         return false;
     }
-    let c1 = libr::cow_count();
+    let c1 = civis::cow_count();
     if c1 < c0 + 2 {
         println!("[usertests] t48: cow {}->{} (atteso +2)", c0, c1);
         return false;
     }
-    if libr::munmap(base, 8192).is_err() {
+    if civis::munmap(base, 8192).is_err() {
         return false;
     }
     // Error path: COW su id inesistente rifiutato.
-    if libr::shm_map_cow(9999, 0).is_ok() {
+    if civis::shm_map_cow(9999, 0).is_ok() {
         return false;
     }
     // Riuso: slot e frame liberati (helper morto + munmap), zeri freschi.
-    match libr::shm_create(4096) {
+    match civis::shm_create(4096) {
         Ok(id2) => {
-            let b2 = match libr::shm_map(id2, 0, libr::PROT_READ | libr::PROT_WRITE) {
+            let b2 = match civis::shm_map(id2, 0, civis::PROT_READ | civis::PROT_WRITE) {
                 Ok(b) => b,
                 Err(_) => return false,
             };
             let zero = unsafe { core::ptr::read_volatile(b2 as *const u8) } == 0;
-            let _ = libr::munmap(b2, 4096);
+            let _ = civis::munmap(b2, 4096);
             zero
         }
         Err(_) => false,
     }
 }
 
-pub fn t_map_alias() -> bool {    if libr::map_physical(libr::MAP_TEST_PHYS, helpers::VA_A, 1).is_err() {
+pub fn t_map_alias() -> bool {    if civis::map_physical(civis::MAP_TEST_PHYS, helpers::VA_A, 1).is_err() {
         return false;
     }
-    if libr::map_physical(libr::MAP_TEST_PHYS, helpers::VA_B, 1).is_err() {
+    if civis::map_physical(civis::MAP_TEST_PHYS, helpers::VA_B, 1).is_err() {
         return false;
     }
     let pa = helpers::VA_A as *mut u8;

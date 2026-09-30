@@ -30,7 +30,7 @@ const STACK_BYTES: u64 = 4 * 0x1000;
 /// (prima gli argv, poi gli env). Il blocco e' la copia owned del chiamante
 /// (heap kernel): sopravvive al teardown dello spazio user. Il kernel NON
 /// ispeziona il contenuto (niente `NAME=val`: byte opachi, neutralita'
-/// ADR-0025 — la convenzione vive in `libr`/shell).
+/// ADR-0025 — la convenzione vive in `civis`/shell).
 struct ParsedArgs<'a> {
     argc: u64,
     envc: u64,

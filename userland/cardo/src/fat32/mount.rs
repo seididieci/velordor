@@ -28,9 +28,9 @@ impl<B: BlockSource> Fat32<B> {
         let fat_start = rsvd as u32;
         let data_start = rsvd as u32 + num_fats as u32 * fat_size;
 
-        // Identità stabile del volume (Fase 16d, helper condiviso in libr:
+        // Identità stabile del volume (Fase 16d, helper condiviso in civis:
         // stessi check di mount, usati anche dallo sniff per-nodo di block).
-        let (vol_serial, vol_label) = match libr::fat_bpb_identity(&boot) {
+        let (vol_serial, vol_label) = match civis::fat_bpb_identity(&boot) {
             Some((s, l)) => (s, l),
             None => (None, [b' '; 11]),
         };

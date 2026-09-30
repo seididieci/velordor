@@ -68,3 +68,4 @@
 - [ADR-0038: Provider trait per filesystem (Fase 46)](./adr/0038-provider-trait.md)
 - [ADR-0039: Logging L1 nativo (Fase 57)](./adr/0039-logging-l1.md)
 - [ADR-0040: Pantheon dei nomi + rename a fasi (R0)](./adr/0040-naming-pantheon.md)
+- [ADR-0041: Personalità POSIX separata (civis + flavours/posix, Fase 58)](./adr/0041-civis-flavours-posix.md)

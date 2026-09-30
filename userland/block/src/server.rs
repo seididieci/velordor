@@ -1,6 +1,6 @@
 use super::*;
 
-libr::entry!(real_main);
+civis::entry!(real_main);
 
 /// Esito dell'attesa event-driven di un DMA armato (38.2).
 enum DmaWait {
@@ -37,11 +37,11 @@ fn wait_dma(
         return DmaWait::Done;
     }
     loop {
-        let msg = match libr::recv() {
+        let msg = match civis::recv() {
             Ok(m) => m,
             Err(_) => continue,
         };
-        if msg.tag == libr::IRQ_NOTIFY_DISK {
+        if msg.tag == civis::IRQ_NOTIFY_DISK {
             if eng.is_done(chan) {
                 eng.note_ev_wait();
                 return DmaWait::Done;
@@ -52,7 +52,7 @@ fn wait_dma(
         if fsreg.collect_if_mine(msg.req_id, reg_prefixes) {
             continue; // async FS: reply state intatto
         }
-        if msg.tag == libr::EXIT_NOTIFY {
+        if msg.tag == civis::EXIT_NOTIFY {
             if msg.w1 == requester {
                 eng.abort(chan);
                 eng.note_ev_abort();
@@ -65,7 +65,7 @@ fn wait_dma(
 }
 
 fn real_main(_sp: u64) -> ! {
-    println!("[block] starting, pid={}", libr::getpid());
+    println!("[block] starting, pid={}", civis::getpid());
 
     // 1. Rilevamento (solo HW, niente FS coinvolto).
     let mut infos = Vec::new();
@@ -114,13 +114,13 @@ fn real_main(_sp: u64) -> ! {
     // `BM_BASE` e abilita I/O Space + Bus Master. Qualunque esito avverso
     // (assente, BAR fuori finestra, readback diversa) = resto in PIO: il
     // data-plane sotto e' invariato (il DMA vero arriva in 38.1).
-    let bmiba: Option<u16> = match libr::pci::find_piix3_ide() {
-        Some(dev) => match libr::pci::enable_bus_master(dev) {
+    let bmiba: Option<u16> = match civis::pci::find_piix3_ide() {
+        Some(dev) => match civis::pci::enable_bus_master(dev) {
             Some(b) => {
                 println!(
                     "[block] BMIBA={:#x} (irqline={}), DMA negoziato — data-plane ancora PIO fino a 38.1",
                     b,
-                    libr::pci::irq_line(dev)
+                    civis::pci::irq_line(dev)
                 );
                 Some(b)
             }
@@ -256,12 +256,12 @@ fn real_main(_sp: u64) -> ! {
         println!("{}", idline);
     }
 
-    // 3. Ring FS + DISK dedicati (allocazione raw, MAI via libr::fs_init che e'
+    // 3. Ring FS + DISK dedicati (allocazione raw, MAI via civis::fs_init che e'
     // sincrono): FS per BUF_REG/REGISTER async, DISK per il data-plane con
     // cardo. Retry throttled: senza, niente registrazione ne' data-plane.
     // Reset head=tail: le pagine devono partire allineate.
     let (fs_req_phys, fs_resp_phys) = loop {
-        if let Some(pair) = libr::ring_alloc_raw() {
+        if let Some(pair) = civis::ring_alloc_raw() {
             break pair;
         }
         for _ in 0..1_000_000 {
@@ -269,20 +269,20 @@ fn real_main(_sp: u64) -> ! {
         }
     };
     let (disk_req_phys, disk_resp_phys) = loop {
-        if let Some(pair) = libr::ring_alloc_raw() {
+        if let Some(pair) = civis::ring_alloc_raw() {
             break pair;
         }
         for _ in 0..1_000_000 {
             core::hint::spin_loop();
         }
     };
-    if libr::map_physical(fs_req_phys, FS_REQ_VA, 1).is_err()
-        || libr::map_physical(fs_resp_phys, FS_RESP_VA, 1).is_err()
-        || libr::map_physical(disk_req_phys, DISK_REQ_VA, 1).is_err()
-        || libr::map_physical(disk_resp_phys, DISK_RESP_VA, 1).is_err()
+    if civis::map_physical(fs_req_phys, FS_REQ_VA, 1).is_err()
+        || civis::map_physical(fs_resp_phys, FS_RESP_VA, 1).is_err()
+        || civis::map_physical(disk_req_phys, DISK_REQ_VA, 1).is_err()
+        || civis::map_physical(disk_resp_phys, DISK_RESP_VA, 1).is_err()
     {
         println!("[block] map ring fallita, exit");
-        libr::exit(1);
+        civis::exit(1);
     }
     rings::fs_rings_reset();
     unsafe {
@@ -295,14 +295,14 @@ fn real_main(_sp: u64) -> ! {
     // 4. Servizio Disk per nome (ADR-0008): cardo lo risolve per il
     // data-plane, init per la supervisione, il kernel non instrada IRQ.
     // (La BMIBA negoziata sopra e' in `bmiba`, il motore DMA in `dma` sotto.)
-    if libr::service_register(libr::Service::Block).is_ok() {
+    if civis::service_register(civis::Service::Block).is_ok() {
         println!("[block] registered as service Disk");
     }
 
     // 5. READY al parent SUBITO (come console): block parte PRIMA di cardo
     // (16.3) e l'ACK non puo' aspettare il mount (deadlock: il mount aspetta
-    // Fs che parte dopo). Fire-and-forget in `libr` (A3), retry bounded, mai hang.
-    libr::signal_ready(1);
+    // Fs che parte dopo). Fire-and-forget in `civis` (A3), retry bounded, mai hang.
+    civis::signal_ready(1);
 
     // 6. Registrazione FS via SM async (mai sync: vedi doc in testa). DISK e
     // DEV funzionano anche a registrazione incompleta: cardo monta appena
@@ -317,7 +317,7 @@ fn real_main(_sp: u64) -> ! {
         // Invio nella stessa chiamata (lezione tty): prima di dormire in recv
         // bisogna aver notificato, altrimenti nessuno ci sveglia.
         fsreg.step(&reg_prefixes);
-        let msg = match libr::recv() {
+        let msg = match civis::recv() {
             Ok(m) => m,
             Err(_) => continue,
         };
@@ -331,7 +331,7 @@ fn real_main(_sp: u64) -> ! {
         // cardo morto e rinato: reset SM (re-handshake + re-register). I ring
         // DISK persistono (pagine proprie): cardo rifa' HELLO da solo. Niente
         // send sincrone qui: solo reset di stato. Mai reply (peer morto).
-        if msg.tag == libr::EXIT_NOTIFY {
+        if msg.tag == civis::EXIT_NOTIFY {
             fsreg.reset();
             continue;
         }
@@ -345,7 +345,7 @@ fn real_main(_sp: u64) -> ! {
         // e la coda piena fa scartare le send sync di cardo in silenzio (hang
         // permanente, provato in 38.1c). MAI reply — non c'e' nessuno ad
         // aspettarla.
-        if msg.tag == libr::IRQ_NOTIFY_DISK {
+        if msg.tag == civis::IRQ_NOTIFY_DISK {
             if let Some(eng) = dma_eng.as_mut() {
                 eng.note_irq_drained();
             }
@@ -355,14 +355,14 @@ fn real_main(_sp: u64) -> ! {
         // ── Data-plane DISK_* (canale diretto cardo) ──
         if msg.tag == DISK_HELLO {
             // Fisici nei registri di reply (tag 0, mai !0 = ERR): niente frame.
-            let _ = libr::reply(0, disk_req_phys, disk_resp_phys);
+            let _ = civis::reply(0, disk_req_phys, disk_resp_phys);
             continue;
         }
         if msg.tag == DISK_OPEN {
             if nodes::locate(msg.w0 as u32, &disk_sectors, &parts).is_some() {
-                let _ = libr::reply(0, 0, 0);
+                let _ = civis::reply(0, 0, 0);
             } else {
-                let _ = libr::reply(0, ERR, 0);
+                let _ = civis::reply(0, ERR, 0);
             }
             continue;
         }
@@ -375,7 +375,7 @@ fn real_main(_sp: u64) -> ! {
             let count = match rings::disk_req_read_count() {
                 Some(n) => n,
                 None => {
-                    let _ = libr::reply(0, ERR, 0);
+                    let _ = civis::reply(0, ERR, 0);
                     continue;
                 }
             };
@@ -392,7 +392,7 @@ fn real_main(_sp: u64) -> ! {
                     if end_ok && dma_modes.get(di).copied().flatten().is_some() {
                         let disk = &disks[di];
                         let chan = disk.bm_chan_off();
-                        if let Ok(req) = libr::peer_pid(msg.channel) {
+                        if let Ok(req) = civis::peer_pid(msg.channel) {
                             let nbytes = count * 512;
                             if eng.start_dma(
                                 disk,
@@ -436,7 +436,7 @@ fn real_main(_sp: u64) -> ! {
                                                     &buf[..nbytes],
                                                 )
                                             };
-                                            let _ = libr::reply(0, 0, 0);
+                                            let _ = civis::reply(0, 0, 0);
                                             dma_done = true;
                                         }
                                     }
@@ -460,14 +460,14 @@ fn real_main(_sp: u64) -> ! {
                 &mut buf[..count * 512],
             ) {
                 unsafe { rings::disk_resp_write((count * 512) as u64, 0, &buf[..count * 512]) };
-                let _ = libr::reply(0, 0, 0);
+                let _ = civis::reply(0, 0, 0);
             } else {
-                let _ = libr::reply(0, ERR, 0);
+                let _ = civis::reply(0, ERR, 0);
             }
             continue;
         }
         if msg.tag == DISK_CLOSE {
-            let _ = libr::reply(0, 0, 0);
+            let _ = civis::reply(0, 0, 0);
             continue;
         }
         if msg.tag == DISK_WRITE {
@@ -481,7 +481,7 @@ fn real_main(_sp: u64) -> ! {
             let count = match rings::disk_req_read_multi(&mut buf) {
                 Some(n) => n,
                 None => {
-                    let _ = libr::reply(0, ERR, 0);
+                    let _ = civis::reply(0, ERR, 0);
                     continue;
                 }
             };
@@ -496,7 +496,7 @@ fn real_main(_sp: u64) -> ! {
                     if end_ok && dma_modes.get(di).copied().flatten().is_some() {
                         let disk = &disks[di];
                         let chan = disk.bm_chan_off();
-                        if let Ok(req) = libr::peer_pid(msg.channel) {
+                        if let Ok(req) = civis::peer_pid(msg.channel) {
                             let nbytes = count * 512;
                             if eng.start_dma(
                                 disk,
@@ -529,7 +529,7 @@ fn real_main(_sp: u64) -> ! {
                                                     &buf[j * 512..(j + 1) * 512],
                                                 );
                                             }
-                                            let _ = libr::reply(0, 0, 0);
+                                            let _ = civis::reply(0, 0, 0);
                                             dma_done = true;
                                         }
                                     }
@@ -553,9 +553,9 @@ fn real_main(_sp: u64) -> ! {
                 &buf[..count * 512],
             );
             if ok {
-                let _ = libr::reply(0, 0, 0);
+                let _ = civis::reply(0, 0, 0);
             } else {
-                let _ = libr::reply(0, ERR, 0);
+                let _ = civis::reply(0, ERR, 0);
             }
             continue;
         }
@@ -567,7 +567,7 @@ fn real_main(_sp: u64) -> ! {
                 Some(key) => nodes::resolve_node(&nodes, &key).map(|n| n.handle as u64),
                 None => None,
             };
-            let _ = libr::reply(0, result.unwrap_or(ERR), 0);
+            let _ = civis::reply(0, result.unwrap_or(ERR), 0);
             continue;
         }
         if msg.tag == DISK_LIST {
@@ -586,7 +586,7 @@ fn real_main(_sp: u64) -> ! {
             // Header `result` = byte payload (convenzione READ, letta dal
             // client per dimensionare la lettura); il count vero in w0.
             unsafe { rings::disk_resp_write((k * 16) as u64, 0, &payload[..k * 16]) };
-            let _ = libr::reply(0, n as u64, 0);
+            let _ = civis::reply(0, n as u64, 0);
             continue;
         }
         if msg.tag == DISK_INFO {
@@ -597,7 +597,7 @@ fn real_main(_sp: u64) -> ! {
             let info = match infos.get(di) {
                 Some(i) => i,
                 None => {
-                    let _ = libr::reply(0, ERR, 0);
+                    let _ = civis::reply(0, ERR, 0);
                     continue;
                 }
             };
@@ -611,7 +611,7 @@ fn real_main(_sp: u64) -> ! {
             payload[56..56 + info.serial_len].copy_from_slice(&info.serial[..info.serial_len]);
             // Header `result` = byte payload (come sopra); settori/flags in w0/w1.
             unsafe { rings::disk_resp_write(76, info.topo_flags(), &payload) };
-            let _ = libr::reply(0, info.sectors, info.topo_flags());
+            let _ = civis::reply(0, info.sectors, info.topo_flags());
             continue;
         }
         if msg.tag == DISK_FLUSH {
@@ -623,7 +623,7 @@ fn real_main(_sp: u64) -> ! {
                 Some(d) => d.flush_write_cache(),
                 None => false,
             };
-            let _ = libr::reply(0, if ok { 0 } else { ERR }, 0);
+            let _ = civis::reply(0, if ok { 0 } else { ERR }, 0);
             continue;
         }
 
@@ -647,14 +647,14 @@ fn real_main(_sp: u64) -> ! {
                 let (handle, pos) = match fds.get(&(msg.w0 as u32)) {
                     Some(&p) => p,
                     None => {
-                        let _ = libr::reply(0, ERR, 0);
+                        let _ = civis::reply(0, ERR, 0);
                         continue;
                     }
                 };
                 let node_sectors = match nodes::locate(handle, &disk_sectors, &parts) {
                     Some((_, _, s)) => s,
                     None => {
-                        let _ = libr::reply(0, ERR, 0);
+                        let _ = civis::reply(0, ERR, 0);
                         continue;
                     }
                 };
@@ -713,6 +713,6 @@ fn real_main(_sp: u64) -> ! {
         };
         // Idempotente: reply ERR senza frame (convenzione driver), come
         // vela/kbd — il client vede -1, mai wedge.
-        let _ = libr::reply(0, result.unwrap_or(ERR), 0);
+        let _ = civis::reply(0, result.unwrap_or(ERR), 0);
     }
 }

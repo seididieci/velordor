@@ -66,6 +66,10 @@ a fronte di software che vuole il metallo; costo/modello inaccettabile
   SIGCONT, Ctrl-C/Z, 128+sig) resta fuori dal kernel (shell/`libr`); gli
   handler asincroni veri restano al posix-server futuro. Dettagli in
   ADR-0035/0036.
+- Emendamento Fase 58 ([ADR-0041](0041-civis-flavours-posix.md)): il meccanismo
+  neutro diventa il crate `civis` (ex `libs/libr`); la personalità POSIX si
+  materializza in `flavours/posix/libr` (`posix`/`stdio`/`fork`/`exec`). La
+  separazione "sulla carta" di questa ADR diventa una dipendenza Cargo.
 
 ## Alternatives Considered
 

@@ -3,7 +3,7 @@
 /// Single source in `syscall-numbers` (Fase 31: serve anche al loader/test).
 pub use syscall_numbers::USER_CODE;
 /// Finestra staging DMA (Fase 38.1): single source in `syscall-numbers`
-/// (come `USER_CODE`: serve anche a block via `libr`).
+/// (come `USER_CODE`: serve anche a block via `civis`).
 pub use syscall_numbers::USER_DMA_VA;
 pub const USER_BASE: u64 = USER_CODE;
 pub(super) const USER_PRESENT_WRITABLE: u64 = 0x4 | 0x3; // U + P + W

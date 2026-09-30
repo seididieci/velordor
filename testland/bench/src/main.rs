@@ -26,41 +26,41 @@
 extern crate alloc;
 
 use alloc::vec::Vec;
-use libr;
-use libr::{println, O_CREAT, O_TRUNC};
+use civis;
+use civis::{println, O_CREAT, O_TRUNC};
 
 /// Spoiler cache (Fase 53, P4): 300 settori sequenziali da /dev/sda letti e
 /// scartati — oltre le 256 entry CLOCK di block: tutto l'evicted (dati +
 /// metadati del file sotto misura). Freddo deterministico senza restart,
 /// senza protocollo, senza pagine extra. ~0.4 s a chiamata (KVM).
 fn spoil_cache() -> bool {
-    let Ok(fd) = libr::open("/dev/sda", 0) else {
+    let Ok(fd) = civis::open("/dev/sda", 0) else {
         return false;
     };
     let mut sec = [0u8; 512];
     let mut ok = true;
     // Letture sequenziali: la posizione per-fd avanza da sola (DEV relay).
     for _ in 0..300 {
-        if libr::read_fs(fd, &mut sec, 512) != Ok(512) {
+        if civis::read_fs(fd, &mut sec, 512) != Ok(512) {
             ok = false;
             break;
         }
     }
-    let _ = libr::close(fd);
+    let _ = civis::close(fd);
     ok
 }
 
-/// Crea `path` con `size` byte di pattern (una write, chunking libr).
+/// Crea `path` con `size` byte di pattern (una write, chunking civis).
 /// `O_CREAT|O_TRUNC`: idempotente tra righe che riusano lo stesso path con
 /// size diverse (su FAT il remove non esiste: b5 lascia il file, qui lo si
 /// re-tronca; l'immagine e' rigenerata a ogni run.sh comunque).
 fn bulk_create(path: &str, size: usize, seed: u8) -> bool {
-    let Ok(fd) = libr::open(path, O_CREAT | libr::O_TRUNC) else {
+    let Ok(fd) = civis::open(path, O_CREAT | civis::O_TRUNC) else {
         return false;
     };
     let buf: Vec<u8> = (0..size).map(|i| ((seed as usize + i) % 251) as u8).collect();
-    let n = libr::write_fs(fd, &buf, size);
-    let _ = libr::close(fd);
+    let n = civis::write_fs(fd, &buf, size);
+    let _ = civis::close(fd);
     n == Ok(size)
 }
 
@@ -74,25 +74,25 @@ fn bulk_ramfs(wname: &str, rname: &str, size: usize, iters: u64, hz: u64) -> boo
     }
     let wbuf: Vec<u8> = (0..size).map(|i| ((0xA5usize + i) % 251) as u8).collect();
     let mut ok = run(wname, iters, size as u64, hz, || {
-        let Ok(fd) = libr::open("/BULK.TMP", 0) else {
+        let Ok(fd) = civis::open("/BULK.TMP", 0) else {
             return false;
         };
-        let n = libr::write_fs(fd, &wbuf, size);
-        let _ = libr::close(fd);
+        let n = civis::write_fs(fd, &wbuf, size);
+        let _ = civis::close(fd);
         n == Ok(size)
     });
     if ok {
         let mut rbuf: Vec<u8> = alloc::vec![0u8; size];
         ok &= run(rname, iters, size as u64, hz, || {
-            let Ok(fd) = libr::open("/BULK.TMP", 0) else {
+            let Ok(fd) = civis::open("/BULK.TMP", 0) else {
                 return false;
             };
-            let n = libr::read_fs(fd, &mut rbuf, size);
-            let _ = libr::close(fd);
+            let n = civis::read_fs(fd, &mut rbuf, size);
+            let _ = civis::close(fd);
             n == Ok(size)
         });
     }
-    if libr::remove("/BULK.TMP").is_err() {
+    if civis::remove("/BULK.TMP").is_err() {
         println!("[bench] {}: FAIL (cleanup)", wname);
         ok = false;
     }
@@ -108,11 +108,11 @@ fn bulk_fat_write_hot(name: &str, size: usize, iters: u64, hz: u64) -> bool {
     }
     let wbuf: Vec<u8> = (0..size).map(|i| ((0x5Ausize + i) % 251) as u8).collect();
     let ok = run(name, iters, size as u64, hz, || {
-        let Ok(fd) = libr::open("/fat/BULK.TMP", 0) else {
+        let Ok(fd) = civis::open("/fat/BULK.TMP", 0) else {
             return false;
         };
-        let n = libr::write_fs(fd, &wbuf, size);
-        let _ = libr::close(fd);
+        let n = civis::write_fs(fd, &wbuf, size);
+        let _ = civis::close(fd);
         n == Ok(size)
     });
     // Su FAT il remove non esiste (come b5): il file resta e la prossima riga
@@ -157,11 +157,11 @@ fn bulk_fat_write_cold(name: &str, size: usize, iters: u64, hz: u64) -> bool {
         let mut p = [0u8; 16];
         let path = cold_path("BWC4K", idx, &mut p);
         idx += 1;
-        let Ok(fd) = libr::open(path, 0) else {
+        let Ok(fd) = civis::open(path, 0) else {
             return false;
         };
-        let n = libr::write_fs(fd, &wbuf, size);
-        let _ = libr::close(fd);
+        let n = civis::write_fs(fd, &wbuf, size);
+        let _ = civis::close(fd);
         n == Ok(size)
     })
 }
@@ -176,13 +176,13 @@ fn bulk_fat_read_hot(name: &str, size: usize, iters: u64, hz: u64) -> bool {
     // Pre-pass: scalda dati+metadati (le 5 warmup di run() da sole bastano,
     // ma il pre-pass esplicito rende hot deterministico da iter 1).
     {
-        let Ok(fd) = libr::open("/fat/BULK.TMP", 0) else {
+        let Ok(fd) = civis::open("/fat/BULK.TMP", 0) else {
             println!("[bench] {}: FAIL (pre-pass open)", name);
             return false;
         };
         let mut tmp: Vec<u8> = alloc::vec![0u8; size];
-        let n = libr::read_fs(fd, &mut tmp, size);
-        let _ = libr::close(fd);
+        let n = civis::read_fs(fd, &mut tmp, size);
+        let _ = civis::close(fd);
         if n != Ok(size) {
             println!("[bench] {}: FAIL (pre-pass read)", name);
             return false;
@@ -190,11 +190,11 @@ fn bulk_fat_read_hot(name: &str, size: usize, iters: u64, hz: u64) -> bool {
     }
     let mut rbuf: Vec<u8> = alloc::vec![0u8; size];
     let ok = run(name, iters, size as u64, hz, || {
-        let Ok(fd) = libr::open("/fat/BULK.TMP", 0) else {
+        let Ok(fd) = civis::open("/fat/BULK.TMP", 0) else {
             return false;
         };
-        let n = libr::read_fs(fd, &mut rbuf, size);
-        let _ = libr::close(fd);
+        let n = civis::read_fs(fd, &mut rbuf, size);
+        let _ = civis::close(fd);
         n == Ok(size)
     });
     // Su FAT il remove non esiste (come b5): il file resta e la prossima riga
@@ -229,11 +229,11 @@ fn bulk_fat_read_cold(name: &str, size: usize, iters: u64, hz: u64) -> bool {
         let mut p = [0u8; 16];
         let path = cold_path("BRC4K", idx, &mut p);
         idx += 1;
-        let Ok(fd) = libr::open(path, 0) else {
+        let Ok(fd) = civis::open(path, 0) else {
             return false;
         };
-        let n = libr::read_fs(fd, &mut rbuf, size);
-        let _ = libr::close(fd);
+        let n = civis::read_fs(fd, &mut rbuf, size);
+        let _ = civis::close(fd);
         n == Ok(size)
     })
 }
@@ -247,20 +247,20 @@ fn run(name: &str, iters: u64, bytes: u64, hz: u64, mut f: impl FnMut() -> bool)
             return false;
         }
     }
-    let t0 = libr::rdtsc();
+    let t0 = civis::rdtsc();
     let mut max_cyc = 0u64;
     for _ in 0..iters {
-        let s = libr::rdtsc();
+        let s = civis::rdtsc();
         if !f() {
             println!("[bench] {}: FAIL (iter)", name);
             return false;
         }
-        let dt = libr::rdtsc().wrapping_sub(s);
+        let dt = civis::rdtsc().wrapping_sub(s);
         if dt > max_cyc {
             max_cyc = dt;
         }
     }
-    let total = libr::rdtsc().wrapping_sub(t0);
+    let total = civis::rdtsc().wrapping_sub(t0);
     if total == 0 {
         println!("[bench] {}: FAIL (tsc fermo)", name);
         return false;
@@ -274,40 +274,40 @@ fn run(name: &str, iters: u64, bytes: u64, hz: u64, mut f: impl FnMut() -> bool)
     true
 }
 
-libr::entry!(real_main);
+civis::entry!(real_main);
 fn real_main(_sp: u64) -> ! {
-    println!("[bench] starting, pid={}", libr::getpid());
-    let hz = libr::tsc_calibrate(20);
+    println!("[bench] starting, pid={}", civis::getpid());
+    let hz = civis::tsc_calibrate(20);
     println!("[bench] tsc_hz={}", hz);
     let mut ok = hz != 0;
 
     // b1: solo IPC — 1 B da /dev/zero (/dev/null da' EOF=0 per semantica
     // Unix: per misurare il round-trip IPC serve un device che risponde).
     if ok {
-        match libr::open("/dev/zero", 0) {
+        match civis::open("/dev/zero", 0) {
             Err(e) => {
                 println!("[bench] zero_1B: FAIL (open {:?})", e);
                 ok = false;
             }
             Ok(fd) => {
                 let mut one = [0u8; 1];
-                ok &= run("zero_1B", 2000, 1, hz, || libr::read_fs(fd, &mut one, 1) == Ok(1));
-                let _ = libr::close(fd);
+                ok &= run("zero_1B", 2000, 1, hz, || civis::read_fs(fd, &mut one, 1) == Ok(1));
+                let _ = civis::close(fd);
             }
         }
     }
 
     // b2: catena completa — 200 settori sequenziali raw da /dev/sda.
     if ok {
-        match libr::open("/dev/sda", 0) {
+        match civis::open("/dev/sda", 0) {
             Err(e) => {
                 println!("[bench] sda_512B_seq: FAIL (open {:?})", e);
                 ok = false;
             }
             Ok(fd) => {
                 let mut sec = [0u8; 512];
-                ok &= run("sda_512B_seq", 200, 512, hz, || libr::read_fs(fd, &mut sec, 512) == Ok(512));
-                let _ = libr::close(fd);
+                ok &= run("sda_512B_seq", 200, 512, hz, || civis::read_fs(fd, &mut sec, 512) == Ok(512));
+                let _ = civis::close(fd);
             }
         }
     }
@@ -316,40 +316,40 @@ fn real_main(_sp: u64) -> ! {
     if ok {
         let mut hello = [0u8; 32];
         ok &= run("fat_small_orc", 500, 25, hz, || {
-            let Ok(fd) = libr::open("/fat/HELLO.TXT", 0) else {
+            let Ok(fd) = civis::open("/fat/HELLO.TXT", 0) else {
                 return false;
             };
-            let n = libr::read_fs(fd, &mut hello, 25);
-            let _ = libr::close(fd);
+            let n = civis::read_fs(fd, &mut hello, 25);
+            let _ = civis::close(fd);
             n == Ok(25)
         });
     }
 
     // b4: ramfs 4 KiB — stack FS+IPC senza disco (write poi read).
     if ok {
-        match libr::open("/BENCH.TMP", O_CREAT) {
+        match civis::open("/BENCH.TMP", O_CREAT) {
             Err(e) => {
                 println!("[bench] ramfs_4K: FAIL (create {:?})", e);
                 ok = false;
             }
             Ok(fd) => {
                 let wbuf = [0xA5u8; 4096];
-                ok &= run("ramfs_4K_write", 100, 4096, hz, || libr::write_fs(fd, &wbuf, 4096) == Ok(4096));
-                let _ = libr::close(fd);
+                ok &= run("ramfs_4K_write", 100, 4096, hz, || civis::write_fs(fd, &wbuf, 4096) == Ok(4096));
+                let _ = civis::close(fd);
             }
         }
     }
     if ok {
-        match libr::open("/BENCH.TMP", 0) {
+        match civis::open("/BENCH.TMP", 0) {
             Err(e) => {
                 println!("[bench] ramfs_4K_read: FAIL (open {:?})", e);
                 ok = false;
             }
             Ok(fd) => {
                 let mut rbuf = [0u8; 4096];
-                ok &= run("ramfs_4K_read", 100, 4096, hz, || libr::read_fs(fd, &mut rbuf, 4096) == Ok(4096));
-                let _ = libr::close(fd);
-                if libr::remove("/BENCH.TMP").is_err() {
+                ok &= run("ramfs_4K_read", 100, 4096, hz, || civis::read_fs(fd, &mut rbuf, 4096) == Ok(4096));
+                let _ = civis::close(fd);
+                if civis::remove("/BENCH.TMP").is_err() {
                     println!("[bench] ramfs cleanup: FAIL (remove)");
                     ok = false;
                 }
@@ -360,20 +360,20 @@ fn real_main(_sp: u64) -> ! {
     // b5: overwrite 4 KiB su FAT — open+write+close (PIO + FLUSH per settore).
     // Il file resta nell'immagine (rigenerata a ogni run.sh): mai fixture altrui.
     if ok {
-        match libr::open("/fat/BENCH.TMP", O_CREAT) {
+        match civis::open("/fat/BENCH.TMP", O_CREAT) {
             Err(e) => {
                 println!("[bench] fat_4K_oow: FAIL (create {:?})", e);
                 ok = false;
             }
             Ok(fd) => {
-                let _ = libr::close(fd);
+                let _ = civis::close(fd);
                 let wbuf = [0x5Au8; 4096];
                 ok &= run("fat_4K_oow", 50, 4096, hz, || {
-                    let Ok(fd) = libr::open("/fat/BENCH.TMP", 0) else {
+                    let Ok(fd) = civis::open("/fat/BENCH.TMP", 0) else {
                         return false;
                     };
-                    let n = libr::write_fs(fd, &wbuf, 4096);
-                    let _ = libr::close(fd);
+                    let n = civis::write_fs(fd, &wbuf, 4096);
+                    let _ = civis::close(fd);
                     n == Ok(4096)
                 });
             }
@@ -434,8 +434,8 @@ fn real_main(_sp: u64) -> ! {
     } else {
         println!("[bench] DONE ok=0");
     }
-    let _ = libr::send(libr::CHANNEL_PARENT, libr::TEST_DONE, 0, 0); // init: bench finito
-    libr::exit(if ok { 0 } else { 1 })
+    let _ = civis::send(civis::CHANNEL_PARENT, civis::TEST_DONE, 0, 0); // init: bench finito
+    civis::exit(if ok { 0 } else { 1 })
 }
 
 #[panic_handler]
@@ -445,5 +445,5 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
     } else {
         println!("[bench] panic");
     }
-    libr::exit(1)
+    civis::exit(1)
 }

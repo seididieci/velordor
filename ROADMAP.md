@@ -14,7 +14,7 @@ nulla da solo.
 ## Stato (completate 1-55)
 
 Gate: `[testfs] PASS 5/5` + `[testfat] PASS 7/7` + `[testsarca] PASS 40/40` +
-`[usertests] PASS 58/58` + shell, zero FAIL/PANIC/FAULT.
+`[posixtests] PASS 4/4` + `[usertests] PASS 54/54` + shell, zero FAIL/PANIC/FAULT.
 
 | Fase | Descrizione | Stato |
 |------|-------------|-------|
@@ -112,7 +112,17 @@ Voci con scope e vittoria dichiarati (non date).
       append+latest own-bucket, 1024B, rifiuti, seal+delete, stats con
       flush-proof, bounce+rewarm).
       Vittoria conseguita: log persistenti nativi con retention via snapshot+GC.
-- [ ] **58+ (A3–A8, V1, B1)** (dopo 56, come da `arcafs.md` §13): quota,
+- [x] **58 Personalità POSIX separata** (58.1–58.6, ADR-0041): meccanismo
+      neutro in `libs/civis` (ex `libs/libr`), personalità in
+      `flavours/posix/{libr,server,shell,cli,tests}`. 58.1 (docs/ADR), 58.2
+      (rename `libr`→`civis`), 58.3 (estrazione crate + inversione hook
+      `entry!`/`route_out`/redir-magic), 58.4 (spostamento package in
+      `flavours/posix/{server,shell,cli}`, output in `flavours/posix/build`),
+      58.5 (suite `userposixtests` in `flavours/posix/tests`, gate
+      `[posixtests] 4/4`, usertests 54/54) e 58.6 (chiusura docs) chiusi.
+      Vittoria: `rg "posix::" libs/civis/src` = zero; una seconda personalità
+      riusa `civis` invariato.
+- [ ] **59+ (A3–A8, V1, B1)** (dopo 56, come da `arcafs.md` §13): quota,
       ABAC engine, device-awareness, RAID, tool completo, rete; servizio
       vettoriale e backend VM/block fuori dal FS, mai dentro.
       Vittoria: una fase alla volta, ciascuna col suo gate.

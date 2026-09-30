@@ -12,7 +12,7 @@ Processi userspace (PID instabili per riuso: i peer si indirizzano per nome/cana
   vela -- /dev/null, /dev/zero
   block  -- driver ATA + nodi /dev/sdX + alias by-uuid/by-label (Fase 16)
   init      -- spawna disk/fs da embedded, il resto da /fat (Fase 21)
-  shell     -- usa libr wrappers per accedere ai file
+  shell     -- usa civis wrappers per accedere ai file
 ```
 
 ## Trasferimento dati: ring SPSC per-processo (Fase 10.2)
@@ -42,7 +42,7 @@ senza copie ne' race, ogni processo ha una coppia di **ring SPSC** dedicati.
    anche per `/dev/zero`.
 5. **Chunking client-side**: la capacity reale di un ring e' 4087 B
    (dati `[0x0000..0xFF8)`, head a `0xFF8`, tail a `0xFFC`, free = CAP-1).
-   I wrapper `read_fs`/`write_fs` di libr splittano payload > ~4000 B in
+   I wrapper `read_fs`/`write_fs` di civis splittano payload > ~4000 B in
    piu' round trip (`RING_MAX_PAYLOAD`), cosi' /dev/zero legge 4096 B in
    2 round trip.
 
@@ -75,7 +75,7 @@ senza copie ne' race, ogni processo ha una coppia di **ring SPSC** dedicati.
 ```
          Client (shell, utente)
               |
-              |  open() → libr: frame nel request ring
+              |  open() → civis: frame nel request ring
               |  IPC(FS_NOTIFY)  →  cardo
               v
          +------------------------------------------+
@@ -127,14 +127,14 @@ alle porte 0x1F0-0x1F7 via **TSS per-processo** (ADR-0006).
 **Checkpoint (all'epoca):** FAT32 read funziona (usertestfat PASS 6/6).
 
 > Fase 16: il driver ATA e' migrato in `block` (entrambi i canali,
-> enumerazione IDENTIFY, `/dev/sdX`, [ADR-0012](../adr/0012-userspace-disk-driver.md));
+> enumerazione IDENTIFY, `/dev/sdX`, [ADR-0012](./adr/0012-userspace-disk-driver.md));
 > cardo tiene solo il parser (generico su `BlockSource`) e non ha piu' porte
 > ATA. Flusso `/fat/*` invariato per i client.
 >
 > > Fase 16c: la mappa nome→handle vive nel driver (`DISK_RESOLVE` 0x54 su
 > > canale `Disk`); cardo risolve una volta a mount e per nome a ogni
 > > riattivazione lazy, con drop d'epoca alla morte del driver
-> > ([ADR-0013](../adr/0013-mount-syscall.md)). Raw `/dev/sdX` (`DEV_*`) intoccato.
+> > ([ADR-0013](./adr/0013-mount-syscall.md)). Raw `/dev/sdX` (`DEV_*`) intoccato.
 > >
 > > > Fase 16d: chiavi stabili `UUID=<hex8>`/`LABEL=<nome>` (seriale/label del
 > > > volume FAT) al posto delle lettere instabili; nodi `/dev/disk/by-uuid/*`
@@ -151,7 +151,7 @@ tramite `FS_REGISTER`. Mount table dinamica con prefix-based resolution.
 
 ### 9.4 -- Shell integration
 
-La shell (`usershell`) usa `libr` wrappers per leggere/scrivere file:
+La shell (`usershell`) usa `civis` wrappers per leggere/scrivere file:
 ls, cat, touch, mkdir, help, exit. Il server gpu gestiva la VGA e
 (all'epoca) la tastiera; la shell opera sullo stesso fd del device
 `/dev/input`. (Dalla Fase 15: gpu solo rendering `/dev/console`,
@@ -208,9 +208,9 @@ usertests 17/17, shell 3/3.
 16b  Mount/umount espliciti (tabella Vec<FsMount>, R_MOUNT/R_UMOUNT) [x]
 16c  Resolve nome→handle lato driver (DISK_RESOLVE, single source)   [x]
 16d  Identità stabile UUID/LABEL + listing + register multi-prefix     [x]
-17   Diritti per-canale lato server ([ADR-0014](../adr/0014-channel-rights-serverside.md): tabella chan→{ops,subtree}, DROP solo-shrink + GET, fd capability pure) [x]
-19.2 Metadati senza open (R_STAT 0x1B, risposta self-written `[size:8][kind:8]` + `[mtime:8]` dalla Fase 50: ramfs size reale, FAT mai readonly dalla Fase 20, device size 0, check RIGHTS_READDIR+subtree, `libr::stat`, t38) [x]
-51   P2 vocabolario disco (relay topologia): `DISK_LIST/INFO` (0x56/0x57: entry `[sectors:8][flags:8]`, INFO + frame 76 B modello/seriale) + `R_DISK_LIST/INFO` (0x21/0x22, gate READDIR, self-written) + `IpcDisk::list/info` + `libr::disk_list/info` (`DiskDesc` con accessori flags); t32 esteso [x]
+17   Diritti per-canale lato server ([ADR-0014](./adr/0014-channel-rights-serverside.md): tabella chan→{ops,subtree}, DROP solo-shrink + GET, fd capability pure) [x]
+19.2 Metadati senza open (R_STAT 0x1B, risposta self-written `[size:8][kind:8]` + `[mtime:8]` dalla Fase 50: ramfs size reale, FAT mai readonly dalla Fase 20, device size 0, check RIGHTS_READDIR+subtree, `civis::stat`, t38) [x]
+51   P2 vocabolario disco (relay topologia): `DISK_LIST/INFO` (0x56/0x57: entry `[sectors:8][flags:8]`, INFO + frame 76 B modello/seriale) + `R_DISK_LIST/INFO` (0x21/0x22, gate READDIR, self-written) + `IpcDisk::list/info` + `civis::disk_list/info` (`DiskDesc` con accessori flags); t32 esteso [x]
 52   P3 durabilita' (contratto + barriera + sensori): `R_SYNC` (0x23, modi `SYNC_NONE/GROUP/PERWRITE`, ritorna prev umask-like, `GROUP` = FLUSH dei mount FAT via `DISK_FLUSH` 0x58, gate `RIGHTS_SYNC` 0x800) + `R_STATVFS` (0x24, `StatVfs` nel trait, FAT da FSInfo, ramfs illimitata) + `SYS_MEMINFO` 52 (frame free/total/used); t32/t37 estesi [x]
 54   P5 integrita' + attrezzi: crate `blake2s` (BLAKE2s-256 proprio, no_std/no_alloc), `R_GET_HASH` 0x25 (content_hash compute-on-query, opzione A), superblock ArcaFS (single source `ARCA_*`), `negotiate()`→`arcafs` (stub `MountedFs::Arca`), tool host `arca create` (`tools/arca`), guest `arca list/stat` (`/bin/arca.bin`), `testsarca` 8/8 [x]
 
@@ -228,7 +228,7 @@ usertests 17/17, shell 3/3.
   su store in-memory (Fase 55, A1: bucket `sys` seedato da /fat a ogni
   avvio; la persistenza su volume e' A2). Mount ArcaFS anche in partizione
   MBR/GPT (superblock partition-relative, parser GPT per spec UEFI).
-- **`R_GET_HASH`** (`libr::get_hash`, opzione A compute-on-query): cardo
+- **`R_GET_HASH`** (`civis::get_hash`, opzione A compute-on-query): cardo
   rilegge il file a chunk 4K e calcola BLAKE2s-256 (nessuno stato, nessuno
   store; il seal per-versione arriva con ArcaFS in A1). `BLAKE2s` proprio
   (crate `blake2s`, RFC 7693: vettori generati da due implementazioni
@@ -247,8 +247,8 @@ Cosa e' stabile, e quando (misurato, non presunto):
 | `R_SYNC(NONE/PERWRITE)` | Dichiarazioni registrate per-canale (prev ritornato); `PERWRITE` e' gia' il FAT, ramfs resta volatile |
 
 Sensori: `R_STATVFS` (spazio mount: FAT blocchi=cluster da FSInfo con clamp, ramfs usati camminati + `MAX` illimitato) e `SYS_MEMINFO` (frame liberi/totali/usati del PMM; il kernel non decide mai: niente OOM-kill). Ganci per quota (A3) e swap (B1).
-50   P1 orologio (mtime veri): `usertime` (CMOS+Time), baseline lazy in cardo (`wall.rs`, niente IPC per-op), `mtime` su `FsNode`/decode DOS WrtTime/Date + stamp a create/grow/truncate, `Meta.mtime` via trait, `libr::Stat.mtime`; t38 esteso (Time monotono, mtime plausibile+crescente, FAT noto) [x]
-20   FAT32 scrivibile ([ADR-0016](../adr/0016-fat-writable.md): DISK_WRITE + write PIO + overwrite/grow/alloc/O_CREAT write-through, `testfat` 7/7, fsck pulito) [x]
+50   P1 orologio (mtime veri): `usertime` (CMOS+Time), baseline lazy in cardo (`wall.rs`, niente IPC per-op), `mtime` su `FsNode`/decode DOS WrtTime/Date + stamp a create/grow/truncate, `Meta.mtime` via trait, `civis::Stat.mtime`; t38 esteso (Time monotono, mtime plausibile+crescente, FAT noto) [x]
+20   FAT32 scrivibile ([ADR-0016](./adr/0016-fat-writable.md): DISK_WRITE + write PIO + overwrite/grow/alloc/O_CREAT write-through, `testfat` 7/7, fsck pulito) [x]
 21   Servizi da disco: cardo con cache FileInfo per-fd + generazione (bump a ogni mutazione FAT; stat sempre fresca) e `IpcDisk` con OPEN-once per connessione (re-OPEN solo a canale caduto) — dimezza i round-trip DISK dei load da disco [x]
 46   Provider trait (`LocalFs` + `LocalFsDyn` + `DynHandle<T>`, enum `MountedFs::Local`) — scaffolding [x]
 47   U1 wiring: handler cardo instradano via `LocalFs` per ramfs (open/read/write/readdir/stat/mkdir/delete), fix mkdir esiste→ERR_EXISTS, fix read oltre EOF→0; zero behavioral regression, gate 5/5+7/7+57/57 [x]
@@ -263,7 +263,7 @@ Sensori: `R_STATVFS` (spazio mount: FAT blocchi=cluster da FSInfo con clamp, ram
 | `kernel/src/arc/vmm_user.rs` | Ring per-processo (`RING_PHYS` multi-coppia, `alloc_ring_pages` a coppie fresche, `USER_FS_BUFFER`, `USER_RESP_RING`) |
 | `kernel/src/syscall/` | Handler `sys_ring_alloc` (26), `sys_map_in` (27, generico) |
 | `kernel/src/ordo/sched.rs` (esposto come `crate::ordo::sched`) | `process_cr3` (per map_in) |
-| `libs/libr/src/lib.rs` | Wrappers FS su ring + `fs_init` lazy + chunking read/write + `map_in` + `ring_alloc_raw` (coppia senza handshake, Fase 16) |
+| `libs/civis/src/lib.rs` | Wrappers FS su ring + `fs_init` lazy + chunking read/write + `map_in` + `ring_alloc_raw` (coppia senza handshake, Fase 16) |
 | `userland/cardo/src/main.rs` | cardo: finestra ring, registro `chan→(req,resp)` + `ftable`/`next_fd` per canale, map_in per device remoti |
 | `userland/cardo/src/ipc_disk.rs` | client `DISK_*` verso block (`BlockSource`, riconnessione lazy, Fase 16; resolve nome→handle + map di entrambi i ring, Fase 16c; OPEN-once per connessione, Fase 21) |
 | `userland/cardo/src/provider.rs` | Trait `LocalFs` (presentazione POSIX), `LocalFsDyn` object-safe con `AnyHandle` by-value (Fase 49: niente piu' `*const ()`/`DynHandle`), `RamFs`+`Fat32` con match discriminato — Fase 46 scaffolding, Fase 47 wiring ramfs, Fase 48 `LocalFsDyn` FAT32, Fase 49 handle unico |

@@ -11,11 +11,11 @@
 
 extern crate alloc;
 
-use libr;
-use libr::{println, print_str};
+use civis;
+use civis::{println, print_str};
 // Tag di fine-test e servizio-pronto (DocsB): single source in
-// `syscall-numbers`, via `libr` (prima duplicati qui).
-use libr::{SVC_READY, TEST_DONE};
+// `syscall-numbers`, via `civis` (prima duplicati qui).
+use civis::{SVC_READY, TEST_DONE};
 
 /// Manifest degli hash dei servizi (Fase 36, identita' misurata, Strato 2 di
 /// ADR-0026): generato a build-time da scripts/gen-service-hashes.sh sui
@@ -67,7 +67,7 @@ fn expected_blake(bin: &[u8]) -> Option<[u8; 32]> {
 /// confrontare). Stesso predicato usato da t58 per provare il rifiuto.
 fn verify_image(bin: &[u8], img: &[u8]) -> bool {
     if let Some(expected) = expected_hash(bin) {
-        if libr::image_hash(img) != expected {
+        if civis::image_hash(img) != expected {
             return false;
         }
     }
@@ -84,7 +84,7 @@ fn verify_image(bin: &[u8], img: &[u8]) -> bool {
 /// uno spurious message nel server). Usato per sincronizzare l'avvio.
 fn wait_msg(chan: i64, tag: u64) {
     loop {
-        match libr::recv() {
+        match civis::recv() {
             Ok(m) if m.channel == chan as u64 && m.tag == tag => {
                 return;
             }
@@ -109,7 +109,7 @@ fn wait_any(chans: &[i64], tag: u64) {
         if done {
             return;
         }
-        match libr::recv() {
+        match civis::recv() {
             Ok(m) if m.tag == tag => {
                 for (i, c) in chans.iter().enumerate() {
                     if *c as u64 == m.channel {
@@ -117,9 +117,9 @@ fn wait_any(chans: &[i64], tag: u64) {
                     }
                 }
             }
-            Ok(m) if m.tag == libr::EXIT_NOTIFY => {
+            Ok(m) if m.tag == civis::EXIT_NOTIFY => {
                 println!("[init] boot FAILED (morte pre-ready pid={})", m.w1);
-                libr::exit(1);
+                civis::exit(1);
             }
             Ok(_) => {}
             Err(_) => {}
@@ -131,8 +131,8 @@ fn wait_any(chans: &[i64], tag: u64) {
 /// Ritorna il channel id se lo spawn e' riuscito, altrimenti None.
 fn spawn_child(name: &[u8]) -> Option<i64> {
     print_str!("[init] spawn ");
-    libr::write_raw(name.as_ptr(), name.len());
-    match libr::spawn(name) {
+    civis::write_raw(name.as_ptr(), name.len());
+    match civis::spawn(name) {
         Ok(chan) => {
             println!(" -> child chan={}", chan);
             Some(chan)
@@ -176,8 +176,8 @@ const TIME_CMOS_RANGES: &[(u16, u16)] = &[(0x70, 0x71)];
 fn spawn_file(meta: &SvcMeta) -> Option<i64> {
     let path = meta.path?;
     print_str!("[init] load ");
-    libr::write_raw(path.as_ptr(), path.len());
-    let img = match libr::load_file(path) {
+    civis::write_raw(path.as_ptr(), path.len());
+    let img = match civis::load_file(path) {
         Some(b) if !b.is_empty() => b,
         _ => {
             println!(" -> FAILED (file illeggibile)");
@@ -201,12 +201,12 @@ fn spawn_file(meta: &SvcMeta) -> Option<i64> {
         Ok(s) => s,
         Err(_) => return None,
     };
-    let sm = match libr::SpawnMeta::new(name, meta.prio, meta.io) {
+    let sm = match civis::SpawnMeta::new(name, meta.prio, meta.io) {
         Some(m) => m,
         None => return None,
     };
     print_str!(" -> spawn ");
-    match libr::spawn_image(&img, &sm) {
+    match civis::spawn_image(&img, &sm) {
         Ok(chan) => {
             if checked {
                 println!("{}B hash-ok -> child chan={}", img.len(), chan);
@@ -224,7 +224,7 @@ fn spawn_file(meta: &SvcMeta) -> Option<i64> {
 
 /// Spawna un servizio da ArcaFS via `obj_get()` (Fase 55, N0).
 fn spawn_object(bucket: &[u8], key: &[u8]) -> Option<alloc::vec::Vec<u8>> {
-    match libr::obj_get(bucket, key) {
+    match civis::obj_get(bucket, key) {
         Ok(v) if !v.is_empty() => Some(v),
         _ => None,
     }
@@ -246,11 +246,11 @@ fn spawn_image_from_vec(img: &[u8], meta: &SvcMeta) -> Option<i64> {
         println!(" -> FAILED (hash mismatch)");
         return None;
     }
-    let sm = match libr::SpawnMeta::new(name, meta.prio, meta.io) {
+    let sm = match civis::SpawnMeta::new(name, meta.prio, meta.io) {
         Some(m) => m,
         None => return None,
     };
-    match libr::spawn_image(img, &sm) {
+    match civis::spawn_image(img, &sm) {
         Ok(chan) => {
             println!("{}B -> child chan={}", img.len(), chan);
             Some(chan)
@@ -266,7 +266,7 @@ fn spawn_image_from_vec(img: &[u8], meta: &SvcMeta) -> Option<i64> {
 fn spawn_entry(meta: &SvcMeta) -> Option<i64> {
     if let Some((bucket, key)) = meta.obj {
         print_str!("[init] load obj ");
-        libr::write_raw(key.as_ptr(), key.len());
+        civis::write_raw(key.as_ptr(), key.len());
         let img = match spawn_object(bucket, key) {
             Some(v) => v,
             _ => {
@@ -294,20 +294,20 @@ fn spawn_entry(meta: &SvcMeta) -> Option<i64> {
 fn run_test(meta: &SvcMeta, supervised: &mut [Supervised]) {
     let Some(chan) = spawn_entry(meta) else {
         println!("[init] test mancante, FAIL loud");
-        libr::exit(1);
+        civis::exit(1);
     };
     loop {
         drain_stray_deaths(supervised);
-        match libr::recv() {
+        match civis::recv() {
             Ok(m) if m.channel == chan as u64 && m.tag == TEST_DONE => {
-                let _ = libr::reply(TEST_DONE, 0, 0);
+                let _ = civis::reply(TEST_DONE, 0, 0);
                 return;
             }
-            Ok(m) if m.tag == libr::INIT_BOUNCE => {
+            Ok(m) if m.tag == civis::INIT_BOUNCE => {
                 let r = handle_bounce(supervised, m.w0);
-                let _ = libr::reply(0, r, 0);
+                let _ = civis::reply(0, r, 0);
             }
-            Ok(m) if m.tag == libr::EXIT_NOTIFY => {
+            Ok(m) if m.tag == civis::EXIT_NOTIFY => {
                 handle_child_death(supervised, m.w1 as i64, m.w0 as i64);
             }
             Ok(_) => {}
@@ -326,7 +326,7 @@ fn handle_bounce(supervised: &[Supervised], svc_disc: u64) -> u64 {
     match supervised.iter().find(|e| e.svc as u64 == svc_disc) {
         Some(e) => {
             println!("[init] bounce: uccido pid={} ({})", e.pid, e.svc as u64);
-            let _ = libr::kill(e.pid, 0);
+            let _ = civis::kill(e.pid, 0);
             e.pid as u64
         }
         None => {
@@ -368,7 +368,7 @@ fn handle_child_death(supervised: &mut [Supervised], pid: i64, code: i64) {
 /// loggati ma non riavviati.
 struct Supervised {
     meta: &'static SvcMeta,
-    svc: libr::Service,
+    svc: civis::Service,
     chan: i64,
     pid: i64,
     restarts: u32,
@@ -387,22 +387,22 @@ struct Supervised {
 /// perde restart (osservato t32: block morto durante il restart di vela
 /// → mai riavviato → cascata fino al panic di init).
 fn wait_ready(chan: i64) -> bool {
-    let t0 = libr::get_ticks();
+    let t0 = civis::get_ticks();
     loop {
-        match libr::recv() {
+        match civis::recv() {
             Ok(m) if m.channel == chan as u64 && m.tag == SVC_READY => {
                 return true;
             }
-            Ok(m) if m.channel == chan as u64 && m.tag == libr::EXIT_NOTIFY => {
+            Ok(m) if m.channel == chan as u64 && m.tag == civis::EXIT_NOTIFY => {
                 return false;
             }
-            Ok(m) if m.tag == libr::EXIT_NOTIFY => {
+            Ok(m) if m.tag == civis::EXIT_NOTIFY => {
                 stash_death(m.w1 as i64, m.w0 as i64);
             }
             Ok(_) => {}
             Err(_) => {}
         }
-        if libr::get_ticks() - t0 > 500 {
+        if civis::get_ticks() - t0 > 500 {
             return false;
         }
     }
@@ -456,7 +456,7 @@ fn restart_service(e: &mut Supervised) {
         if e.held {
             return;
         }
-        let now = libr::get_ticks();
+        let now = civis::get_ticks();
         if now - e.window_start > 300 {
             e.window_start = now;
             e.restarts = 0;
@@ -468,14 +468,14 @@ fn restart_service(e: &mut Supervised) {
             return;
         }
         println!("[init] supervisione: riavvio (tentativo {})", e.restarts);
-        libr::spin_ticks(20);
+        civis::spin_ticks(20);
         let Some(chan) = spawn_entry(e.meta) else {
             println!("[init] supervisione: spawn FAILED, riprovo");
             continue;
         };
         e.chan = chan;
         if wait_ready(chan) {
-            e.pid = libr::service_pid(e.svc).unwrap_or(-1);
+            e.pid = civis::service_pid(e.svc).unwrap_or(-1);
             println!("[init] supervisione: riavviato pid={}", e.pid);
             return;
         }
@@ -559,6 +559,9 @@ const SVC_VESTIGIA: SvcMeta = SvcMeta {
 const TEST_FS: SvcMeta = SvcMeta { bin: b"usertestfs", path: Some("/fat/test/testfs.bin"), obj: None, prio: 16, io: &[] };
 const TEST_FAT: SvcMeta = SvcMeta { bin: b"usertestfat", path: Some("/fat/test/testfat.bin"), obj: None, prio: 16, io: &[] };
 const TEST_ARCA: SvcMeta = SvcMeta { bin: b"usertestsarca", path: Some("/fat/test/testarca.bin"), obj: None, prio: 16, io: &[] };
+// Suite della personalita' POSIX (Fase 58.5, ADR-0041): gira PRIMA di
+// usertests (t54 deve precedere i drop di diritti di t34 in usertests).
+const TEST_POSIX: SvcMeta = SvcMeta { bin: b"userposixtests", path: Some("/fat/test/posixtst.bin"), obj: None, prio: 16, io: &[] };
 const TESTS: SvcMeta = SvcMeta { bin: b"usertests", path: Some("/fat/test/tests.bin"), obj: None, prio: 16, io: &[] };
 #[cfg(feature = "bench")]
 const TEST_BENCH: SvcMeta = SvcMeta { bin: b"userbench", path: Some("/fat/test/bench.bin"), obj: None, prio: 16, io: &[] };
@@ -581,9 +584,9 @@ fn boot_svc(meta: &'static SvcMeta, wait: bool) -> Option<i64> {
 }
 
 /// Entry di init: spawna i servizi e resta vivo come root della process tree.
-libr::entry!(real_main);
+civis::entry!(real_main);
 fn real_main(_sp: u64) -> ! {
-    let my_pid = libr::getpid();
+    let my_pid = civis::getpid();
     println!("[init] up, pid={}", my_pid);
 
     // Spawna i servizi user. Fase 57: log+disk in PARALLELO (log non aspetta
@@ -596,77 +599,77 @@ fn real_main(_sp: u64) -> ! {
     // service_register (prima del mount dei nodi, che aspetta Fs).
     let Some(vestigia_chan) = boot_svc_nowait(&SVC_VESTIGIA) else {
         println!("[init] boot FAILED (log spawn), panic");
-        libr::exit(1);
+        civis::exit(1);
     };
     let Some(disk_chan) = spawn_child(b"block") else {
         println!("[init] boot FAILED (disk), panic");
-        libr::exit(1);
+        civis::exit(1);
     };
     wait_any(&[vestigia_chan, disk_chan], SVC_READY);
-    let _ = libr::vestigia::log(b"init", b"log ready");
-    let _ = libr::vestigia::log(b"init", b"disk ready");
+    let _ = civis::vestigia::log(b"init", b"log ready");
+    let _ = civis::vestigia::log(b"init", b"disk ready");
 
     // cardo SUBITO DOPO disk (serve Disk registrato: resta dopo per non
     // spendere il bound HELLO — il mount aspetterebbe comunque il disco).
     // Chi usa il FS parte solo dopo che cardo e' pronto (READY = pronto).
     let Some(fs_chan) = spawn_child(b"cardo") else {
         println!("[init] boot FAILED (fs), panic");
-        libr::exit(1);
+        civis::exit(1);
     };
     wait_msg(fs_chan, SVC_READY);
-    let _ = libr::vestigia::log(b"init", b"fs ready");
+    let _ = civis::vestigia::log(b"init", b"fs ready");
     // Time da disco (Fase 50, P1 orologio): registra Time + ack; chi serve
     // data/ora (cardo per mtime, vestigia per i timbri) lo risolve per nome.
     if boot_svc(&SVC_TIME, true).is_none() {
         println!("[init] boot FAILED (time), panic");
-        libr::exit(1);
+        civis::exit(1);
     }
-    let _ = libr::vestigia::log(b"init", b"time ready");
+    let _ = civis::vestigia::log(b"init", b"time ready");
     // FLUSH a vestigia (Fase 57, ADR-0039): dopo fs (backend) + time (epoch
     // per backdate/re-key). Da qui dual-write RAM+volume; il pre-boot resta
     // anche su seriale (duplicazione dichiarata, non perdita).
-    if libr::vestigia::log_flush().is_err() {
+    if civis::vestigia::log_flush().is_err() {
         println!("[init] boot FAILED (log flush), panic");
-        libr::exit(1);
+        civis::exit(1);
     }
     // Console da disco (Fase 21): registra Console + ack subito dopo la
     // registrazione (prima del mount /dev/input che richiede cardo, gia'
     // pronto qui). kbd la risolve per nome al passo 4.
     let Some(console_chan) = boot_svc(&SVC_CONSOLE, true) else {
         println!("[init] boot FAILED (console), panic");
-        libr::exit(1);
+        civis::exit(1);
     };
     let _ = console_chan;
-    let _ = libr::vestigia::log(b"init", b"console ready");
+    let _ = civis::vestigia::log(b"init", b"console ready");
     // uptime: nessuna attesa (solo informativo, come prima).
     boot_svc(&SVC_UPTIME, false);
     let Some(vela_chan) = boot_svc(&SVC_VELA, true) else {
         println!("[init] boot FAILED (vela), panic");
-        libr::exit(1);
+        civis::exit(1);
     };
     let _ = vela_chan;
-    let _ = libr::vestigia::log(b"init", b"vela ready");
+    let _ = civis::vestigia::log(b"init", b"vela ready");
     // 4. kbd + attesa READY (Fase 15: registra Kbd + mount /dev/kbd; Fs
     //    garantito dal passo 2, quindi riesce subito a boot).
     if boot_svc(&SVC_KBD, true).is_none() {
         println!("[init] boot FAILED (kbd), panic");
-        libr::exit(1);
+        civis::exit(1);
     }
-    let _ = libr::vestigia::log(b"init", b"kbd ready");
+    let _ = civis::vestigia::log(b"init", b"kbd ready");
     // 5. porta + attesa READY (Fase 15: registra /dev/input; /dev/kbd e
     //    /dev/console garantiti dai passi precedenti, riesce subito a boot).
     if boot_svc(&SVC_PORTA, true).is_none() {
         println!("[init] boot FAILED (tty), panic");
-        libr::exit(1);
+        civis::exit(1);
     }
-    let _ = libr::vestigia::log(b"init", b"tty ready");
+    let _ = civis::vestigia::log(b"init", b"tty ready");
     // 6. userposix + attesa READY (Fase 40.3, P1): skeleton senza dipendenze
     //    (registra solo il servizio e resta in recv), riesce subito a boot.
     if boot_svc(&SVC_POSIX, true).is_none() {
         println!("[init] boot FAILED (posix), panic");
-        libr::exit(1);
+        civis::exit(1);
     }
-    let _ = libr::vestigia::log(b"init", b"posix ready");
+    let _ = civis::vestigia::log(b"init", b"posix ready");
 
     // Tabella supervisione (Fase 14, init-restart): gpu/fs/vela/kbd/tty/
     // disk/posix/time/log vengono riavviati alla morte (dalla loro sorgente: embedded per
@@ -681,18 +684,18 @@ fn real_main(_sp: u64) -> ! {
     const META_DISK: SvcMeta = SvcMeta { bin: b"block", path: None, obj: None, prio: 16, io: &[] };
     const META_FS: SvcMeta = SvcMeta { bin: b"cardo", path: None, obj: None, prio: 16, io: &[] };
     let mut supervised = [
-        Supervised { meta: &SVC_CONSOLE, svc: libr::Service::Gpu, chan: -1, pid: -1, restarts: 0, window_start: 0, held: false },
-        Supervised { meta: &META_DISK, svc: libr::Service::Block, chan: -1, pid: -1, restarts: 0, window_start: 0, held: false },
-        Supervised { meta: &META_FS, svc: libr::Service::Cardo, chan: -1, pid: -1, restarts: 0, window_start: 0, held: false },
-        Supervised { meta: &SVC_VELA, svc: libr::Service::Vela, chan: -1, pid: -1, restarts: 0, window_start: 0, held: false },
-        Supervised { meta: &SVC_KBD, svc: libr::Service::Kbd, chan: -1, pid: -1, restarts: 0, window_start: 0, held: false },
-        Supervised { meta: &SVC_PORTA, svc: libr::Service::Porta, chan: -1, pid: -1, restarts: 0, window_start: 0, held: false },
-        Supervised { meta: &SVC_POSIX, svc: libr::Service::Posix, chan: -1, pid: -1, restarts: 0, window_start: 0, held: false },
-        Supervised { meta: &SVC_TIME, svc: libr::Service::Time, chan: -1, pid: -1, restarts: 0, window_start: 0, held: false },
-        Supervised { meta: &SVC_VESTIGIA, svc: libr::Service::Vestigia, chan: -1, pid: -1, restarts: 0, window_start: 0, held: false },
+        Supervised { meta: &SVC_CONSOLE, svc: civis::Service::Gpu, chan: -1, pid: -1, restarts: 0, window_start: 0, held: false },
+        Supervised { meta: &META_DISK, svc: civis::Service::Block, chan: -1, pid: -1, restarts: 0, window_start: 0, held: false },
+        Supervised { meta: &META_FS, svc: civis::Service::Cardo, chan: -1, pid: -1, restarts: 0, window_start: 0, held: false },
+        Supervised { meta: &SVC_VELA, svc: civis::Service::Vela, chan: -1, pid: -1, restarts: 0, window_start: 0, held: false },
+        Supervised { meta: &SVC_KBD, svc: civis::Service::Kbd, chan: -1, pid: -1, restarts: 0, window_start: 0, held: false },
+        Supervised { meta: &SVC_PORTA, svc: civis::Service::Porta, chan: -1, pid: -1, restarts: 0, window_start: 0, held: false },
+        Supervised { meta: &SVC_POSIX, svc: civis::Service::Posix, chan: -1, pid: -1, restarts: 0, window_start: 0, held: false },
+        Supervised { meta: &SVC_TIME, svc: civis::Service::Time, chan: -1, pid: -1, restarts: 0, window_start: 0, held: false },
+        Supervised { meta: &SVC_VESTIGIA, svc: civis::Service::Vestigia, chan: -1, pid: -1, restarts: 0, window_start: 0, held: false },
     ];
     for e in supervised.iter_mut() {
-        e.pid = libr::service_pid(e.svc).unwrap_or(-1);
+        e.pid = civis::service_pid(e.svc).unwrap_or(-1);
     }
 
     // Test suite in sequenza: usertestfs, usertestfat, usertests (Fase 9.5).
@@ -707,6 +710,7 @@ fn real_main(_sp: u64) -> ! {
         run_test(&TEST_FS, &mut supervised);
         run_test(&TEST_FAT, &mut supervised);
         run_test(&TEST_ARCA, &mut supervised);
+        run_test(&TEST_POSIX, &mut supervised);
         run_test(&TESTS, &mut supervised);
     }
 
@@ -720,14 +724,14 @@ fn real_main(_sp: u64) -> ! {
 
     if boot_svc(&SVC_SHELL, false).is_none() {
         println!("[init] boot FAILED (shell), panic");
-        libr::exit(1);
+        civis::exit(1);
     }
 
     // Supervisore init-restart (Fase 14): se un servizio e' morto prima della
     // supervisione (es. tra boot e run_test), riavvialo subito; poi loop.
     for e in supervised.iter_mut() {
         if e.pid < 0 {
-            e.pid = libr::service_pid(e.svc).unwrap_or(-1);
+            e.pid = civis::service_pid(e.svc).unwrap_or(-1);
         }
         if e.pid < 0 {
             println!("[init] supervisione: servizio assente all'avvio, riavvio");
@@ -738,13 +742,13 @@ fn real_main(_sp: u64) -> ! {
     println!("[init] supervisione attiva, hanging in recv");
     loop {
         drain_stray_deaths(&mut supervised);
-        match libr::recv() {
-            Ok(m) if m.tag == libr::EXIT_NOTIFY => {
+        match civis::recv() {
+            Ok(m) if m.tag == civis::EXIT_NOTIFY => {
                 handle_child_death(&mut supervised, m.w1 as i64, m.w0 as i64);
             }
-            Ok(m) if m.tag == libr::INIT_BOUNCE => {
+            Ok(m) if m.tag == civis::INIT_BOUNCE => {
                 let r = handle_bounce(&supervised, m.w0);
-                let _ = libr::reply(0, r, 0);
+                let _ = civis::reply(0, r, 0);
             }
             Ok(_) => {}
             Err(_) => {}
@@ -755,5 +759,5 @@ fn real_main(_sp: u64) -> ! {
 #[panic_handler]
 fn panic(_info: &core::panic::PanicInfo) -> ! {
     println!("[init] panic");
-    libr::exit(1)
+    civis::exit(1)
 }

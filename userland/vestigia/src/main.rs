@@ -12,16 +12,16 @@ extern crate alloc;
 
 mod server;
 
-use libr::println;
+use civis::println;
 
-libr::entry!(real_main);
+civis::entry!(real_main);
 fn real_main(_sp: u64) -> ! {
-    println!("[vestigia] starting, pid={}", libr::getpid());
+    println!("[vestigia] starting, pid={}", civis::getpid());
     server::run()
 }
 
 #[panic_handler]
 fn panic(_info: &core::panic::PanicInfo) -> ! {
     println!("[vestigia] panic");
-    libr::exit(1)
+    civis::exit(1)
 }

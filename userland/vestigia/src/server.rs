@@ -19,7 +19,7 @@
 use super::*;
 use alloc::collections::{BTreeMap, VecDeque};
 use alloc::vec::Vec;
-use libr::{
+use civis::{
     EXIT_NOTIFY, LOG_APPEND, LOG_FLUSH, LOG_MSG_MAX, LOG_RAM_TAIL, LOG_READ, LOG_REG,
     LOG_SEAL, LOG_SRC_MAX, LOG_STATS,
 };
@@ -72,14 +72,14 @@ impl State {
 /// `(tag, w0, w1, payload_disponibile)`. None a ring corto (< 20 B).
 unsafe fn peek_header(va: u64) -> Option<(u32, u64, u64, usize)> {
     unsafe {
-        let (head, tail) = libr::ring_positions(va);
-        let avail = libr::ring_available(head, tail);
+        let (head, tail) = civis::ring_positions(va);
+        let avail = civis::ring_available(head, tail);
         if avail < 20 {
             return None;
         }
         let mut hdr = [0u8; 20];
         for (i, b) in hdr.iter_mut().enumerate() {
-            let p = ((tail as usize) + i) % libr::RING_DATA_CAP;
+            let p = ((tail as usize) + i) % civis::RING_DATA_CAP;
             *b = core::ptr::read_volatile((va as *const u8).add(p));
         }
         let tag = u32::from_le_bytes(hdr[0..4].try_into().ok()?);
@@ -94,9 +94,9 @@ unsafe fn peek_header(va: u64) -> Option<(u32, u64, u64, usize)> {
 /// sempre. Il mittente vede ERR e ritenta/riporta.
 unsafe fn resync(va: u64) {
     unsafe {
-        let (head, _) = libr::ring_positions(va);
-        core::ptr::write_volatile((va + libr::RING_HEAD as u64) as *mut u32, head);
-        core::ptr::write_volatile((va + libr::RING_TAIL as u64) as *mut u32, head);
+        let (head, _) = civis::ring_positions(va);
+        core::ptr::write_volatile((va + civis::RING_HEAD as u64) as *mut u32, head);
+        core::ptr::write_volatile((va + civis::RING_TAIL as u64) as *mut u32, head);
     }
 }
 
@@ -107,10 +107,10 @@ unsafe fn resync(va: u64) {
 #[inline(never)]
 fn handle_reg(st: &mut State, chan: u64, req_phys: u64, resp_phys: u64) -> u64 {
     if req_phys == 0 || resp_phys == 0 {
-        return libr::ERR;
+        return civis::ERR;
     }
-    let pid = libr::peer_pid(chan).unwrap_or(-1);
-    let hash = libr::peer_info(chan).unwrap_or(0);
+    let pid = civis::peer_pid(chan).unwrap_or(-1);
+    let hash = civis::peer_info(chan).unwrap_or(0);
     if let Some(r) = st.regs.iter_mut().find(|r| r.chan == chan) {
         r.req_phys = req_phys;
         r.resp_phys = resp_phys;
@@ -119,7 +119,7 @@ fn handle_reg(st: &mut State, chan: u64, req_phys: u64, resp_phys: u64) -> u64 {
         return hash;
     }
     if st.regs.len() >= 64 {
-        return libr::ERR;
+        return civis::ERR;
     }
     st.regs.push(Reg { chan, req_phys, resp_phys, pid, hash });
     hash
@@ -128,13 +128,13 @@ fn handle_reg(st: &mut State, chan: u64, req_phys: u64, resp_phys: u64) -> u64 {
 /// Persistenza opportunistica di UN record (chiave+bytes): PUT dato + PUT
 /// `!idx` (max seq del giorno). True se entrambi Ok interi (durevole).
 fn persist_one(hash: u64, day: u64, seq: u64, key: &[u8], rec: &[u8]) -> bool {
-    let idx_key = libr::vestigia::log_idx_key(hash, day);
+    let idx_key = civis::vestigia::log_idx_key(hash, day);
     let idx_val = seq.to_le_bytes();
-    match libr::obj_put(libr::vestigia::LOG_BUCKET, key, rec) {
+    match civis::obj_put(civis::vestigia::LOG_BUCKET, key, rec) {
         Ok(n) if n as usize == rec.len() => {}
         _ => return false,
     }
-    match libr::obj_put(libr::vestigia::LOG_BUCKET, &idx_key, &idx_val) {
+    match civis::obj_put(civis::vestigia::LOG_BUCKET, &idx_key, &idx_val) {
         Ok(8) => true,
         _ => false,
     }
@@ -149,55 +149,55 @@ fn persist_one(hash: u64, day: u64, seq: u64, key: &[u8], rec: &[u8]) -> bool {
 fn handle_append(st: &mut State, chan: u64, expect: u64) -> (u64, u64) {
     let hash = match st.regs.iter().find(|r| r.chan == chan) {
         Some(r) => r.hash,
-        None => return (libr::ERR_NOHANDSHAKE, 0),
+        None => return (civis::ERR_NOHANDSHAKE, 0),
     };
     let req_phys = match st.regs.iter().find(|r| r.chan == chan) {
         Some(r) => r.req_phys,
-        None => return (libr::ERR_NOHANDSHAKE, 0),
+        None => return (civis::ERR_NOHANDSHAKE, 0),
     };
-    if libr::map_physical(req_phys, libr::CLI_REQ_VA, 1).is_err() {
-        return (libr::ERR, 0);
+    if civis::map_physical(req_phys, civis::CLI_REQ_VA, 1).is_err() {
+        return (civis::ERR, 0);
     }
     let (tag, w0, _w1, avail) = unsafe {
-        match peek_header(libr::CLI_REQ_VA) {
+        match peek_header(civis::CLI_REQ_VA) {
             Some(h) => h,
-            None => return (libr::ERR, 0),
+            None => return (civis::ERR, 0),
         }
     };
     if tag != LOG_APPEND as u32 || w0 != expect || expect == 0 || (avail as u64) < expect {
-        unsafe { resync(libr::CLI_REQ_VA) };
-        return (libr::ERR, 0);
+        unsafe { resync(civis::CLI_REQ_VA) };
+        return (civis::ERR, 0);
     }
     let n = expect as usize;
     let mut frame = alloc::vec![0u8; n];
-    unsafe { libr::req_frame_read(libr::CLI_REQ_VA, &mut frame, n) };
+    unsafe { civis::req_frame_read(civis::CLI_REQ_VA, &mut frame, n) };
     if frame.len() < 2 {
-        return (libr::ERR, 0);
+        return (civis::ERR, 0);
     }
     let level = frame[0];
     let taglen = frame[1] as usize;
-    if level > libr::vestigia::LOG_ERR
+    if level > civis::vestigia::LOG_ERR
         || taglen == 0
         || taglen > LOG_SRC_MAX
         || frame.len() < 2 + taglen
     {
-        return (libr::ERR, 0);
+        return (civis::ERR, 0);
     }
     let ctag = &frame[2..2 + taglen];
     let msg = &frame[2 + taglen..];
-    if !libr::vestigia::tag_valid(ctag) || !libr::vestigia::msg_valid(msg) {
-        return (libr::ERR, 0);
+    if !civis::vestigia::tag_valid(ctag) || !civis::vestigia::msg_valid(msg) {
+        return (civis::ERR, 0);
     }
 
-    let tick = libr::get_ticks() as u64;
-    let epoch = libr::time::wall_secs().unwrap_or(0);
+    let tick = civis::get_ticks() as u64;
+    let epoch = civis::time::wall_secs().unwrap_or(0);
     let day = if epoch == 0 { 0 } else { epoch / 86_400 };
-    let rec = match libr::vestigia::record_encode(tick, epoch, level, ctag, msg) {
+    let rec = match civis::vestigia::record_encode(tick, epoch, level, ctag, msg) {
         Some(r) => r,
-        None => return (libr::ERR, 0),
+        None => return (civis::ERR, 0),
     };
     let seq = st.index.get(&(hash, day)).copied().unwrap_or(0) + 1;
-    let key = libr::vestigia::log_key(hash, day, seq);
+    let key = civis::vestigia::log_key(hash, day, seq);
 
     // Durevole subito solo a volume legato (post-FLUSH o re-bind): prima il
     // disco non esiste ancora per noi (mai hang a boot). A fallimento si
@@ -228,23 +228,23 @@ fn handle_append(st: &mut State, chan: u64, expect: u64) -> (u64, u64) {
 fn handle_read(st: &mut State, chan: u64, expect: u64) -> (u64, u64) {
     let (hash, req_phys, resp_phys) = match st.regs.iter().find(|r| r.chan == chan) {
         Some(r) => (r.hash, r.req_phys, r.resp_phys),
-        None => return (libr::ERR_NOHANDSHAKE, 0),
+        None => return (civis::ERR_NOHANDSHAKE, 0),
     };
-    if libr::map_physical(req_phys, libr::CLI_REQ_VA, 1).is_err() {
-        return (libr::ERR, 0);
+    if civis::map_physical(req_phys, civis::CLI_REQ_VA, 1).is_err() {
+        return (civis::ERR, 0);
     }
     let (tag, w0, _w1, avail) = unsafe {
-        match peek_header(libr::CLI_REQ_VA) {
+        match peek_header(civis::CLI_REQ_VA) {
             Some(h) => h,
-            None => return (libr::ERR, 0),
+            None => return (civis::ERR, 0),
         }
     };
     if tag != LOG_READ as u32 || w0 != expect || expect != 16 || avail < 16 {
-        unsafe { resync(libr::CLI_REQ_VA) };
-        return (libr::ERR, 0);
+        unsafe { resync(civis::CLI_REQ_VA) };
+        return (civis::ERR, 0);
     }
     let mut frame = [0u8; 16];
-    unsafe { libr::req_frame_read(libr::CLI_REQ_VA, &mut frame, 16) };
+    unsafe { civis::req_frame_read(civis::CLI_REQ_VA, &mut frame, 16) };
     let day = u64::from_le_bytes(frame[0..8].try_into().unwrap_or([0; 8]));
     let mut seq = u64::from_le_bytes(frame[8..16].try_into().unwrap_or([0; 8]));
     if seq == 0 {
@@ -252,25 +252,25 @@ fn handle_read(st: &mut State, chan: u64, expect: u64) -> (u64, u64) {
         seq = match st.index.get(&(hash, day)) {
             Some(&s) if s > 0 => s,
             _ => match st.want_volume {
-                true => match libr::obj_get(libr::vestigia::LOG_BUCKET, &libr::vestigia::log_idx_key(hash, day)) {
+                true => match civis::obj_get(civis::vestigia::LOG_BUCKET, &civis::vestigia::log_idx_key(hash, day)) {
                     Ok(v) if v.len() == 8 => {
                         let s = u64::from_le_bytes(v[..8].try_into().unwrap_or([0; 8]));
                         if s == 0 {
-                            return (libr::ERR_NOTFOUND, 0);
+                            return (civis::ERR_NOTFOUND, 0);
                         }
                         st.index.insert((hash, day), s);
                         s
                     }
-                    _ => return (libr::ERR_NOTFOUND, 0),
+                    _ => return (civis::ERR_NOTFOUND, 0),
                 },
-                false => return (libr::ERR_NOTFOUND, 0),
+                false => return (civis::ERR_NOTFOUND, 0),
             },
         };
     }
     if seq == 0 {
-        return (libr::ERR_NOTFOUND, 0);
+        return (civis::ERR_NOTFOUND, 0);
     }
-    let key = libr::vestigia::log_key(hash, day, seq);
+    let key = civis::vestigia::log_key(hash, day, seq);
     // Coda RAM prima (dagli ultimi: le versioni post-restart stanno in coda),
     // poi il volume.
     let mut rec: Option<Vec<u8>> = None;
@@ -282,21 +282,21 @@ fn handle_read(st: &mut State, chan: u64, expect: u64) -> (u64, u64) {
     }
     if rec.is_none() {
         if !st.want_volume {
-            return (libr::ERR_NOTFOUND, 0);
+            return (civis::ERR_NOTFOUND, 0);
         }
-        match libr::obj_get(libr::vestigia::LOG_BUCKET, &key) {
+        match civis::obj_get(civis::vestigia::LOG_BUCKET, &key) {
             Ok(v) if !v.is_empty() => rec = Some(v),
-            _ => return (libr::ERR_NOTFOUND, 0),
+            _ => return (civis::ERR_NOTFOUND, 0),
         }
     }
     let rec = rec.unwrap_or_default();
-    if rec.is_empty() || rec.len() > libr::RING_MAX_PAYLOAD {
-        return (libr::ERR, 0);
+    if rec.is_empty() || rec.len() > civis::RING_MAX_PAYLOAD {
+        return (civis::ERR, 0);
     }
-    if libr::map_physical(resp_phys, libr::CLI_RESP_VA, 1).is_err() {
-        return (libr::ERR, 0);
+    if civis::map_physical(resp_phys, civis::CLI_RESP_VA, 1).is_err() {
+        return (civis::ERR, 0);
     }
-    unsafe { libr::resp_frame_write(libr::CLI_RESP_VA, &rec) };
+    unsafe { civis::resp_frame_write(civis::CLI_RESP_VA, &rec) };
     (rec.len() as u64, seq)
 }
 
@@ -307,9 +307,9 @@ fn handle_read(st: &mut State, chan: u64, expect: u64) -> (u64, u64) {
 /// APPEND). Idempotente.
 #[inline(never)]
 fn handle_flush(st: &mut State, chan: u64) -> u64 {
-    let is_parent = libr::peer_pid(chan).unwrap_or(-1) == 1;
+    let is_parent = civis::peer_pid(chan).unwrap_or(-1) == 1;
     if !is_parent {
-        return libr::ERR;
+        return civis::ERR;
     }
     if !st.want_volume {
         st.want_volume = true;
@@ -325,8 +325,8 @@ fn handle_flush(st: &mut State, chan: u64) -> u64 {
 /// Senza `Time`: niente (degrado dichiarato, chiavi giorno-0 persistono).
 #[inline(never)]
 fn backdate_rekey(st: &mut State) {
-    let now_tick = libr::get_ticks() as u64;
-    let now_epoch = match libr::time::wall_secs() {
+    let now_tick = civis::get_ticks() as u64;
+    let now_epoch = match civis::time::wall_secs() {
         Ok(e) if e > 0 => e,
         _ => return,
     };
@@ -336,7 +336,7 @@ fn backdate_rekey(st: &mut State) {
     // chiavi finali (bound 128: heap, mai stack).
     let mut tmp: Vec<(u64, u64, Vec<u8>, Vec<u8>)> = Vec::new();
     while let Some((old_key, rec)) = st.tail.pop_front() {
-        let (tick, epoch, level, tag, msg) = match libr::vestigia::record_decode(&rec) {
+        let (tick, epoch, level, tag, msg) = match civis::vestigia::record_decode(&rec) {
             Some(v) => v,
             None => continue,
         };
@@ -357,7 +357,7 @@ fn backdate_rekey(st: &mut State) {
             continue;
         }
         let day = back / 86_400;
-        let fixed = match libr::vestigia::record_encode(tick, back, level, tag, msg) {
+        let fixed = match civis::vestigia::record_encode(tick, back, level, tag, msg) {
             Some(r) => r,
             None => continue,
         };
@@ -383,7 +383,7 @@ fn backdate_rekey(st: &mut State) {
             // Rilocato: seq ridato sul giorno vero.
             let s = counters.get(&(h, d)).copied().unwrap_or(0) + 1;
             counters.insert((h, d), s);
-            (d, libr::vestigia::log_key(h, d, s))
+            (d, civis::vestigia::log_key(h, d, s))
         } else {
             // Intatto: giorno+seq dalla chiave vecchia.
             let od = old_day(&k);
@@ -497,47 +497,47 @@ fn drain_flush(st: &mut State) {
 pub fn run() -> ! {
     // Avvio a ZERO dipendenze (Fase 57 rivista): niente FS, niente Time —
     // solo registrazione + READY. Il primo contatto FS avviene alla FLUSH.
-    if libr::service_register(libr::Service::Vestigia).is_err() {
+    if civis::service_register(civis::Service::Vestigia).is_err() {
         println!("[vestigia] FAILED to register service Vestigia");
-        libr::exit(1);
+        civis::exit(1);
     }
     println!("[vestigia] registered as service Vestigia");
-    libr::signal_ready(1);
+    civis::signal_ready(1);
 
     // Re-bind opportunistico dopo un restart (init-restart): se Fs e' gia'
     // registrato (lookup singolo, mai attesa) si rilega il volume, senno'
     // si resta RAM-only (primo boot: Fs non esiste ancora, niente hang).
     let mut st = State::new();
-    if libr::service_lookup(libr::Service::Cardo).is_ok() {
+    if civis::service_lookup(civis::Service::Cardo).is_ok() {
         st.want_volume = true;
     }
 
     loop {
-        match libr::recv() {
+        match civis::recv() {
             Ok(m) if m.tag == LOG_REG => {
                 let h = handle_reg(&mut st, m.channel, m.w0, m.w1);
-                let _ = libr::reply(LOG_REG, h, 0);
+                let _ = civis::reply(LOG_REG, h, 0);
             }
             Ok(m) if m.tag == LOG_APPEND => {
                 let (w0, w1) = handle_append(&mut st, m.channel, m.w0);
-                let _ = libr::reply(LOG_APPEND, w0, w1);
+                let _ = civis::reply(LOG_APPEND, w0, w1);
             }
             Ok(m) if m.tag == LOG_READ => {
                 let (w0, w1) = handle_read(&mut st, m.channel, m.w0);
-                let _ = libr::reply(LOG_READ, w0, w1);
+                let _ = civis::reply(LOG_READ, w0, w1);
             }
             Ok(m) if m.tag == LOG_FLUSH => {
                 let r = handle_flush(&mut st, m.channel);
-                let _ = libr::reply(LOG_FLUSH, r, 0);
+                let _ = civis::reply(LOG_FLUSH, r, 0);
             }
             Ok(m) if m.tag == LOG_SEAL => {
-                match libr::snap_create(libr::vestigia::LOG_BUCKET) {
+                match civis::snap_create(civis::vestigia::LOG_BUCKET) {
                     Ok(id) => {
                         st.last_seal = id;
-                        let _ = libr::reply(LOG_SEAL, id, 0);
+                        let _ = civis::reply(LOG_SEAL, id, 0);
                     }
                     Err(_) => {
-                        let _ = libr::reply(LOG_SEAL, libr::ERR, 0);
+                        let _ = civis::reply(LOG_SEAL, civis::ERR, 0);
                     }
                 }
             }
@@ -547,15 +547,15 @@ pub fn run() -> ! {
                 frame.extend_from_slice(&st.last_seal.to_le_bytes());
                 let mut ok = false;
                 if let Some(r) = st.regs.iter().find(|r| r.chan == m.channel) {
-                    if libr::map_physical(r.resp_phys, libr::CLI_RESP_VA, 1).is_ok() {
-                        unsafe { libr::resp_frame_write(libr::CLI_RESP_VA, &frame) };
+                    if civis::map_physical(r.resp_phys, civis::CLI_RESP_VA, 1).is_ok() {
+                        unsafe { civis::resp_frame_write(civis::CLI_RESP_VA, &frame) };
                         ok = true;
                     }
                 }
                 if ok {
-                    let _ = libr::reply(LOG_STATS, st.appended, st.evicted);
+                    let _ = civis::reply(LOG_STATS, st.appended, st.evicted);
                 } else {
-                    let _ = libr::reply(LOG_STATS, libr::ERR_NOHANDSHAKE, 0);
+                    let _ = civis::reply(LOG_STATS, civis::ERR_NOHANDSHAKE, 0);
                 }
             }
             Ok(m) if m.tag == EXIT_NOTIFY => {
@@ -570,7 +570,7 @@ pub fn run() -> ! {
             Ok(_) => {
                 // Tag ignoto su `send` sincrona: errore invece di appendere il
                 // mittente (mai hang silenziosi, stampo Time).
-                let _ = libr::reply(LOG_APPEND, libr::ERR, 0);
+                let _ = civis::reply(LOG_APPEND, civis::ERR, 0);
             }
             Err(_) => {}
         }

@@ -10,14 +10,14 @@ extern crate alloc;
 use alloc::vec;
 use alloc::vec::Vec;
 
-use libr;
+use civis;
 
 /// Grandezze (in byte) usate a rotazione, tutte multi-pagina.
 const SIZES: [usize; 4] = [64 * 1024, 300_000, 1024 * 1024, 128 * 1024];
 
-libr::entry!(real_main);
+civis::entry!(real_main);
 fn real_main(_sp: u64) -> ! {
-    let _ = libr::print_string(b"[hogheap] starting\n");
+    let _ = civis::print_string(b"[hogheap] starting\n");
 
     let mut round: usize = 0;
     loop {
@@ -32,9 +32,9 @@ fn real_main(_sp: u64) -> ! {
         round += 1;
         if round % 40 == 0 {
             if ok {
-                let _ = libr::print_string(b"[hogheap] round done\n");
+                let _ = civis::print_string(b"[hogheap] round done\n");
             } else {
-                let _ = libr::print_string(b"[hogheap] CHECK FAIL\n");
+                let _ = civis::print_string(b"[hogheap] CHECK FAIL\n");
             }
         }
     }
@@ -42,6 +42,6 @@ fn real_main(_sp: u64) -> ! {
 
 #[panic_handler]
 fn panic(_info: &core::panic::PanicInfo) -> ! {
-    let _ = libr::print_string(b"[hogheap] panic\n");
-    libr::exit(1)
+    let _ = civis::print_string(b"[hogheap] panic\n");
+    civis::exit(1)
 }

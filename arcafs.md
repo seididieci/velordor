@@ -11,7 +11,7 @@ MBR/GPT, `sys` seedato, init dual-mode) + A2/56 CHIUSA (56.1 versioni in RAM;
 56.2a formato+allocatore; 56.2b B+tree COW + commit su disco; 56.2c
 recovery/orphan-GC + snapshot persistenti + sys-dal-volume) + 57/Logging-L1
 CHIUSA (vestigia RAM-first, bucket per identita', ADR-0039; L0 cancellato).
-Prossimo: 58+ (A3 quota/subvolumi, A4 ABAC, ...). Packing S1/S2,
+Prossimo: 59+ (A3 quota/subvolumi, A4 ABAC, ...). Packing S1/S2,
 `R_OBJ_MGET` e marker dir persistenti (56.3) restano rinviati.
 
 > Nota sui gate: i numeri citati altrove sono snapshot storici; il gate
@@ -21,7 +21,7 @@ Prossimo: 58+ (A3 quota/subvolumi, A4 ABAC, ...). Packing S1/S2,
 ## 0. Vision e principi
 
 - Non-POSIX nel profondo (`open/read/write` non sono la fondazione),
-  integrato con l'OS: `libr` e binari di sistema parlano nativo ArcaFS.
+  integrato con l'OS: `civis` e binari di sistema parlano nativo ArcaFS.
 - Vincoli software mai sacri (ring, `DISK_*`, single-thread riscrivibili
   quando un topic lo richiede); vincoli hardware rispettati (settore 512B,
   seek HDD, RAM finita per le cache).
@@ -164,7 +164,7 @@ Prossimo: 58+ (A3 quota/subvolumi, A4 ABAC, ...). Packing S1/S2,
   cursore opaco.
 - Riservati: `R_SNAP_*` (A2), `R_ARCA_*` admin (A7).
 - Errori `Result` tipizzati (`NOTFOUND/EXISTS/BUSY/NOSPACE`), mai errno.
-- Pattern a 5 tocchi per ogni op: tag, expect, `op_bit`, wrapper libr, builtin.
+- Pattern a 5 tocchi per ogni op: tag, expect, `op_bit`, wrapper civis, builtin.
 - **Integrazione provider** (Fase 46–49, ADR-0038): ArcaFS si monta come
   `MountedFs::Local(Box<dyn LocalFsDyn>)`; `negotiate()` (`mount.rs`)
   riconosce `magic="ACFS"` a LBA0 e ritorna `fstype="arcafs"`; nuovo
@@ -360,8 +360,8 @@ ArcaFS. Non serve al self-hosting: track parallelo, dopo A1–A8.
 ## 13. Fasi (ROADMAP 50+: P1–P5 + A1–A8 + V1 + B1 + N0 + L0/L1)
 
 Numerazione ROADMAP (le lettere restano come alias di binario): 50–54 =
-P1–P5, 55 = A1+N0, 56 = A2, 57 = L0/L1, 58+ = A3–A8/V1/B1 (numeri assegnati
-all'avvio).
+P1–P5, 55 = A1+N0, 56 = A2, 57 = L0/L1, 58 = split POSIX (ADR-0041),
+59+ = A3–A8/V1/B1 (numeri assegnati all'avvio).
 
 - **P1–P5 preparatorie OS-first** (prima di A1, gate verde ciascuna):
   P1 orologio (lettore CMOS `0x70/0x71` in userspace + endpoint `time` con
@@ -400,10 +400,10 @@ all'avvio).
 ### Primo consumatore nativo: `init` per `object_id`
 
 `spawn_image` e' gia' **memory-based** (syscall 38): il kernel non tocca il
-FS, la path vive solo in `init::spawn_file` (`libr::load_file` → `open/read`).
+FS, la path vive solo in `init::spawn_file` (`civis::load_file` → `open/read`).
 Caricare i servizi da ArcaFS e' quindi quasi tutto userspace.
 
-- **MVP**: in `libr` un `obj_get(bucket, key) -> Vec<u8>` su `R_OBJ_GET`
+- **MVP**: in `civis` un `obj_get(bucket, key) -> Vec<u8>` su `R_OBJ_GET`
   (chunking `RING_MAX_PAYLOAD`, bound 256 KiB); `SvcMeta.path` diventa
   `bucket/key`; `spawn_image` invariato; `disk`/`fs` restano embedded
   (storage-TCB: init non puo' caricarli per `object_id` prima che il FS
@@ -513,7 +513,7 @@ fn spawn_entry(meta: &SvcMeta) -> Option<i64> {
     match meta.obj {
         Some((bucket, key)) => {
             // 1. Prova ArcaFS nativo
-            let img = match libr::obj_get(bucket, key) {
+            let img = match civis::obj_get(bucket, key) {
                 Ok(v) if !v.is_empty() => v,
                 _ => None, // fallimento → fallback FAT
             };
@@ -533,7 +533,7 @@ fn spawn_entry(meta: &SvcMeta) -> Option<i64> {
 
 **Verifica hash (`spawn_image_from_vec`):**
 - Stesso pattern di `spawn_file()` attuale: controlla se `expected_hash(meta.bin)`
-  ritorna Some, re-hash dei byte caricati con `libr::image_hash()`.
+  ritorna Some, re-hash dei byte caricati con `civis::image_hash()`.
 - Se mismatch → None (a boot = panic come prima; in restart = retry con hold).
 - **Estensione BLAKE2s** (sessione dedicata): confronto con `sys.content_hash`
   dal manifest generato a build-time. L'hash BLAKE2s-256 viene calcolato su
@@ -683,7 +683,7 @@ Primo passo A2: semantica versionata senza disco (il B+tree on-disk e' 56.2).
 - **Debug via UN tag** (`R_ARCA_DEBUG` + sub-op): scaffold gate su volume di
   scratch, gating di policy in A7. Mai nel percorso R_OBJ_* (in-RAM).
 - **Casa `arcafs/`**: tag/wire/formato condivisi guest/host; i wrapper IPC
-  restano in `libr` (evita il ciclo `libr`↔`arcafs`); `libr` riesporta.
+  restano in `civis` (evita il ciclo `civis`↔`arcafs`); `civis` riesporta.
 - **Lezione stack**: il loop cardo gira su 16 KiB con buffer 4K nei
   handler — un ritorno by-value da 3.5 KiB (+inline) sfonda la guardia
   (osservato: #PF deterministico a ogni boot). Regola: payload grandi in

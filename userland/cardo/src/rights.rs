@@ -31,7 +31,7 @@ pub struct ChanRights {
 
 /// Mask ops effettiva (default ALL a entry assente).
 pub fn rights_ops(rights: &BTreeMap<u64, ChanRights>, chan: u64) -> u32 {
-    rights.get(&chan).map_or(libr::RIGHTS_ALL, |r| r.ops)
+    rights.get(&chan).map_or(civis::RIGHTS_ALL, |r| r.ops)
 }
 
 /// Subtree effettivo (default root "" a entry assente).
@@ -65,31 +65,31 @@ pub fn within_subtree(sub: &str, p: &str) -> bool {
 /// CANCEL non toccano path e operano solo su nonce propri o del parent).
 pub fn op_bit(op_tag: u32) -> Option<u32> {
     match op_tag {
-        R_OPEN => Some(libr::RIGHTS_OPEN),
-        R_READ => Some(libr::RIGHTS_READ),
-        R_WRITE => Some(libr::RIGHTS_WRITE),
-        R_READDIR => Some(libr::RIGHTS_READDIR),
-        R_MKDIR => Some(libr::RIGHTS_MKDIR),
-        R_MOUNT => Some(libr::RIGHTS_MOUNT),
-        R_UMOUNT => Some(libr::RIGHTS_UMOUNT),
-        R_DELETE => Some(libr::RIGHTS_DELETE),
-        R_LSEEK => Some(libr::RIGHTS_SEEK),
+        R_OPEN => Some(civis::RIGHTS_OPEN),
+        R_READ => Some(civis::RIGHTS_READ),
+        R_WRITE => Some(civis::RIGHTS_WRITE),
+        R_READDIR => Some(civis::RIGHTS_READDIR),
+        R_MKDIR => Some(civis::RIGHTS_MKDIR),
+        R_MOUNT => Some(civis::RIGHTS_MOUNT),
+        R_UMOUNT => Some(civis::RIGHTS_UMOUNT),
+        R_DELETE => Some(civis::RIGHTS_DELETE),
+        R_LSEEK => Some(civis::RIGHTS_SEEK),
         // R_STAT e' metadato di listing: stesso bit di READDIR (Fase 19.2).
-        R_STAT => Some(libr::RIGHTS_READDIR),
+        R_STAT => Some(civis::RIGHTS_READDIR),
         // Topologia dischi (Fase 51, P2): lettura globale come il listing
         // (niente subtree: non e' un path del VFS).
-        R_DISK_LIST | R_DISK_INFO => Some(libr::RIGHTS_READDIR),
+        R_DISK_LIST | R_DISK_INFO => Some(civis::RIGHTS_READDIR),
         // Barriera di durabilita' (Fase 52, P3): bit proprio (anti
         // sync-storm: negabile senza negare le write, gia' stabili).
-        R_SYNC => Some(libr::RIGHTS_SYNC),
+        R_SYNC => Some(civis::RIGHTS_SYNC),
         // Spazio del mount (Fase 52): lettura globale come R_STAT.
-        R_STATVFS => Some(libr::RIGHTS_READDIR),
+        R_STATVFS => Some(civis::RIGHTS_READDIR),
         // Hash contenuto (Fase 54): e' una lettura (come R_STAT), con subtree.
-        R_GET_HASH => Some(libr::RIGHTS_READDIR),
+        R_GET_HASH => Some(civis::RIGHTS_READDIR),
         // Handoff fd e pipe (Fase 45): GRANT crea capability per altri
         // (negabile), PIPE crea stato condiviso nel server (negabile).
-        R_DUP_GRANT => Some(libr::RIGHTS_GRANT),
-        R_PIPE_CREATE => Some(libr::RIGHTS_PIPE),
+        R_DUP_GRANT => Some(civis::RIGHTS_GRANT),
+        R_PIPE_CREATE => Some(civis::RIGHTS_PIPE),
         _ => None,
     }
 }
@@ -129,7 +129,7 @@ pub fn handle_rights_drop(
         ops: ceiling,
         subtree: String::new(),
     });
-    entry.ops = cur_ops & (keep & libr::RIGHTS_ALL) & ceiling;
+    entry.ops = cur_ops & (keep & civis::RIGHTS_ALL) & ceiling;
     if let Some(n) = norm {
         entry.subtree = n;
     }

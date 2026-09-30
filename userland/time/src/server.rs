@@ -6,7 +6,7 @@
 //! Server sincrono veloce: niente stato per-client, niente async.
 
 use super::*;
-use libr::{EXIT_NOTIFY, TIME_NOW};
+use civis::{EXIT_NOTIFY, TIME_NOW};
 
 /// Baseline del servizio (epoch CMOS + tick PIT del campionamento).
 #[derive(Clone, Copy)]
@@ -19,7 +19,7 @@ impl Baseline {
     /// Data/ora correnti dal monotono: `(sec_epoch_utc, centesimi 0..99)`.
     /// Monotona per costruzione (PIT monotono, epoch fissato al boot).
     pub fn now(&self) -> (u64, u64) {
-        let dt = libr::get_ticks().wrapping_sub(self.tick_base).max(0) as u64;
+        let dt = civis::get_ticks().wrapping_sub(self.tick_base).max(0) as u64;
         (self.epoch_base.wrapping_add(dt / 100), dt % 100)
     }
 }
@@ -34,22 +34,22 @@ pub fn run() -> ! {
             // Degrado loud (mai wedge il boot): monotono salvo, wall-clock
             // da verificare — i test su mtime falliscono e lo segnalano.
             println!("[usertime] CMOS illeggibile, degrado a epoch=0");
-            Baseline { epoch_base: 0, tick_base: libr::get_ticks() }
+            Baseline { epoch_base: 0, tick_base: civis::get_ticks() }
         }
     };
 
-    if libr::service_register(libr::Service::Time).is_err() {
+    if civis::service_register(civis::Service::Time).is_err() {
         println!("[usertime] FAILED to register service Time");
-        libr::exit(1);
+        civis::exit(1);
     }
     println!("[usertime] registered as service Time");
-    libr::signal_ready(1);
+    civis::signal_ready(1);
 
     loop {
-        match libr::recv() {
+        match civis::recv() {
             Ok(m) if m.tag == TIME_NOW => {
                 let (sec, csec) = baseline.now();
-                let _ = libr::reply(TIME_NOW, sec, csec);
+                let _ = civis::reply(TIME_NOW, sec, csec);
             }
             Ok(m) if m.tag == EXIT_NOTIFY => {
                 // Morte di un peer (parent/test): nessun stato per-client
@@ -58,7 +58,7 @@ pub fn run() -> ! {
             Ok(_) => {
                 // Tag ignoto su `send` sincrona: rispondere errore invece di
                 // appendere il mittente (mai hang silenziosi).
-                let _ = libr::reply(TIME_NOW, u64::MAX, u64::MAX);
+                let _ = civis::reply(TIME_NOW, u64::MAX, u64::MAX);
             }
             Err(_) => {}
         }

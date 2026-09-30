@@ -13,6 +13,7 @@ target/
 # Directory di output dei binari (contengono solo .bin + target/).
 userland/build/
 testland/build/
+flavours/posix/build/
 
 # Manifest hash servizi (build-meta/service_hashes.rs, Fase 36): generato a
 # ogni build da scripts/gen-service-hashes.sh, mai nel repo.
