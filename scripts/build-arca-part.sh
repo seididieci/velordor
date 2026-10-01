@@ -69,10 +69,9 @@ fi
 dd if=/tmp/mbr.bin of="$OUT" bs=512 count=1 conv=notrunc 2>/dev/null
 rm -f /tmp/mbr.bin
 
-# 3. Scrivi i blocchi 0-1 di ArcaFS all'inizio della partizione (LBA63):
-#    blocco 0 = superblock + shadow + header-estensione, blocco 1 = root
-#    vuota (14 settori: il formato 56.2a vive nei primi 2 blocchi).
-dd if="$ARCA_IMG_FILE" of="$OUT" bs=512 seek=63 count=14 conv=notrunc 2>/dev/null
+# 3. Copia l'intero volume ArcaFS all'inizio della partizione (LBA63):
+#    il volume e' di ~1 MiB, la partizione e' 32 MiB: spazio sufficiente.
+dd if="$ARCA_IMG_FILE" of="$OUT" bs=512 seek=63 conv=notrunc 2>/dev/null
 
 # 4. Verifiche fail-loud (mai un'immagine muta in QEMU).
 SIG="$(dd if="$OUT" bs=1 skip=510 count=2 2>/dev/null | od -An -tx1 | tr -d ' \n')"

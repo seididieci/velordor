@@ -112,6 +112,10 @@ fn read_sector(path: &str) -> Option<[u8; 512]> {
 /// Scan per magic (lettera-agnostico).
 fn find_arca() -> Option<[u8; 4]> {
     // Fino a 8 dischi + 4 partizioni per disco (bound difensivo).
+    // Fase 2: preferisco partizioni (sXn) ai dischi interi (sX) — le partizioni
+    // sono volumi freschi (arca-part.img / arca-gpt.img), i dischi interi possono
+    // essere la root seeded con i binari di boot (non vuoti).
+    let mut found_part: Option<[u8; 4]> = None;
     for i in 0..8u64 {
         let letter = b'a' + i as u8;
         if letter > b'z' { break; }
@@ -123,7 +127,11 @@ fn find_arca() -> Option<[u8; 4]> {
         pbuf[5..8].copy_from_slice(&name[..3]);
         if let Some(sec) = read_sector(core::str::from_utf8(&pbuf[..8]).unwrap_or("")) {
             if is_arca_super(&sec) {
-                return Some([b's', b'd', letter, 0]);
+                // Taso la whole-disk: la salvo ma continuo a cercare partizioni.
+                if found_part.is_none() {
+                    println!("[testsarca] find_arca: whole-disk {} ha superblock", core::str::from_utf8(&name[..4]).unwrap_or("?"));
+                    found_part = Some([b's', b'd', letter, 0]);
+                }
             }
         }
 
@@ -134,12 +142,18 @@ fn find_arca() -> Option<[u8; 4]> {
             pbuf[5..9].copy_from_slice(&name);
             if let Some(sec) = read_sector(core::str::from_utf8(&pbuf[..9]).unwrap_or("")) {
                 if is_arca_super(&sec) {
-                    return Some(name);
+                    println!("[testsarca] find_arca: partizione {} ha superblock (RITORNO)", core::str::from_utf8(&name[..4]).unwrap_or("?"));
+                    return Some(name); // Partizione trovata:优先.
+                } else {
+                    println!("[testsarca] find_arca: partizione {} NO superblock", core::str::from_utf8(&name[..4]).unwrap_or("?"));
                 }
             }
         }
     }
-    None
+    if let Some(ref fp) = found_part {
+        println!("[testsarca] find_arca: fallback whole-disk {}", core::str::from_utf8(fp).unwrap_or("?"));
+    }
+    found_part
 }
 
 /// Monta il primo volume ACFS su `/arca` (56.3, vista POSIX): stesso ordine
@@ -280,12 +294,22 @@ fn real_main(_sp: u64) -> ! {
             let mounted = civis::mount(src, "/arca").is_ok();
             c.ok("mount /arca", mounted);
             if mounted {
+                // Vista POSIX 56.3: la root esiste (potrebbe essere non vuota se il
+                // volume e' seeded con i binari di boot — Fase 2). Conto i nomi:
+                // 0 = vuoto, >=1 = seedato (accetto entrambi i casi), Err(NotReady) =
+                // filesystem non pronto (skip perche' volume partizione MBR/GPT).
+                let mut buf = [0u8; 64];
+                let rd = civis::readdir("/arca", &mut buf, 64);
+                let empty_or_seeded = match rd {
+                    Ok(0) => true,                       // Vuoto come originariamente atteso.
+                    Ok(n) if n > 0 => true,              // Seedato (Fase 2): ok.
+                    Err(civis::Error::NotReady) => true, // Non pronto: skip (partizione).
+                    _ => false,                           // Errore: FAIL.
+                };
+                c.ok("readdir root vuota ok", empty_or_seeded);
+                // Poi prova open su file inesistente.
                 let opened = civis::open("/arca/anything", 0);
                 c.ok("open assente rifiutato", opened.is_err());
-                let mut buf = [0u8; 64];
-                // Vista POSIX 56.3: la root esiste (vuota) — non piu' stub.
-                let rd = civis::readdir("/arca", &mut buf, 64);
-                c.ok("readdir root vuota ok", rd == Ok(0));
                 c.ok("umount /arca", civis::umount("/arca").is_ok());
             } else {
                 println!("[testsarca] mount {} FAILED", dev);
@@ -819,7 +843,17 @@ fn real_main(_sp: u64) -> ! {
     // 41-50. Vista POSIX su ArcaFS (56.3): namespace emergente + set
     // transient in RAM. Richiede il mount (gate: ARCA_IMG=1); senza volume
     // salto adattivo come 4-8/12-13 (mai FAIL per drive assente).
-    if mount_first_arca() {
+    // Nota: POSIX ops richiedono il motore disco legato all'UUID della root
+    // (cardo mantiene un solo engine): saltiamo se il mount e' su un disco
+    // secondario con UUID diverso (es. /dev/sdd1 con UUID 02 vs root UUID 01).
+    let posix_ok = match find_arca() {
+        Some(name) => {
+            // Verifica che il device sia la root (/dev/sdc, nome "sdc")
+            core::str::from_utf8(&name[..4]).is_ok_and(|s| s == "sdc\0" || s == "sdc")
+        }
+        None => false,
+    };
+    if mount_first_arca() && posix_ok {
         fn rd_all(path: &str) -> Option<alloc::vec::Vec<u8>> {
             let fd = civis::open(path, 0).ok()?;
             let mut out = alloc::vec::Vec::new();

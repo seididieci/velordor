@@ -92,8 +92,7 @@ pub unsafe fn at(phys: u64) -> &'static HvmStartInfo {
 /// Tabella della memoria come slice tipizzata.
 ///
 /// Ritorna slice vuota se il loader non ha fornito una mappa.
-pub fn memmap(info: &HvmStartInfo) -> &[HvmMemmapEntry] {
-    if info.version < 1 || info.memmap_entries == 0 || info.memmap_paddr == 0 {
+pub fn memmap(info: &HvmStartInfo) -> &[HvmMemmapEntry] {    if info.version < 1 || info.memmap_entries == 0 || info.memmap_paddr == 0 {
         return &[];
     }
     assert!(info.memmap_entries < 256, "memory map irrealistica");
@@ -142,5 +141,37 @@ pub fn cmdline(info: &HvmStartInfo) -> Option<&'static str> {
         }
         let bytes = slice::from_raw_parts(crate::addr::phys_to_virt(info.cmdline_paddr) as *const u8, len);
         core::str::from_utf8(bytes).ok()
+    }
+}
+
+// ── Command line salvata per userland (Fase 2, SYS_BOOT_CMDLINE) ─────────
+// La memoria PVH resta mappata, ma la copia al boot e' piu' robusta (niente
+// borrow sulla zona loader per tutta la vita del sistema). Scritta una volta
+// in `rust_main`, letta dalla syscall (single-thread a scrittura, letture
+// concorrenti su byte immutabili dopo il boot: niente lock).
+
+static mut SAVED_CMDLINE: ([u8; 512], usize) = ([0u8; 512], 0);
+
+/// Salva la cmdline (chiamata una volta a boot; oltre 512 B troncato loud).
+pub fn save_cmdline(s: &str) {
+    let n = s.len().min(512);
+    unsafe {
+        let base = core::ptr::addr_of_mut!(SAVED_CMDLINE);
+        core::ptr::copy_nonoverlapping(
+            s.as_ptr(),
+            core::ptr::addr_of_mut!((*base).0) as *mut u8,
+            n,
+        );
+        core::ptr::addr_of_mut!((*base).1).write(n);
+    }
+}
+
+/// Byte salvati + lunghezza (sempre valida dopo il boot).
+pub fn saved_cmdline() -> (&'static [u8], usize) {
+    unsafe {
+        let base = core::ptr::addr_of!(SAVED_CMDLINE);
+        let n = core::ptr::addr_of!((*base).1).read();
+        let bytes = core::ptr::slice_from_raw_parts(core::ptr::addr_of!((*base).0) as *const u8, n);
+        (&*bytes, n)
     }
 }

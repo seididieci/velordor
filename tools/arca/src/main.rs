@@ -20,6 +20,8 @@ use arcafs as af;
 
 fn usage() -> ! {
     eprintln!("uso: arca create <path> [--uuid HEX16] [--size-mib N]  (default 1 MiB, uuid auto)");
+    eprintln!("     arca uuid <img> <HEX16> [--lba N]  (patch uuid superblock a LBA N, default 0)");
+    eprintln!("     arca seed <img> [--lba N] [ns:chiave=host]... [sys:chiave=host]...  (solo volumi freschi)");
     exit(2);
 }
 
@@ -252,7 +254,374 @@ fn find_partition_offset(path: &str) -> Option<(u64, u64)> {
 
 fn main() {
     let args: Vec<String> = env::args().collect();
-    if args.len() < 3 || args[1] != "create" {
+    if args.len() < 2 {
+        usage();
+    }
+    match args[1].as_str() {
+        "create" => cmd_create(&args),
+        "uuid" => cmd_uuid(&args),
+        "seed" => cmd_seed(&args),
+        _ => usage(),
+    }
+}
+
+/// Patch dell'UUID nel superblock (Fase 2: volumi derivati con uuid
+/// distinti — la root si sceglie per UUID, mai per lettera/scan).
+/// `arca uuid <img> <HEX16> [--lba N]`: riscrive uuid + checksum FNV.
+/// Fallisce loud su qualunque errore (mai immagini mute).
+fn cmd_uuid(args: &[String]) {
+    if args.len() < 4 {
+        usage();
+    }
+    let path = &args[2];
+    let uuid = match u64::from_str_radix(&args[3], 16) {
+        Ok(v) if v != 0 => v,
+        _ => {
+            eprintln!("uuid: atteso esadecimale non-zero (es. 4152434100000002)");
+            exit(2);
+        }
+    };
+    let mut lba: u64 = 0;
+    let mut i = 4;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--lba" => {
+                i += 1;
+                lba = match args.get(i).and_then(|s| s.parse().ok()) {
+                    Some(v) => v,
+                    None => {
+                        eprintln!("--lba: atteso intero >= 0");
+                        exit(2);
+                    }
+                };
+            }
+            other => {
+                eprintln!("argomento ignoto: {}", other);
+                usage();
+            }
+        }
+        i += 1;
+    }
+    let mut f = match OpenOptions::new().read(true).write(true).open(path) {
+        Ok(f) => f,
+        Err(e) => {
+            eprintln!("uuid {}: {}", path, e);
+            exit(1);
+        }
+    };
+    let mut sec = [0u8; 512];
+    let ok = f.seek(SeekFrom::Start(lba * 512)).is_ok()
+        && std::io::Read::read_exact(&mut f, &mut sec).is_ok()
+        && af::format::superblock_verify(&sec).is_some();
+    if !ok {
+        eprintln!("uuid {}: superblock ACFS assente a LBA {}", path, lba);
+        exit(1);
+    }
+    sec[af::format::ARCA_OFF_UUID..af::format::ARCA_OFF_UUID + 8]
+        .copy_from_slice(&uuid.to_le_bytes());
+    let check = af::image_hash(&sec[..af::format::ARCA_OFF_CHECK]);
+    sec[af::format::ARCA_OFF_CHECK..af::format::ARCA_OFF_CHECK + 8]
+        .copy_from_slice(&check.to_le_bytes());
+    let ok = f.seek(SeekFrom::Start(lba * 512)).is_ok() && f.write_all(&sec).is_ok();
+    if !ok {
+        eprintln!("uuid {}: scrittura fallita", path);
+        exit(1);
+    }
+    println!("arca: uuid {} LBA{} = {:016X}", path, lba, uuid);
+}
+
+/// Store su file per il seed (Fase 2): specchio host di `VolumeStore`
+/// (guest) — stessa semantica alloc/freelist/live/nodi, I/O su file.
+/// Solo volumi freschi (freelist vuota): alloc = high_water++.
+struct FileStore {
+    f: std::cell::RefCell<std::fs::File>,
+    base: u64,
+    xh: af::format::HeaderExt,
+    live: std::collections::BTreeSet<u64>,
+}
+
+impl FileStore {
+    fn open(path: &str, base_sectors: u64) -> Option<Self> {
+        let f = OpenOptions::new().read(true).write(true).open(path).ok()?;
+        let base = base_sectors.checked_mul(512)?;
+        let mut raw = vec![0u8; af::format::ARCA_XHDRLEN];
+        {
+            let mut fh = f.try_clone().ok()?;
+            use std::io::{Seek, SeekFrom};
+            fh.seek(SeekFrom::Start(base + af::format::ARCA_XHDROFF as u64)).ok()?;
+            std::io::Read::read_exact(&mut fh, &mut raw).ok()?;
+        }
+        let xh = af::format::xhdr_decode(&raw)?;
+        Some(Self { f: std::cell::RefCell::new(f), base, xh, live: std::collections::BTreeSet::new() })
+    }
+
+    fn blk_off(&self, n: u64) -> Option<u64> {
+        n.checked_mul(af::format::ARCA_BLOCK_SIZE as u64)?.checked_add(self.base)
+    }
+
+    fn read_block(&self, n: u64) -> Option<[u8; 3584]> {
+        let off = self.blk_off(n)?;
+        let mut b = [0u8; 3584];
+        let mut fh = self.f.borrow_mut();
+        use std::io::{Seek, SeekFrom};
+        fh.seek(SeekFrom::Start(off)).ok()?;
+        std::io::Read::read_exact(&mut *fh, &mut b).ok()?;
+        Some(b)
+    }
+
+    fn write_block(&self, n: u64, b: &[u8; 3584]) -> bool {
+        let off = match self.blk_off(n) {
+            Some(o) => o,
+            None => return false,
+        };
+        let mut fh = self.f.borrow_mut();
+        use std::io::{Seek, SeekFrom, Write};
+        fh.seek(SeekFrom::Start(off)).is_ok() && fh.write_all(b).is_ok()
+    }
+
+    fn store_xh(&self) -> bool {
+        let enc = af::format::xhdr_encode(&self.xh);
+        let off = self.base + af::format::ARCA_XHDROFF as u64;
+        let mut fh = self.f.borrow_mut();
+        use std::io::{Seek, SeekFrom, Write};
+        fh.seek(SeekFrom::Start(off)).is_ok() && fh.write_all(&enc).is_ok()
+    }
+}
+
+impl af::btree::BlockStore for FileStore {
+    fn read_node(&self, blk: u64, out: &mut [u8; af::format::ARCA_NODE_PAYLOAD_LEN]) -> Option<(u8, u64)> {
+        if blk == 0 {
+            return None;
+        }
+        let b = self.read_block(blk)?;
+        let (ty, gen) = af::format::node_verify(&b)?;
+        out.copy_from_slice(&b[af::format::ARCA_NODE_PAYLOAD..af::format::ARCA_NODE_PAYLOAD + af::format::ARCA_NODE_PAYLOAD_LEN]);
+        Some((ty, gen))
+    }
+
+    fn write_node(&mut self, blk: u64, ty: u8, gen: u64, payload: &[u8; af::format::ARCA_NODE_PAYLOAD_LEN]) -> bool {
+        if blk == 0 || !self.live.contains(&blk) {
+            return false;
+        }
+        let mut b = [0u8; 3584];
+        af::format::node_fill(&mut b, ty, gen, payload);
+        self.write_block(blk, &b)
+    }
+
+    fn alloc(&mut self) -> Option<u64> {
+        if self.xh.free_head != 0 {
+            eprintln!("seed solo su volumi freschi (freelist non vuota)");
+            return None;
+        }
+        let n = self.xh.high_water;
+        if n == 0 {
+            return None;
+        }
+        self.xh.high_water += 1;
+        if !self.live.insert(n) {
+            return None;
+        }
+        if !self.store_xh() {
+            self.live.remove(&n);
+            return None;
+        }
+        Some(n)
+    }
+
+    fn free(&mut self, n: u64) -> bool {
+        if n == 0 || !self.live.remove(&n) {
+            return false;
+        }
+        let mut blk = [0u8; 3584];
+        blk[..8].copy_from_slice(&self.xh.free_head.to_le_bytes());
+        if !self.write_block(n, &blk) {
+            self.live.insert(n);
+            return false;
+        }
+        self.xh.free_head = n;
+        if !self.store_xh() {
+            return false;
+        }
+        true
+    }
+}
+
+/// Commit host (Fase 2): specchio di `btree_drv::commit` (guest) —
+/// header-ext + shadow + flip gen+1 + clear DIRTY. Stesso ordine, stesse
+/// garanzie (COW + root-last: a crash pre-flip la vecchia generazione e'
+/// intatta). Lo store vive dentro l'engine (niente doppi handle).
+fn host_commit(eng: &mut af::btree::BTree<FileStore>) -> bool {
+    let (nid, nsn, rp, rs, rr, meta) = (
+        eng.next_id,
+        eng.next_snap,
+        eng.root_primary,
+        eng.root_secondary,
+        eng.root_refcount,
+        eng.meta_root,
+    );
+    if nid == 0 || nsn == 0 {
+        return false;
+    }
+    let base = eng.store.base;
+    eng.store.xh.next_id = nid;
+    eng.store.xh.next_snap = nsn;
+    eng.store.xh.flags |= af::format::ARCA_XH_DIRTY;
+    if !eng.store.store_xh() {
+        return false;
+    }
+    let mut sec = [0u8; 512];
+    {
+        let mut fh = eng.store.f.borrow_mut();
+        use std::io::{Seek, SeekFrom};
+        if fh.seek(SeekFrom::Start(base)).is_err()
+            || std::io::Read::read_exact(&mut *fh, &mut sec).is_err()
+        {
+            return false;
+        }
+    }
+    let (gen, _, _, _, _) = match af::format::superblock_roots(&sec) {
+        Some(g) => g,
+        None => return false,
+    };
+    let gen1 = match gen.checked_add(1) {
+        Some(g) => g,
+        None => return false,
+    };
+    if af::format::superblock_set_roots(&mut sec, gen1, rp, rs, rr, meta).is_none() {
+        return false;
+    }
+    {
+        let mut fh = eng.store.f.borrow_mut();
+        use std::io::{Seek, SeekFrom, Write};
+        if fh.seek(SeekFrom::Start(base + 512)).is_err() || fh.write_all(&sec).is_err() {
+            return false;
+        }
+        if fh.seek(SeekFrom::Start(base)).is_err() || fh.write_all(&sec).is_err() {
+            return false;
+        }
+    }
+    eng.store.xh.flags &= !af::format::ARCA_XH_DIRTY;
+    eng.store.store_xh()
+}
+
+/// Seed di un volume fresco (Fase 2): `arca seed <img> [--lba N]`
+/// `ns:chiave=host`... `sys:chiave=host`... Mette i file di boot
+/// (`/bin`, `/test`, fixture) nel volume PRIMA del boot: fonte unica
+/// riproducibile (niente copia runtime). Solo volumi freschi (radici a
+/// zero): le derivate ereditano via copia blocchi. Fallisce loud.
+fn cmd_seed(args: &[String]) {
+    if args.len() < 3 {
+        usage();
+    }
+    let path = &args[2];
+    let mut lba: u64 = 0;
+    let mut entries: Vec<(Vec<u8>, Vec<u8>, Vec<u8>)> = Vec::new();
+    let mut i = 3;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--lba" => {
+                i += 1;
+                lba = match args.get(i).and_then(|s| s.parse().ok()) {
+                    Some(v) => v,
+                    None => {
+                        eprintln!("--lba: atteso intero >= 0");
+                        exit(2);
+                    }
+                };
+            }
+            other => {
+                let (bk, rest) = match other.strip_prefix("ns:").map(|r| (b"ns".as_slice(), r)) {
+                    Some(v) => v,
+                    None => match other.strip_prefix("sys:").map(|r| (b"sys".as_slice(), r)) {
+                        Some(v) => v,
+                        None => {
+                            eprintln!("voce ignota (atteso ns:chiave=host o sys:chiave=host): {}", other);
+                            exit(2);
+                        }
+                    },
+                };
+                let (key, host) = match rest.split_once('=') {
+                    Some((k, h)) if !k.is_empty() && !h.is_empty() => (k, h),
+                    _ => {
+                        eprintln!("voce malformata (atteso ns:chiave=host): {}", other);
+                        exit(2);
+                    }
+                };
+                entries.push((bk.to_vec(), key.as_bytes().to_vec(), host.as_bytes().to_vec()));
+            }
+        }
+        i += 1;
+    }
+    if entries.is_empty() {
+        eprintln!("seed: nessuna voce (ns:chiave=host ...)");
+        exit(2);
+    }
+    let store = match FileStore::open(path, lba) {
+        Some(s) => s,
+        None => {
+            eprintln!("seed {}: volume illeggibile", path);
+            exit(1);
+        }
+    };
+    let mut sec = [0u8; 512];
+    {
+        let mut fh = store.f.borrow_mut();
+        use std::io::{Seek, SeekFrom};
+        if fh.seek(SeekFrom::Start(store.base)).is_err()
+            || std::io::Read::read_exact(&mut *fh, &mut sec).is_err()
+        {
+            eprintln!("seed {}: superblock illeggibile", path);
+            exit(1);
+        }
+    }
+    let (gen, _uuid, _rp, rs, _rr) = match af::format::superblock_roots(&sec) {
+        Some(g) => g,
+        None => {
+            eprintln!("seed {}: superblock invalido", path);
+            exit(1);
+        }
+    };
+    if rs != 0 {
+        eprintln!("seed {}: solo volumi freschi (secondary root != 0: gia' inizializzato)", path);
+        exit(1);
+    }
+    let mut eng = match af::btree::BTree::new(store, gen) {
+        Some(e) => e,
+        None => {
+            eprintln!("seed {}: init indice fallito", path);
+            exit(1);
+        }
+    };
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let mut total = 0usize;
+    for (bucket, key, host) in entries.iter() {
+        let data = match std::fs::read(
+            core::str::from_utf8(host).unwrap_or(""),
+        ) {
+            Ok(d) => d,
+            Err(e) => {
+                eprintln!("seed: lettura {}: {}", String::from_utf8_lossy(host), e);
+                exit(1);
+            }
+        };
+        total += data.len();
+        if eng.put_chunk(bucket, key, 0, &data, now, 8).is_none() {
+            eprintln!("seed: put {} fallito", String::from_utf8_lossy(key));
+            exit(1);
+        }
+    }
+    if !host_commit(&mut eng) {
+        eprintln!("seed {}: commit fallito", path);
+        exit(1);
+    }
+    println!("arca: seed {} ({} voci, {} B, gen {})", path, entries.len(), total, gen + 1);
+}
+
+fn cmd_create(args: &[String]) {
+    if args.len() < 3 {
         usage();
     }
     let path = &args[2];
@@ -367,4 +736,62 @@ fn main() {
         );
     }
     
+}
+
+#[cfg(test)]
+mod seed_tests {
+    use super::*;
+
+    /// Seed + reload come il bind guest (superblock → roots → load →
+    /// get/stat/scan): prova che il volume seedato si apre dal disco.
+    #[test]
+    fn seed_roundtrip_load() {
+        let dir = std::env::temp_dir().join("arca-seed-test.img");
+        let _ = std::fs::remove_file(&dir);
+        let path = dir.to_str().unwrap().to_string();
+        // Crea + seed via API interna (stesso codice dei sottocomandi).
+        {
+            let mut f = OpenOptions::new().create(true).read(true).write(true).truncate(true).open(&path).unwrap();
+            let uuid = 0x41524341000000A1u64;
+            let sb = af::format::superblock_build(uuid, 1, "");
+            f.write_all(&sb).unwrap();
+            f.seek(SeekFrom::Start(512)).unwrap();
+            f.write_all(&sb).unwrap();
+            f.set_len(8 * 1024 * 1024).unwrap();
+            init_empty_volume(&mut f, 0, uuid);
+        }
+        let store = FileStore::open(&path, 0).expect("open store");
+        let mut sec = [0u8; 512];
+        {
+            let mut fh = store.f.borrow_mut();
+            use std::io::{Seek, SeekFrom};
+            fh.seek(SeekFrom::Start(0)).unwrap();
+            std::io::Read::read_exact(&mut *fh, &mut sec).unwrap();
+        }
+        let (gen, uuid, rp, rs, rr) = af::format::superblock_roots(&sec).expect("roots");
+        assert_eq!(uuid, 0x41524341000000A1u64);
+        assert_eq!(rs, 0, "fresco: secondary a zero");
+        let mut eng = af::btree::BTree::new(store, gen).expect("new");
+        assert!(eng.put_chunk(b"ns", b"bin/x", 0, b"payload\xe7\xa8\xae", 7, 8).is_some());
+        assert!(host_commit(&mut eng));
+        // Reload dal disco come il bind guest.
+        let store2 = FileStore::open(&path, 0).expect("reopen");
+        let mut sec2 = [0u8; 512];
+        {
+            let mut fh = store2.f.borrow_mut();
+            use std::io::{Seek, SeekFrom};
+            fh.seek(SeekFrom::Start(0)).unwrap();
+            std::io::Read::read_exact(&mut *fh, &mut sec2).unwrap();
+        }
+        let (gen2, _, rp2, rs2, rr2) = af::format::superblock_roots(&sec2).expect("roots2");
+        assert_eq!(gen2, gen + 1);
+        let eng2 = af::btree::BTree::new_with_roots(store2, gen2, rp2, rs2, rr2).expect("load");
+        assert_eq!(eng2.get(b"ns", b"bin/x"), Some(b"payload\xe7\xa8\xae".to_vec()));
+        let (_, size, _, mtime) = eng2.stat(b"ns", b"bin/x").expect("stat");
+        assert_eq!((size, mtime), (10, 7));
+        let keys = eng2.scan_prefix(b"ns", b"bin/").expect("scan");
+        assert_eq!(keys, vec![b"bin/x".to_vec()]);
+        let _ = std::fs::remove_file(&path);
+        let _ = (rp, rr);
+    }
 }

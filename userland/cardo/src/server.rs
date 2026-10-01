@@ -169,6 +169,98 @@ fn real_main(_sp: u64) -> ! {
         println!("[cardo] nessun FAT attivo: ramfs only");
     }
 
+    // Fase 2 (root su volume): parse `root=UUID=<8hex>` dalla cmdline PVH,
+    // scansiona i dischi per trovare il volume con quell'uuid, monta su `""`
+    // (radice). Ramfs solo su `"tmp"`. Se l'uuid non esiste o il parametro e'
+    // assente → panic loud (serial+VGA tramite println!).
+    let mut root_uuid: Option<u64> = None;
+    {
+        let cmdline = civis::boot_cmdline();
+        if cmdline.is_empty() {
+            println!("[cardo] ERRORE: cmdline vuota — root=UUID mancante");
+            unsafe { core::arch::asm!("ud2"); }
+        }
+        let cs = core::str::from_utf8(&cmdline).unwrap_or("");
+        if let Some(idx) = cs.find("root=UUID=") {
+            let tail = &cs[idx + 10..];
+            let hex = if let Some(eq) = tail.find(' ') { &tail[..eq] } else { tail };
+            if hex.len() == 16 && hex.bytes().all(|b| b.is_ascii_hexdigit()) {
+                match u64::from_str_radix(hex, 16) {
+                    Ok(u) => root_uuid = Some(u),
+                    Err(_) => {
+                        println!("[cardo] ERRORE: uuid invalido '{}'", hex);
+                        unsafe { core::arch::asm!("ud2"); }
+                    }
+                }
+            } else {
+                println!("[cardo] ERRORE: uuid '{}' non 16 esadec", hex);
+                unsafe { core::arch::asm!("ud2"); }
+            }
+        } else {
+            println!("[cardo] ERRORE: root=UUID non trovato nella cmdline '{}'", cs);
+            unsafe { core::arch::asm!("ud2"); }
+        }
+    }
+    // Scansiona i dischi per trovare il volume con l'uuid richiesto.
+    let mut root_store: Option<btree_drv::VolumeStore> = None;
+    if let Some(uuid) = root_uuid {
+        // Itera sda..sdh + partizioni sdXn (stesso pattern di scan_and_open).
+        for disk in 0..8u8 {
+            let letter = b'a' + disk;
+            let mut path = [0u8; 16];
+            path[..5].copy_from_slice(b"/dev/");
+            path[5..8].copy_from_slice(&[b's', b'd', letter]);
+            // Whole-disk: /dev/sdX
+            path[..5].copy_from_slice(b"/dev/");
+            path[5..8].copy_from_slice(&[b's', b'd', letter]);
+            if let Some(p) = core::str::from_utf8(&path[..8]).ok() {
+                println!("[cardo] scan whole-disk {}...", p);
+                if let Some(handle) = mount::resolve_mount_source(p) {
+                    println!("[cardo] scan whole-disk {} -> handle={}", p, handle);
+                    if let Some(v) = btree_drv::open_with_uuid(handle, uuid) {
+                        println!("[cardo] root: volume ArcaFS trovato uuid={:016X} handle={} path={}", uuid, handle, p);
+                        root_store = Some(v);
+                        break;
+                    }
+                } else {
+                    println!("[cardo] scan whole-disk {} -> RESOLVE FAILED", p);
+                }
+            }
+            // Partizioni: /dev/sdXn
+            if root_store.is_none() {
+                for part in 1..=4u8 {
+                    path[..5].copy_from_slice(b"/dev/");
+                    path[5..9].copy_from_slice(&[b's', b'd', letter, b'0' + part]);
+                    if let Some(p) = core::str::from_utf8(&path[..9]).ok() {
+                        println!("[cardo] scan partition {}...", p);
+                        if let Some(handle) = mount::resolve_mount_source(p) {
+                            println!("[cardo] scan partition {} -> handle={}", p, handle);
+                            if let Some(v) = btree_drv::open_with_uuid(handle, uuid) {
+                                println!("[cardo] root: volume ArcaFS trovato uuid={:016X} handle={} path={}", uuid, handle, p);
+                                root_store = Some(v);
+                                break;
+                            }
+                        } else {
+                            println!("[cardo] scan partition {} -> RESOLVE FAILED", p);
+                        }
+                    }
+                }
+            }
+            if root_store.is_some() {
+                break;
+            }
+        }
+    }
+    if root_store.is_some() {
+        println!("[cardo] ArcaFS montato come root (uuid={:016X})", root_uuid.unwrap_or(0));
+    } else {
+        println!("[cardo] ERRORE: volume UUID={:016X} non trovato", root_uuid.unwrap_or(0));
+        unsafe { core::arch::asm!("ud2"); }
+    }
+    // Ramfs solo su `/tmp` (Fase 2: volatile, fresh a ogni boot).
+    mount::apply_mount_spec(&mut fat_mounts, "ramfs", "tmp", "", &mut next_mount_id);
+    println!("[cardo] ramfs montata su /tmp");
+
     let mut fs = ramfs::RamFs::new();
     let mut ftable = ftable::FileTable::new();
     let mut mounts: Vec<mount_legacy::Mount> = Vec::new();

@@ -110,9 +110,12 @@ impl ArcaVolume {
     pub fn open(handle: u32) -> Option<Self> {
         let disk = IpcDisk::new(handle);
         let mut sec = [0u8; 512];
+        println!("[cardo] ArcaVolume::open handle={} read_sector(0)...", handle);
         if !disk.read_sector(0, &mut sec) {
+            println!("[cardo] ArcaVolume::open handle={} read_sector FAILED", handle);
             return None;
         }
+        println!("[cardo] ArcaVolume::open handle={} superblock_verify...", handle);
         let (_, uuid) = format::superblock_verify(&sec)?;
         let v = Self {
             disk,
@@ -122,9 +125,12 @@ impl ArcaVolume {
         };
         let mut raw = [0u8; ARCA_XHDRLEN];
         if !v.read_xh_raw(&mut raw) {
+            println!("[cardo] ArcaVolume::open handle={} read_xh_raw FAILED", handle);
             return None;
         }
+        println!("[cardo] ArcaVolume::open handle={} xhdr_decode...", handle);
         let xh = format::xhdr_decode(&raw)?;
+        println!("[cardo] ArcaVolume::open handle={} SUCCESS uuid={:016X}", handle, uuid);
         Some(Self { xh, ..v })
     }
 

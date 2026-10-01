@@ -498,6 +498,27 @@ pub fn volume_uuid(eng: &DiskEngine) -> u64 {
     eng.store.vol().uuid()
 }
 
+/// Apre un volume ArcaFS sul nodo dato e verifica che l'uuid combaci (Fase 2:
+/// root su volume scelto per UUID, mai primo trovato). Ritorna `Some(store)`
+/// se il superblock esiste E l'uuid combacia, `None` altrimenti.
+pub fn open_with_uuid(handle: u32, expected: u64) -> Option<VolumeStore> {
+    let vol = crate::volume::ArcaVolume::open(handle);
+    if let Some(ref v) = vol {
+        println!("[cardo] open_with_uuid handle={} uuid={:016X} expected={:016X}", handle, v.uuid(), expected);
+    } else {
+        println!("[cardo] open_with_uuid handle={} -> OPEN FAILED", handle);
+    }
+    if let Some(v) = vol {
+        if v.uuid() == expected {
+            Some(VolumeStore::new(v))
+        } else {
+            None
+        }
+    } else {
+        None
+    }
+}
+
 /// PUT namespace a `offset` (stessa semantica `put_chunk`: 0 = fresco,
 /// >0 = patch con zero-fill): sempre commit. Ritorna i byte scritti.
 #[inline(never)]
@@ -614,7 +635,9 @@ pub fn disk_snap_clone(eng: &mut DiskEngine, payload: &[u8]) -> Result<u64, u64>
 /// registri oltre l'expect — stessa convenzione dello scaffold 56.2a).
 #[inline(never)]
 pub fn raw_open(path: &str) -> Option<VolumeStore> {
+    println!("[cardo] raw_open path={}...", path);
     let handle = mount::resolve_mount_source(path)?;
+    println!("[cardo] raw_open path={} -> handle={}", path, handle);
     let vol = crate::volume::ArcaVolume::open(handle)?;
     Some(VolumeStore::new(vol))
 }

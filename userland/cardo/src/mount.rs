@@ -117,12 +117,11 @@ pub const STATIC_MOUNTS: &[(&str, &str)] = &[
     ("UUID=4F4C4556", "fat"),
 ];
 
-/// Normalizza un target ("//mnt//" → "mnt"). Rifiuta root, vuoti, `.`/`..`.
+/// Normalizza un target ("//mnt//" → "mnt"). Rifiuta vuoti, `.`/`..`.
+/// La radice (`""`) e' ammessa SOLO se esplicitamente richiesta (Fase 2: root
+/// su volume ArcaFS scelto per UUID).
 pub fn normalize_target(target: &str) -> Option<String> {
     let t = target.trim().trim_matches('/');
-    if t.is_empty() {
-        return None;
-    }
     if t.split('/').any(|c| c.is_empty() || c == "." || c == "..") {
         return None;
     }

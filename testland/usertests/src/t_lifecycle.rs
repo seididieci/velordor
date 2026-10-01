@@ -449,15 +449,15 @@ pub fn t_vela_restart() -> bool {
 
 /// t28 — restart di cardo end-to-end (Fase 14). Uccide cardo (pid via
 /// `service_pid`) e attende che init lo riavvii. Poi verifica: fixture fresh
-/// funzionanti (mkdir/write/read), hello.txt ricreato, probe ramfs sparito
-/// (wipe: la ramfs e' volatile, contratto codificato qui), /fat leggibile
+/// funzionanti (mkdir/write/read su /tmp scratch ramfs), hello.txt persistente
+/// su ArcaFS (seedato, non toccato da cardo restart), /fat leggibile
 /// (persistente su disco: contrasto), /dev/null operativo (driver
 /// re-registrati via ensure_mounted). Bound generosi, mai hang.
 pub fn t_cardo_restart() -> bool {
     helpers::drain_stray();
-    // Baseline: hello + /dev/null.
-    let Ok(fdh) = civis::open("hello.txt", 0) else {
-        println!("[usertests] t28: baseline hello.txt FAILED");
+    // Baseline: hello.txt da ArcaFS (seedato) + /dev/null.
+    let Ok(fdh) = civis::open("/hello.txt", 0) else {
+        println!("[usertests] t28: baseline /hello.txt FAILED");
         return false;
     };
     let _ = civis::close(fdh);
@@ -466,8 +466,8 @@ pub fn t_cardo_restart() -> bool {
         return false;
     };
     let _ = civis::close(fdn);
-    // Probe ramfs (wipe check dopo il restart).
-    let Ok(fp) = civis::open("td28probe", 0x200) else {
+    // Probe su /tmp scratch ramfs (wipe check dopo il restart).
+    let Ok(fp) = civis::open("/tmp/td28probe", 0x200) else {
         println!("[usertests] t28: create probe FAILED");
         return false;
     };
@@ -503,28 +503,28 @@ pub fn t_cardo_restart() -> bool {
         }
     };
     println!("[usertests] t28: cardo riavviato (pid {} -> {})", p1, p2);
-    // Fixture fresh (re-handshake trasparente via NOHANDSHAKE se serve).
+    // Fixture fresh su /tmp scratch ramfs (re-handshake trasparente via NOHANDSHAKE se serve).
     // Throttled (lezione t27/t28): martellare cardo in busy-loop affama la
     // re-registrazione dei driver (vela/console ricreano il mount proprio
     // su questo cardo).
     if !civis::poll_wait(1000, civis::POLL_PERIOD_TICKS, || {
-        civis::mkdir("/td28").is_ok()
+        civis::mkdir("/tmp/td28").is_ok()
     }) {
-        println!("[usertests] t28: mkdir post-restart mai riuscito (timeout)");
+        println!("[usertests] t28: mkdir /tmp/td28 post-restart mai riuscito (timeout)");
         return false;
     }
-    let Ok(fw) = civis::open("/td28/f", 0x200) else {
-        println!("[usertests] t28: create /td28/f FAILED");
+    let Ok(fw) = civis::open("/tmp/td28/f", 0x200) else {
+        println!("[usertests] t28: create /tmp/td28/f FAILED");
         return false;
     };
     let wb = [0xD8u8; 32];
     if civis::write_fs(fw, &wb, 32) != Ok(32) {
-        println!("[usertests] t28: write /td28/f FAILED");
+        println!("[usertests] t28: write /tmp/td28/f FAILED");
         return false;
     }
     let _ = civis::close(fw);
-    let Ok(fr) = civis::open("/td28/f", 0) else {
-        println!("[usertests] t28: reopen /td28/f FAILED");
+    let Ok(fr) = civis::open("/tmp/td28/f", 0) else {
+        println!("[usertests] t28: reopen /tmp/td28/f FAILED");
         return false;
     };
     let mut rb = [0u8; 32];
@@ -539,9 +539,9 @@ pub fn t_cardo_restart() -> bool {
         println!("[usertests] t28: verify mismatch i={} val={:#x}", i, x);
         return false;
     }
-    // hello.txt ricreato dal fresh cardo.
-    let Ok(fh) = civis::open("hello.txt", 0) else {
-        println!("[usertests] t28: hello.txt ricreato mancante");
+    // hello.txt persistente su ArcaFS (non toccata da cardo restart).
+    let Ok(fh) = civis::open("/hello.txt", 0) else {
+        println!("[usertests] t28: /hello.txt persistente mancante");
         return false;
     };
     let mut hb = [0u8; 64];

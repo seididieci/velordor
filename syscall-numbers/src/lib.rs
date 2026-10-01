@@ -155,6 +155,14 @@ pub const SYS_RESUME: u64 = 51;
 /// swap futuro (B1) e quota (A3); mai decisioni kernel (il kernel non fa
 /// OOM-kill: negativa ADR-0028).
 pub const SYS_MEMINFO: u64 = 52;
+/// Command line di boot PVH (`-append` QEMU): copia i byte in un buffer user
+/// (`dst`, `cap`), ritorna la lunghezza totale (se `> cap`, troncato: il
+/// chiamante rialloca). 0 = assente/vuota. Single source kernel+civis.
+/// Meccanismo neutro (ADR-0025): byte opachi, il parse `root=UUID=` vive in
+/// cardo (Fase 2 root su volume, mai first-found).
+pub const SYS_BOOT_CMDLINE: u64 = 53;
+/// Bound command line salvata dal kernel (stesso del parser PVH, mai oltre).
+pub const BOOT_CMDLINE_MAX: usize = 512;
 /// Cap pagine di `SYS_DMA_ALLOC` (38.1: 1 pagina = PRD + 7 settori bastano).
 pub const DMA_PAGES_MAX: usize = 4;
 /// Bound del payload argv+env serializzato (Fase 37.1, esteso in 43a):

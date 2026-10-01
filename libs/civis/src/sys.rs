@@ -381,3 +381,20 @@ pub fn meminfo() -> (u64, u64, u64) {
     let (rax, rdi, rsi, _, _) = unsafe { syscall4_out(SYS_MEMINFO, 0, 0, 0, 0) };
     (rax as u64, rdi, rsi)
 }
+
+/// Fase 2 (root su volume) — `boot_cmdline()`: command line PVH salvata al
+/// boot (`-append` QEMU, max `BOOT_CMDLINE_MAX`). Ritorna i byte (vuota =
+/// assente); il kernel non tronca mai oltre il bound, niente seconda
+/// chiamata. Meccanismo neutro (ADR-0025): byte opachi, il parse
+/// `root=UUID=` vive nel chiamante (cardo).
+#[inline]
+pub fn boot_cmdline() -> alloc::vec::Vec<u8> {
+    let mut buf = alloc::vec![0u8; BOOT_CMDLINE_MAX];
+    let r = unsafe { syscall4(SYS_BOOT_CMDLINE, buf.as_mut_ptr() as u64, BOOT_CMDLINE_MAX as u64, 0, 0) };
+    if r <= 0 {
+        alloc::vec::Vec::new()
+    } else {
+        buf.truncate(r as usize);
+        buf
+    }
+}

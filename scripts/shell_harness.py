@@ -125,13 +125,14 @@ class Shell:
     parallele (il runner li assegna per fase)."""
 
     def __init__(self, mon, serial, fat=FAT_DFLT, fat2=FAT2_DFLT,
-                 kernel=KERNEL_DFLT, fat_format="raw"):
+                 kernel=KERNEL_DFLT, fat_format="raw", arca_img=None):
         self.mon = mon
         self.serial = serial
         self.fat = fat
         self.fat2 = fat2
         self.kernel = kernel
         self.fat_format = fat_format
+        self.arca_img = arca_img
         self.q = None
         # wait_prompt event-driven sul conteggio prompt CONSUMATO.
         self._prompt_seen = 0
@@ -317,6 +318,12 @@ class Shell:
             "-drive", "file=%s,format=%s,if=ide" % (self.fat, self.fat_format),
             "-drive", "file=%s,format=%s,if=ide" % (self.fat2, self.fat_format),
         ]
+        # Fase 2: terzo drive ArcaFS + cmdline root=UUID (se presente).
+        if self.arca_img is not None:
+            args.append("-drive")
+            args.append("file=%s,format=raw,if=ide" % self.arca_img)
+            args.append("-append")
+            args.append("root=UUID=4152434100000001")
         # KVM se disponibile: abbatte la tassa di emulazione sui round-trip
         # tastiera (IRQ1→kbd→tty→shell→prompt). `-cpu host` come bench.sh
         # (TSC/round-trip a velocita' nativa invece che emulata).

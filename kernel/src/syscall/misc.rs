@@ -188,6 +188,26 @@ pub(super) fn sys_meminfo() -> i64 {
     free as i64
 }
 
+/// Fase 2 — `boot_cmdline(dst, cap)`: copia la cmdline PVH salvata al boot
+/// nel buffer user. Ritorna la lunghezza totale (se `> cap`, troncato: il
+/// chiamante rialloca); 0 = assente/vuota. Range user validato (mai scrittura
+/// fuori dallo spazio del chiamante, stesso pattern di `sys_spawn_image`).
+pub(super) fn sys_boot_cmdline(dst: u64, cap: usize) -> i64 {
+    let (saved, len) = crate::boot_info::saved_cmdline();
+    if len == 0 || cap == 0 {
+        return len as i64;
+    }
+    let n = len.min(cap);
+    if !crate::arc::vmm_user::is_user_range(dst, n) {
+        return -1;
+    }
+    unsafe {
+        let out = core::slice::from_raw_parts_mut(dst as *mut u8, n);
+        out.copy_from_slice(&saved[..n]);
+    }
+    len as i64
+}
+
 /// Fase 19.1 — `ps_info(pid)`: snapshot del processo per `ps`. 0 se lo slot e'
 /// vivo (campi nei registri, layout in `syscall-numbers`), -1 se vuoto o
 /// terminato (lo slot si salta, come `ps` salta i PID morti).

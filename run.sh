@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
-cd "$(dirname "$0")"
+ROOT="$(cd "$(dirname "$0")" && pwd)"
+cd "$ROOT"
 
 echo "[run] Scheduler: RT a 32 priorita' + CBS"
 
@@ -42,9 +43,18 @@ bash scripts/inject-bins.sh
 # a offset LBA63) e arca-gpt.img (GPT + partizione ArcaFS a LBA64) quando
 # ARCA_IMG=1. Servono per testare il mount in partizione MBR e GPT invece
 # che su whole-disk.
+
+# Fase 2 (root su volume): assegna UUID distinti alle derivate (MBR/GPT) per
+# evitare collisioni con arca.img — il kernel sceglie la root per UUID (mai
+# per lettera/scan). Le derivate sono copie di blocchi del volume originale:
+# NON vanno seedate a loro volta.
 if [ "${ARCA_IMG:-0}" = "1" ]; then
     ./scripts/build-arca-part.sh
     python3 ./scripts/build-arca-gpt.sh
+    # UUID distinti per partizione MBR (LBA63) e GPT (LBA64).
+    ARCA_TOOL_BIN="${ARCA_TOOL_BIN:-$ROOT/build-meta/arca}"
+    "$ARCA_TOOL_BIN" uuid userland/disk/arca-part.img 4152434100000002 --lba 63
+    "$ARCA_TOOL_BIN" uuid userland/disk/arca-gpt.img 4152434100000003 --lba 64
 fi
 
 KERNEL=target/x86_64-unknown-none/release/velord
@@ -63,8 +73,18 @@ fi
 # MBR su arca-part.img e GPT su arca-gpt.img = secondary master/slave).
 # La suite li cerca via magic, mai per lettera (sda/sdb restano i due FAT).
 if [ "${ARCA_IMG:-0}" = "1" ]; then
+    DRIVES="$DRIVES -drive file=userland/disk/arca.img,format=raw,if=ide"
     DRIVES="$DRIVES -drive file=userland/disk/arca-part.img,format=raw,if=ide"
-    DRIVES="$DRIVES -drive file=userland/disk/arca-gpt.img,format=raw,if=ide"
+fi
+# Fase 2 (root su volume): passa la cmdline `-append` a QEMU. Il kernel legge
+# `hvm_start_info.cmdline_paddr` al boot e lo rende a userland via SYS_BOOT_
+# CMDLINE (53). cardo parse `root=UUID=<8hex>` dal cmdline: monta il primo
+# volume ArcaFS con quell'uuid come `/`, ramfs solo su `/tmp`. Se l'uuid non
+# esiste o il parametro e' assente → kernel panic loud.
+if [ -f userland/disk/arca.img ]; then
+    APPEND="root=UUID=4152434100000001"
+else
+    APPEND=""
 fi
 # shellcheck disable=SC2086
 exec qemu-system-x86_64 \
@@ -74,4 +94,5 @@ exec qemu-system-x86_64 \
     -no-reboot \
     -kernel "$KERNEL" \
     $DRIVES \
+    $( [ -n "$APPEND" ] && echo "-append $APPEND" ) \
     "$@"

@@ -105,6 +105,9 @@ pub extern "C" fn rust_main(boot_info_phys: u64) -> ! {
         "hvm_start_info magic errato: EBX non punta alla struttura PVH"
     );
     boot_info::dump(info);
+    // Fase 2 (root su volume): la cmdline resta disponibile a userland via
+    // SYS_BOOT_CMDLINE (copia al boot, niente borrow sulla zona loader).
+    boot_info::save_cmdline(boot_info::cmdline(info).unwrap_or(""));
 
     // Calcola max_addr dalla memory map PRIMA di tutto.
     let memmap = boot_info::memmap(info);
