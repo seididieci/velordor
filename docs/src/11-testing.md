@@ -2,7 +2,7 @@
 
 > I conteggi di suite citati negli ADR e nelle sotto-fasi del libro sono
 > **snapshot all'epoca** di ciascuna fase (es. 17/17, 21/21, 32/32). Il gate
-> corrente e' quello qui sotto (5/5 + 7/7 + 40/40 + 4/4 + 54/54 + shell) e in
+> corrente e' quello qui sotto (5/5 + 7/7 + 50/50 + 4/4 + 54/54 + shell) e in
 > `AGENTS.md`.
 
 La regressione automatica del sistema gira **dentro QEMU** a ogni boot: i
@@ -22,7 +22,7 @@ flavours/posix/
 testland/   test suite meccanismo + repro + demo storiche
   testfs        usertestfs   — ramfs (read/write/mkdir/errori)   → PASS 5/5
   testfat       usertestfat  — FAT32 scrivibile (Fase 20) + /dev/null, /dev/zero → PASS 7/7
-  testsarca     usertestsarca — ArcaFS P5+A1+56.1+56.2a+56.2b+56.2c (B+tree COW + commit, recovery/GC + sys-dal-volume) + logging L1 Fase 57 (gateway `Log` RAM-first, bucket per identita', seal, stats, bounce) → PASS 40/40
+  testsarca     usertestsarca — ArcaFS P5+A1+56.1+56.2a+56.2b+56.2c (B+tree COW + commit, recovery/GC + sys-dal-volume) + logging L1 Fase 57 (gateway `Log` RAM-first, bucket per identita', seal, stats, bounce) + namespace POSIX 56.3 (dir emergenti + set RAM, ADR-0042) → PASS 50/50
   usertests     usertests    — suite meccanismo (54 test)        → PASS 54/54
   usertest-client usertestcli  — helper a modalita' (ECHO/ZEROREAD/NULLW/SRV/CHURN/KILLME/SRVDIE/SYNCWAIT/MNTDIE/OPENDIE/MAPHAMMER/FLOOD/NEST/FAULT_*/SHMDEMO/COWDEMO/FORKDEMO/ORPHAN/HARDEN/REG51/EXECDEMO/DUPCLAIM/DUPGRANT/DUPSIBCLAIM/SEEKDENY/SUSPENDENY/SIGCATCH/GRANTDENY)
   usertest-spin  usertestspin  — busy-loop a budget di tick (batch 512 spin puri, priorita' via SpawnMeta) + ramo SQUAT (sonda di squat FS_REGISTER, t51)
@@ -51,7 +51,7 @@ cardo (path e file di lavoro) e la sequenza rende output e PID deterministici
 (con i ring SPSC per-processo, Fase 10.2, nessuna race da buffer condivisi).
 La shell e' spawnata per ultima. `run-tests.sh` esporta `ARCA_IMG=1`: il gate
 ha terzo e quarto drive ArcaFS (MBR + GPT in partizione), quindi `testsarca`
-gira 40/40 (senza drive il core resta PASS, n/n adattivo).
+gira 50/50 (senza drive il core resta PASS, n/n adattivo).
 
 Ordine di suite: testfs, testfat, testsarca, **posixtests**, usertests
 (posixtests PRIMA di usertests cosi' t54 precede i drop di diritti di t34).
@@ -61,7 +61,7 @@ Righe di gate:
 ```
 [testfs] PASS 5/5
 [testfat] PASS 7/7
-[testsarca] PASS 40/40
+[testsarca] PASS 50/50
 [posixtests] PASS 4/4
 [usertests] PASS 54/54
 ```

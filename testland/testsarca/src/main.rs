@@ -6,8 +6,8 @@
 //!   3. tamper: contenuto diverso -> hash diverso
 //!   7. un disco o partizione espone il superblock ACFS (scan per magic)
 //!   8. mount `/arca` del volume ArcaFS riesce
-//!   9. `open` sul mount rifiutato (stub: mai dati inventati)
-//!  10. `readdir` sul mount rifiutato
+//!   9. `open` di assente sul mount rifiutato (mai dati inventati)
+//!  10. `readdir` root vuota ok (56.3: non piu' stub)
 //!  11. umount `/arca` riesce (cleanup)
 //!  12. un disco GPT (protective-MBR 0xEE a byte 450) espone ACFS in
 //!      partizione (parse GPT guest: header+entry UEFI reali)
@@ -38,6 +38,16 @@
 //!  38. log seal esplicito (snapshot monotonici) + delete (57)
 //!  39. log stats (appended = test + milestone init = prova FLUSH) (57)
 //!  40. log bounce via init + rewarm client (re-lookup+REG, latest) (57)
+//!  41. posix mkdir emergente visibile (stat dir + readdir) (56.3)
+//!  42. rmdir mai-esistita = errore (56.3)
+//!  43. mkdir su file = errore (56.3)
+//!  44. file round-trip write/read/stat su /arca (56.3)
+//!  45. readdir figli immediati (56.3)
+//!  46. rmdir non-vuota = errore (56.3)
+//!  47. overwrite a offset (read-modify-write) (56.3)
+//!  48. O_TRUNC + O_APPEND (56.3)
+//!  49. delete file: dir resta (RAM), rmdir ok, stat sparita (56.3)
+//!  50. bounce cardo + remount: file intatti, vuote perse (56.3)
 //! Con `ARCA_IMG=1` (gate) i drive ci sono sempre; senza, solo 1-3 e 7-13
 //! adattivi e il resto saltato — n/n adattivo, mai FAIL per drive assente.
 
@@ -130,6 +140,25 @@ fn find_arca() -> Option<[u8; 4]> {
         }
     }
     None
+}
+
+/// Monta il primo volume ACFS su `/arca` (56.3, vista POSIX): stesso ordine
+/// di scansione dell'auto-bind di cardo, quindi stesso volume del motore
+/// globale (uuid combaciante, mai dati altrui).
+fn mount_first_arca() -> bool {
+    match find_arca() {
+        Some(name) => {
+            let len = if name[3] == 0 { 3 } else { 4 };
+            let mut src = [0u8; 16];
+            src[..5].copy_from_slice(b"/dev/");
+            src[5..5 + len].copy_from_slice(&name[..len]);
+            match core::str::from_utf8(&src[..5 + len]) {
+                Ok(s) => civis::mount(s, "/arca").is_ok(),
+                Err(_) => false,
+            }
+        }
+        None => false,
+    }
 }
 
 /// Cerca un disco GPT (protective-MBR: tipo prima voce 0xEE a byte 450, NON
@@ -252,15 +281,16 @@ fn real_main(_sp: u64) -> ! {
             c.ok("mount /arca", mounted);
             if mounted {
                 let opened = civis::open("/arca/anything", 0);
-                c.ok("open stub rifiutato", opened.is_err());
+                c.ok("open assente rifiutato", opened.is_err());
                 let mut buf = [0u8; 64];
+                // Vista POSIX 56.3: la root esiste (vuota) — non piu' stub.
                 let rd = civis::readdir("/arca", &mut buf, 64);
-                c.ok("readdir stub rifiutato", rd.is_err());
+                c.ok("readdir root vuota ok", rd == Ok(0));
                 c.ok("umount /arca", civis::umount("/arca").is_ok());
             } else {
-                println!("[testsarca] mount {} FAILED (stub?)", dev);
-                c.ok("open stub rifiutato", false);
-                c.ok("readdir stub rifiutato", false);
+                println!("[testsarca] mount {} FAILED", dev);
+                c.ok("open assente rifiutato", false);
+                c.ok("readdir root vuota ok", false);
                 c.ok("umount /arca", false);
             }
         }
@@ -784,6 +814,130 @@ fn real_main(_sp: u64) -> ! {
             };
             c.ok("log bounce + rewarm", v40);
         }
+    }
+
+    // 41-50. Vista POSIX su ArcaFS (56.3): namespace emergente + set
+    // transient in RAM. Richiede il mount (gate: ARCA_IMG=1); senza volume
+    // salto adattivo come 4-8/12-13 (mai FAIL per drive assente).
+    if mount_first_arca() {
+        fn rd_all(path: &str) -> Option<alloc::vec::Vec<u8>> {
+            let fd = civis::open(path, 0).ok()?;
+            let mut out = alloc::vec::Vec::new();
+            let mut chunk = [0u8; 2000];
+            loop {
+                match civis::read_fs(fd, &mut chunk, 2000) {
+                    Ok(0) => break,
+                    Ok(n) => out.extend_from_slice(&chunk[..n]),
+                    Err(_) => {
+                        let _ = civis::close(fd);
+                        return None;
+                    }
+                }
+            }
+            let _ = civis::close(fd);
+            Some(out)
+        }
+        fn wr_all(path: &str, flags: u32, data: &[u8]) -> bool {
+            let fd = match civis::open(path, flags) {
+                Ok(f) => f,
+                Err(_) => return false,
+            };
+            let ok = civis::write_fs(fd, data, data.len()) == Ok(data.len());
+            let _ = civis::close(fd);
+            ok
+        }
+        fn dir_has(dir: &str, want: &str) -> bool {
+            let mut buf = [0u8; 2048];
+            let count = match civis::readdir(dir, &mut buf, 2048) {
+                Ok(n) => n,
+                Err(_) => return false,
+            };
+            let mut found = false;
+            civis::test::each_name(&buf, count, |name| {
+                if name == want {
+                    found = true;
+                }
+            });
+            found
+        }
+        fn is_dir(path: &str) -> bool {
+            let mut st = civis::Stat { size: 0, kind: 0, readonly: false, mtime: 0 };
+            civis::stat(path, &mut st).is_ok() && st.is_dir()
+        }
+        // 41. mkdir emergente subito visibile (stat dir + readdir root).
+        let v41 =
+            civis::mkdir("/arca/p56").is_ok() && is_dir("/arca/p56") && dir_has("/arca", "p56");
+        c.ok("posix mkdir emergente visibile", v41);
+        // 42. rmdir mai-esistita = errore (mai Ok silenzioso).
+        let v42 = civis::remove("/arca/mai-esistita").is_err();
+        c.ok("posix rmdir inesistente errore", v42);
+        // 43. mkdir su file = errore.
+        let v43 = wr_all("/arca/f56", civis::O_CREAT, b"x") && civis::mkdir("/arca/f56").is_err();
+        c.ok("posix mkdir su file errore", v43);
+        // 44. file round-trip write/read/stat.
+        let v44 = wr_all("/arca/p56/f", civis::O_CREAT, b"ciao-posix")
+            && matches!(rd_all("/arca/p56/f"), Some(v) if v.as_slice() == b"ciao-posix")
+            && {
+                let mut st = civis::Stat { size: 0, kind: 0, readonly: false, mtime: 0 };
+                civis::stat("/arca/p56/f", &mut st).is_ok() && st.is_file() && st.size == 10
+            };
+        c.ok("posix file round-trip", v44);
+        // 45. readdir figli immediati.
+        let v45 = dir_has("/arca/p56", "f");
+        c.ok("posix readdir figli", v45);
+        // 46. rmdir non-vuota = errore.
+        let v46 = civis::remove("/arca/p56").is_err();
+        c.ok("posix rmdir non-vuota errore", v46);
+        // 47. overwrite a offset (read-modify-write, coda intatta).
+        let v47 = wr_all("/arca/p56/rw", civis::O_CREAT, b"HelloWorld123")
+            && match civis::open("/arca/p56/rw", 0) {
+                Ok(fd) => {
+                    let r = civis::lseek(fd, 5, civis::SEEK_SET) == Ok(5)
+                        && civis::write_fs(fd, b"XX", 2) == Ok(2);
+                    let _ = civis::close(fd);
+                    r && matches!(rd_all("/arca/p56/rw"), Some(v) if v.as_slice() == b"HelloXXrld123")
+                }
+                Err(_) => false,
+            };
+        c.ok("posix overwrite a offset", v47);
+        // 48. O_TRUNC azzera, O_APPEND concatena.
+        let v48 = wr_all("/arca/p56/rw", civis::O_TRUNC, b"")
+            && rd_all("/arca/p56/rw") == Some(alloc::vec::Vec::new())
+            && wr_all("/arca/p56/rw", civis::O_APPEND, b"ab")
+            && wr_all("/arca/p56/rw", civis::O_APPEND, b"cd")
+            && matches!(rd_all("/arca/p56/rw"), Some(v) if v.as_slice() == b"abcd");
+        c.ok("posix trunc+append", v48);
+        // 49. delete file: la dir resta (set RAM), rmdir ok, stat sparita.
+        let v49 = civis::remove("/arca/p56/f").is_ok()
+            && civis::remove("/arca/p56/rw").is_ok()
+            && is_dir("/arca/p56")
+            && civis::remove("/arca/p56").is_ok()
+            && !is_dir("/arca/p56");
+        c.ok("posix delete+rmdir", v49);
+        // 50. bounce cardo + remount: file intatti, vuote perse.
+        let v50 = civis::mkdir("/arca/keep").is_ok()
+            && wr_all("/arca/keep/v", civis::O_CREAT, b"persistente")
+            && civis::mkdir("/arca/vuota").is_ok()
+            && civis::init_bounce(civis::Service::Cardo).is_ok()
+            && civis::poll_wait(1000, civis::POLL_PERIOD_TICKS, || {
+                civis::service_pid(civis::Service::Cardo).is_err()
+            })
+            && civis::poll_value(1000, civis::POLL_PERIOD_TICKS, || {
+                civis::service_pid(civis::Service::Cardo).ok()
+            })
+            .is_some()
+            && mount_first_arca()
+            && matches!(rd_all("/arca/keep/v"), Some(v) if v.as_slice() == b"persistente")
+            && is_dir("/arca/keep")
+            && !is_dir("/arca/vuota");
+        c.ok("posix bounce+remount", v50);
+        // Cleanup best-effort (il volume resta pulito per i run dopo).
+        let _ = civis::remove("/arca/keep/v");
+        let _ = civis::remove("/arca/keep");
+        let _ = civis::remove("/arca/f56");
+        let _ = civis::umount("/arca");
+    } else {
+        println!("[testsarca] nessun volume ACFS: salto 41-50");
     }
 
     if c.pass == c.total {

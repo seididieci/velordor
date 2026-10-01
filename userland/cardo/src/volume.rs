@@ -30,9 +30,17 @@ pub struct ArcaVolume {
     disk: IpcDisk,
     xh: HeaderExt,
     live: BTreeSet<u64>,
+    /// UUID dal superblock (56.3: la vista POSIX serve solo il volume del
+    /// motore globale — mount di altri volumi = errore loud, mai dati altrui).
+    uuid: u64,
 }
 
 impl ArcaVolume {
+    /// UUID del volume (identita' stabile, dal superblock letto in `open`).
+    pub fn uuid(&self) -> u64 {
+        self.uuid
+    }
+
     /// Legge un blocco intero. None su errore IO/overflow.
     #[inline(never)]
     fn read_block(&self, n: u64, out: &mut [u8; BLOCK_BYTES]) -> bool {
@@ -105,11 +113,12 @@ impl ArcaVolume {
         if !disk.read_sector(0, &mut sec) {
             return None;
         }
-        format::superblock_verify(&sec)?;
+        let (_, uuid) = format::superblock_verify(&sec)?;
         let v = Self {
             disk,
             xh: HeaderExt { free_head: 0, high_water: 0, next_id: 0, next_snap: 0, flags: 0 },
             live: BTreeSet::new(),
+            uuid,
         };
         let mut raw = [0u8; ARCA_XHDRLEN];
         if !v.read_xh_raw(&mut raw) {
@@ -125,15 +134,20 @@ impl ArcaVolume {
     /// (56.2c: recovery; per ora solo bootstrap dei volumi di test.)
     #[inline(never)]
     pub fn format(handle: u32) -> Option<Self> {
-        let mut v = Self {
-            disk: IpcDisk::new(handle),
-            xh: HeaderExt { free_head: 0, high_water: 2, next_id: 1, next_snap: 1, flags: 0 },
-            live: BTreeSet::new(),
-        };
+        let disk = IpcDisk::new(handle);
         let mut sec = [0u8; 512];
-        if !v.disk.read_sector(0, &mut sec) {
+        if !disk.read_sector(0, &mut sec) {
             return None;
         }
+        // L'uuid e' nel superblock scritto da `arca create` (invariato
+        // dal format: si riusa, mai rigenerato qui).
+        let uuid = format::superblock_verify(&sec).map(|(_, u)| u).unwrap_or(0);
+        let mut v = Self {
+            disk,
+            xh: HeaderExt { free_head: 0, high_water: 2, next_id: 1, next_snap: 1, flags: 0 },
+            live: BTreeSet::new(),
+            uuid,
+        };
         format::superblock_set_root(&mut sec, 1)?;
         if !v.disk.write_sector(0, &sec) {
             return None;

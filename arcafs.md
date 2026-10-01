@@ -11,8 +11,9 @@ MBR/GPT, `sys` seedato, init dual-mode) + A2/56 CHIUSA (56.1 versioni in RAM;
 56.2a formato+allocatore; 56.2b B+tree COW + commit su disco; 56.2c
 recovery/orphan-GC + snapshot persistenti + sys-dal-volume) + 57/Logging-L1
 CHIUSA (vestigia RAM-first, bucket per identita', ADR-0039; L0 cancellato).
-Prossimo: 59+ (A3 quota/subvolumi, A4 ABAC, ...). Packing S1/S2,
-`R_OBJ_MGET` e marker dir persistenti (56.3) restano rinviati.
+Prossimo: 59+ (A3 quota/subvolumi, A4 ABAC, ...). Packing S1/S2 e
+`R_OBJ_MGET` restano rinviati. 56.3 CHIUSA (namespace POSIX: dir emergenti +
+set RAM, ADR-0042, suite 50/50).
 
 > Nota sui gate: i numeri citati altrove sono snapshot storici; il gate
 > corrente vive in `docs/src/11-testing.md` e in `ROADMAP.md`
@@ -171,16 +172,22 @@ Prossimo: 59+ (A3 quota/subvolumi, A4 ABAC, ...). Packing S1/S2,
   `AnyHandle::Arca(...)`. La vista POSIX passa da `LocalFs`; `R_OBJ_*` resta
   l'API nativa additiva.
 
-## 5. Vista POSIX / mapping sintetico (T5)
+## 5. Vista POSIX / mapping sintetico (T5, 56.3 chiuso: ADR-0042)
 
 - Oggetto = file, lista = readdir, dir **emergenti** (esistono ⟺ chiavi
-  col prefisso; mai su disco).
-- **Directory persistenti** (requisito self-hosting, **rinviato ad A2**):
-  `mkdir` crea un marker reale, quindi la dir sopravvive a unmount/reboot;
-  in A1 vale il transient set server-side (ottimizzazione in futuro, unica
-  semantica in A1) con tag tipo riservato nel formato. Nessun cap
-  che faccia fallire `mkdir -p` su molte directory (es. `tar x`, build).
-  Trigger: porting toolchain.
+  col prefisso nel bucket `ns`, chiavi = path completi; mai su disco
+  nient'altro che i file).
+- **`mkdir` non scrive mai** (niente marker persistenti, niente commit):
+  inserisce path + antenati in un set transient in RAM nell'istanza del
+  mount. Il set si perde a restart/remount: le dir vuote spariscono, quelle
+  con file riemergono dalle chiavi (persistenza strutturale, non libro
+  mastro). Nel frattempo tutto funziona come se ci fossero (stat/readdir/
+  open-dir). `mkdir -p` non fallisce mai per cap (es. `tar x`, build);
+  idempotente; file in `rel` = errore, antenato file = errore.
+- **`rmdir` mai silenziosa**: dir con figli = errore (come ramfs), dir RAM
+  vuota = tolta dal set, mai-esistita = errore, root e file = errore.
+  `remove(file)` non tocca il set (la dir resta visibile finche' non la si
+  rimuove). Trigger superato: era il porting toolchain, serviva prima.
 - Lettura + append + delete + **write con offset ammesso** (nuova versione
   COW con la range patchata, costo dichiarato); `O_APPEND` resta il caso
   naturale. **`ftruncate` ammesso**: nuova versione con size ridotta e tail
@@ -756,8 +763,8 @@ e accendere la persistenza. Due passi con gate separati.
 > tabella snapshot si persiste dopo il load iniziale, non e' ricostruita dalla
 > walk (un pin non lascia tracce nel primary oltre al refcount); (3) il
 > puntatore meta vive in `alloc_hint` [108..116) riusando coda-mountpoint
-> (clampato a 56 B), niente bump di versione formato per 8 byte; (4) marker
-> dir persistenti confermati a 56.3 (§5 vs §19 risolto).
+> (clampato a 56 B), niente bump di versione formato per 8 byte; (4) niente
+> marker dir persistenti: namespace emergente + set RAM in 56.3 (ADR-0042).
 
 - **Mount/recovery**: superblock valido → orphan-GC (raggiungibili dai 3
   alberi + meta + catene overflow, meno freelist/live/blocco 0 → freelist;
@@ -778,8 +785,9 @@ e accendere la persistenza. Due passi con gate separati.
 - **Reboot reale** (manuale, fuori gate): generazione N montata, snapshot
   sopravvissuto, servizi da `sys` — prova finale prima di dichiarare la
   vittoria 56 ("rollback vero; retention log implementabile", sblocco 57).
-- **Fuori scope 56** (confermato): packing S1/S2, `R_OBJ_MGET`, marker dir
-  persistenti (56.3); quota/subvolumi (A3); tag128 crypto (A7); loader EFI.
+- **Fuori scope 56** (confermato): packing S1/S2, `R_OBJ_MGET`;
+  quota/subvolumi (A3); tag128 crypto (A7); loader EFI. I marker dir non
+  servono piu' (56.3: emergenti + set RAM).
 
 ### Gate e docs per passo
 

@@ -96,11 +96,19 @@ Voci con scope e vittoria dichiarati (non date).
        + formato on-disk + allocatore + `R_ARCA_DEBUG` 27/27; 56.2b B+tree COW +
        commit shadow+flip su disco, backend unico 32/32; 56.2c recovery/orphan-GC
        + tabella snapshot persistente + sys-dal-volume all'avvio 33/33): COW +
-       snapshot/clone + GC + rollback/retention persistenti. Packing S1/S2,
-       `R_OBJ_MGET` (se 53 lo chiede) e marker dir persistenti (§5, → 56.3)
-       restano rinviati.
+       snapshot/clone + GC + rollback/retention persistenti. Packing S1/S2 e
+       `R_OBJ_MGET` (se 53 lo chiede) restano rinviati (i marker dir non
+       servono piu': 56.3, emergenti + set RAM).
        Vittoria conseguita: rollback vero (persistente, sopravvive al kill);
        retention log implementabile (sblocco 57).
+- [x] **56.3 (namespace POSIX su ArcaFS)** (completata, ADR-0042):
+  dir emergenti (esistono ⟺ chiavi col prefisso nel bucket `ns`) + set
+  transient in RAM per le `mkdir` (`mkdir` mai su disco, `rmdir`
+  mai-esistita = errore, vuote perse al restart); vista POSIX in
+  `userland/cardo` via motore globale a uuid combaciante (`ArcaWith`,
+  mai dati altrui); `scan_prefix` nel B+tree; `R_SYNC GROUP` = commit;
+  suite 40/40 → 50/50.
+  Vittoria conseguita: file/dir su volume ArcaFS + intatti dopo kill.
 - [x] **57 (L1) logging** (chiusa, ADR-0039; L0 cancellato senza implementarlo:
       la ragione — ArcaFS non esisteva — e' estinta): `vestigia`
       (`Service::Vestigia` = 10, embedded boot-TCB, spawn parallelo a block prima

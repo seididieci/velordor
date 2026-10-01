@@ -1,7 +1,20 @@
 use super::*;
 use crate::provider::LocalFs;
+use crate::provider::LocalFsDyn;
 
 // ── Handler (Option<u64> internamente) ─────────────────────────────
+
+/// Vista POSIX ArcaFS col motore globale (56.3): se il mount `mid` e' un
+/// volume Arca e l'uuid combacia col motore, lega i due per l'op. `None` =
+/// altro provider, motore assente o altro volume (il chiamante usa il path
+/// generico/stub loud — mai dati di un altro volume sullo stesso motore).
+fn arca_ns<'m>(
+    mounts_fat: &'m mut Vec<mount::FsMount>,
+    mid: u64,
+    disk: &'m mut Option<btree_drv::DiskEngine>,
+) -> Option<crate::arca::ArcaWith<'m>> {
+    mount::by_id_mut(mounts_fat, mid)?.arca_with(disk.as_mut())
+}
 
 #[inline(never)]
 pub fn handle_open(
@@ -13,6 +26,7 @@ pub fn handle_open(
     flags: u64,
     path: &str,
     fgen: &mut u64,
+    disk: &mut Option<btree_drv::DiskEngine>,
 ) -> Result<u64, u64> {
     if path.is_empty() || path.len() > MAX_PATH {
         return Err(ERR_INVALID);
@@ -71,6 +85,12 @@ pub fn handle_open(
             Some(m) if m.is_provider()
         );
         if is_local {
+            // 56.3 — ArcaFS col motore globale (uuid combaciante): se il
+            // motore manca o e' un altro volume si cade sullo stub loud.
+            if let Some(mut w) = arca_ns(mounts_fat, mid, disk) {
+                let h = w.open_dyn(rel, flags).map_err(|_| ERR_NOTFOUND)?;
+                return Ok(ftable.open_local(chan, rel, mid, h, append));
+            }
             let h = mount::by_id_mut(mounts_fat, mid)
                 .ok_or(ERR)?
                 .local_dyn()
@@ -120,6 +140,7 @@ pub fn handle_read(
     fd: u32,
     count: usize,
     fgen: &mut u64,
+    disk: &mut Option<btree_drv::DiskEngine>,
 ) -> Result<u64, u64> {
     if count > 4096 {
         return Err(ERR_INVALID);
@@ -167,11 +188,16 @@ pub fn handle_read(
         }
         mount_legacy::FsKind::Local => {
             // 49.4 — read via `AnyHandle` dell'fd (Fase 49, F4): aperto una
-            // volta con `open_dyn`, mai reopen per-path.
+            // volta con `open_dyn`, mai reopen per-path. 56.3: ArcaFS col
+            // motore globale (uuid combaciante), altrimenti path generico.
             let h = ftable.get_dyn_handle(chan, fd).ok_or(ERR_INVALID)?;
             let mid = mnt.ok_or(ERR)?;
-            let d = mount::by_id_mut(mounts_fat, mid).ok_or(ERR)?.local_dyn().ok_or(ERR)?;
-            let n = d.read_dyn(h, offset, &mut buf_stack[..count])?;
+            let n = if let Some(mut w) = arca_ns(mounts_fat, mid, disk) {
+                w.read_dyn(h, offset, &mut buf_stack[..count])?
+            } else {
+                let d = mount::by_id_mut(mounts_fat, mid).ok_or(ERR)?.local_dyn().ok_or(ERR)?;
+                d.read_dyn(h, offset, &mut buf_stack[..count])?
+            };
             &buf_stack[..n]
         }
         mount_legacy::FsKind::Fat => {
@@ -308,6 +334,7 @@ pub fn handle_write_local(
     count: usize,
     payload: &[u8],
     fgen: &mut u64,
+    disk: &mut Option<btree_drv::DiskEngine>,
 ) -> Result<u64, u64> {
     // Estremita' di pipe in scrittura (Fase 42): append/offset ignorati (le
     // pipe non hanno offset); oltre la capacita' = parziale (il client
@@ -333,17 +360,26 @@ pub fn handle_write_local(
     let append = ftable.is_append(chan, fd);
     if kind == mount_legacy::FsKind::Local {
         // Scrittura su mount `Local` (Fase 49, F4): handle dell'fd, mai
-        // reopen; niente generazioni (il provider e' authoritative).
+        // reopen; niente generazioni (il provider e' authoritative). 56.3:
+        // ArcaFS col motore globale (uuid combaciante), altrimenti generico.
         let h = ftable.get_dyn_handle(chan, fd).ok_or(ERR_INVALID)?;
         let mid = mnt.ok_or(ERR)?;
-        let d = mount::by_id_mut(mounts_fat, mid).ok_or(ERR)?.local_dyn().ok_or(ERR)?;
-        let n = d.write_dyn(h, offset, &payload[..count.min(payload.len())], append)?;
+        let n = if let Some(mut w) = arca_ns(mounts_fat, mid, disk) {
+            w.write_dyn(h, offset, &payload[..count.min(payload.len())], append)?
+        } else {
+            let d = mount::by_id_mut(mounts_fat, mid).ok_or(ERR)?.local_dyn().ok_or(ERR)?;
+            d.write_dyn(h, offset, &payload[..count.min(payload.len())], append)?
+        };
         // O_APPEND non usa `offset`: il nuovo offset e' la size dopo la
         // scrittura (via stat fresca, mai stale oltre l'op).
         let new_off = if append {
-            let rel_owned: String = alloc::string::String::from(path);
-            let d = mount::by_id_mut(mounts_fat, mid).ok_or(ERR)?.local_dyn().ok_or(ERR)?;
-            d.stat_dyn(&rel_owned).map(|m| m.size as usize).unwrap_or(offset + n as usize)
+            let rel_owned: alloc::string::String = alloc::string::String::from(path);
+            if let Some(mut w) = arca_ns(mounts_fat, mid, disk) {
+                w.stat_dyn(&rel_owned).map(|m| m.size as usize).unwrap_or(offset + n as usize)
+            } else {
+                let d = mount::by_id_mut(mounts_fat, mid).ok_or(ERR)?.local_dyn().ok_or(ERR)?;
+                d.stat_dyn(&rel_owned).map(|m| m.size as usize).unwrap_or(offset + n as usize)
+            }
         } else {
             offset + n as usize
         };
@@ -435,6 +471,7 @@ pub fn handle_readdir(
     chan: u64,
     path: &str,
     fgen: &mut u64,
+    disk: &mut Option<btree_drv::DiskEngine>,
 ) -> Result<u64, u64> {
     // Directory remota (device): inoltro al driver, che scrive le entry nella
     // response ring del client (mappata li' da map_in).
@@ -448,9 +485,9 @@ pub fn handle_readdir(
 
     if let Some((mid, rel)) = mount::resolve_fsmount(mounts_fat, path, fgen) {
         // 48.5 — readdir via trait `LocalFsDyn`: la trait gestisce il path relativo al mount.
+        // 56.3: ArcaFS col motore globale (uuid combaciante), altrimenti generico.
         let mut entries: Vec<String> = Vec::new();
         {
-            let fat = mount::by_id_mut(mounts_fat, mid).ok_or(ERR)?.local_dyn().ok_or(ERR)?;
             struct CollectSink<'a>(&'a mut Vec<String>);
             impl crate::provider::EntrySink for CollectSink<'_> {
                 #[inline(never)]
@@ -458,7 +495,12 @@ pub fn handle_readdir(
                     self.0.push(alloc::string::String::from(name));
                 }
             }
-            let _ = crate::provider::LocalFsDyn::readdir_dyn(fat, rel, &mut CollectSink(&mut entries))?;
+            if let Some(mut w) = arca_ns(mounts_fat, mid, disk) {
+                let _ = w.readdir_dyn(rel, &mut CollectSink(&mut entries))?;
+            } else {
+                let fat = mount::by_id_mut(mounts_fat, mid).ok_or(ERR)?.local_dyn().ok_or(ERR)?;
+                let _ = crate::provider::LocalFsDyn::readdir_dyn(fat, rel, &mut CollectSink(&mut entries))?;
+            }
         }
         // Mount annidati sotto dir FAT (edge raro, gratis col design union).
         let entries = mount_legacy::union_mount_children(entries, mounts, mounts_fat, path);
@@ -576,6 +618,7 @@ pub fn handle_stat(
     chan: u64,
     path: &str,
     fgen: &mut u64,
+    disk: &mut Option<btree_drv::DiskEngine>,
 ) -> Result<u64, u64> {
     if path.is_empty() || path.len() > MAX_PATH {
         return Err(ERR_INVALID);
@@ -597,6 +640,14 @@ pub fn handle_stat(
     // devono mai essere stale.)
     if let Some((mid, rel)) = mount::resolve_fsmount(mounts_fat, path, fgen) {
         // 48.5 — stat via trait `LocalFsDyn`: la trait gestisce il path relativo al mount.
+        // 56.3: ArcaFS col motore globale (uuid combaciante), altrimenti generico.
+        if let Some(mut w) = arca_ns(mounts_fat, mid, disk) {
+            if rel.is_empty() {
+                return Ok(stat_reply(rings, chan, 0, civis::STAT_DIR, 0));
+            }
+            let meta = w.stat_dyn(rel)?;
+            return Ok(stat_reply(rings, chan, meta.size, stat_kind(&meta), meta.mtime));
+        }
         let fat = mount::by_id_mut(mounts_fat, mid).ok_or(ERR)?.local_dyn().ok_or(ERR)?;
         if rel.is_empty() {
             return Ok(stat_reply(rings, chan, 0, civis::STAT_DIR, 0));
@@ -702,6 +753,7 @@ pub fn handle_get_hash(
     chan: u64,
     path: &str,
     fgen: &mut u64,
+    disk: &mut Option<btree_drv::DiskEngine>,
 ) -> Result<u64, u64> {
     use crate::provider::LocalFs;
     if path.is_empty() || path.len() > MAX_PATH {
@@ -719,7 +771,12 @@ pub fn handle_get_hash(
         return Err(ERR_INVALID);
     }
     // FAT/Local/Arca con attivazione lazy (stesso contratto di stat).
+    // 56.3: ArcaFS col motore globale (uuid combaciante), altrimenti generico.
     if let Some((mid, rel)) = mount::resolve_fsmount(mounts_fat, path, fgen) {
+        if let Some(mut w) = arca_ns(mounts_fat, mid, disk) {
+            let digest = hash_of_provider(&mut w, rel)?;
+            return Ok(reply_hash(rings, &digest));
+        }
         let d = mount::by_id_mut(mounts_fat, mid).ok_or(ERR)?.local_dyn().ok_or(ERR)?;
         let digest = hash_of_provider(d, rel)?;
         return Ok(reply_hash(rings, &digest));
@@ -760,6 +817,7 @@ pub fn handle_sync(
     sync_expect: &mut BTreeMap<u64, u32>,
     chan: u64,
     mode: u32,
+    disk: &mut Option<btree_drv::DiskEngine>,
 ) -> Result<u64, u64> {
     if mode != civis::SYNC_NONE && mode != civis::SYNC_GROUP && mode != civis::SYNC_PERWRITE {
         return Err(ERR_INVALID);
@@ -775,6 +833,14 @@ pub fn handle_sync(
                 None => true,
             };
             if !ok {
+                return Err(ERR);
+            }
+        }
+        // 56.3 — ArcaFS commit per-op: la barriera e' un commit esplicito
+        // (no-op logico se niente e' dirty; loud a IO fallito). Senza motore
+        // legato niente da committare (init ripiega come prima).
+        if let Some(d) = disk {
+            if !btree_drv::commit(d) {
                 return Err(ERR);
             }
         }
@@ -796,6 +862,7 @@ pub fn handle_statvfs(
     chan: u64,
     path: &str,
     fgen: &mut u64,
+    disk: &mut Option<btree_drv::DiskEngine>,
 ) -> Result<u64, u64> {
     use crate::provider::LocalFs;
     if path.is_empty() || path.len() > MAX_PATH {
@@ -823,7 +890,12 @@ pub fn handle_statvfs(
         return Err(ERR_INVALID);
     }
     // FAT/Local con attivazione lazy (find fresco a ogni chiamata, come stat).
+    // 56.3: ArcaFS col motore globale (uuid combaciante), altrimenti generico.
     if let Some((mid, rel)) = mount::resolve_fsmount(mounts_fat, path, fgen) {
+        if let Some(mut w) = arca_ns(mounts_fat, mid, disk) {
+            let v = w.statvfs_dyn(rel)?;
+            return Ok(reply_vfs(rings, &v));
+        }
         let fat = mount::by_id_mut(mounts_fat, mid).ok_or(ERR)?.local_dyn().ok_or(ERR)?;
         let v = fat.statvfs_dyn(rel)?;
         return Ok(reply_vfs(rings, &v));
@@ -845,14 +917,20 @@ pub fn handle_mkdir(
     mounts_fat: &mut Vec<mount::FsMount>,
     path: &str,
     fgen: &mut u64,
+    disk: &mut Option<btree_drv::DiskEngine>,
 ) -> Result<u64, u64> {
     if path.is_empty() || path.len() > MAX_PATH {
         return Err(ERR_INVALID);
     }
-    // Mount `Local` (Fase 49, F4): mkdir via trait sul mount.
+    // Mount `Local` (Fase 49, F4): mkdir via trait sul mount. 56.3: ArcaFS
+    // col motore globale (uuid combaciante: SOLO RAM, mai disco).
     if let Some((mid, rel)) = mount::resolve_fsmount(mounts_fat, path, fgen) {
         let m = mount::by_id_mut(mounts_fat, mid).ok_or(ERR_NOTFOUND)?;
         if m.is_provider() {
+            if let Some(mut w) = m.arca_with(disk.as_mut()) {
+                w.mkdir_dyn(rel)?;
+                return Ok(0);
+            }
             let d = m.local_dyn().ok_or(ERR)?;
             d.mkdir_dyn(rel)?;
             return Ok(0);
@@ -882,6 +960,7 @@ pub fn handle_delete(
     mounts: &[mount_legacy::Mount],
     path: &str,
     fgen: &mut u64,
+    disk: &mut Option<btree_drv::DiskEngine>,
 ) -> Result<u64, u64> {
     if path.is_empty() || path.len() > MAX_PATH {
         return Err(ERR_INVALID);
@@ -890,10 +969,15 @@ pub fn handle_delete(
     if mount_legacy::resolve_mount(path, mounts).is_some() {
         return Err(ERR_INVALID);
     }
-    // …mount `Local` via trait (Fase 49, F4)…
+    // …mount `Local` via trait (Fase 49, F4). 56.3: ArcaFS col motore
+    // globale (uuid combaciante), altrimenti generico…
     if let Some((mid, rel)) = mount::resolve_fsmount(mounts_fat, path, fgen) {
         let m = mount::by_id_mut(mounts_fat, mid).ok_or(ERR_NOTFOUND)?;
         if m.is_provider() {
+            if let Some(mut w) = m.arca_with(disk.as_mut()) {
+                w.remove_dyn(rel)?;
+                return Ok(0);
+            }
             let d = m.local_dyn().ok_or(ERR)?;
             d.remove_dyn(rel)?;
             return Ok(0);
@@ -980,6 +1064,7 @@ pub fn handle_lseek(
     off: i64,
     whence: u64,
     fgen: &mut u64,
+    disk: &mut Option<btree_drv::DiskEngine>,
 ) -> Result<u64, u64> {
     // `get` ritorna Some solo per i Local (Remote e fd ignoti → Invalid:
     // niente EBADF nel nativo; l'offset vive in cardo, i driver non lo
@@ -997,12 +1082,20 @@ pub fn handle_lseek(
                 },
                 mount_legacy::FsKind::Local => {
                     // Size fresca via stat (Fase 49, F4): niente cache.
+                    // 56.3: ArcaFS col motore globale (uuid combaciante).
                     let mid = mnt.ok_or(ERR)?;
-                    let d = mount::by_id_mut(mounts_fat, mid).ok_or(ERR)?.local_dyn().ok_or(ERR)?;
                     let rel_owned: String = alloc::string::String::from(path);
-                    match d.stat_dyn(&rel_owned).map_err(|_| ERR_NOTFOUND)? {
-                        meta if meta.kind == 1 => 0,
-                        meta => meta.size as i64,
+                    if let Some(mut w) = arca_ns(mounts_fat, mid, disk) {
+                        match w.stat_dyn(&rel_owned).map_err(|_| ERR_NOTFOUND)? {
+                            meta if meta.kind == 1 => 0,
+                            meta => meta.size as i64,
+                        }
+                    } else {
+                        let d = mount::by_id_mut(mounts_fat, mid).ok_or(ERR)?.local_dyn().ok_or(ERR)?;
+                        match d.stat_dyn(&rel_owned).map_err(|_| ERR_NOTFOUND)? {
+                            meta if meta.kind == 1 => 0,
+                            meta => meta.size as i64,
+                        }
                     }
                 }
                 mount_legacy::FsKind::Fat => {

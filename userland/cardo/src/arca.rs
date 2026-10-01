@@ -1,24 +1,50 @@
-//! ArcaFS provider stub (56.2b).
+//! ArcaFS vista POSIX (56.3): namespace emergente + set transient in RAM.
 //!
-//! Lo store versionato vive nei blocchi via `btree_drv` (B+tree COW +
-//! commit), non piu' in RAM: il backend mem 56.1 era transitorio per
-//! dichiarazione (`arcafs.md` §17) e l'oracolo di confronto e' nei test
-//! host `arcafs` (`MemStore`, 9 test), non in un doppio backend guest che
-//! costerebbe ~19 KiB di `cardo.bin` oltre `SPAWN_IMAGE_MAX`.
-//! Qui resta solo il tipo per `negotiate()`/vista POSIX (stub: `open`
-//! rifiuta; la dir persistente arriva in 56.3). Senza volume legato gli op
-//! nativi danno errore loud e init ripiega su FAT (dual-mode N0 invariato).
+//! Mappatura: bucket `ns` di `btree_drv` (chiavi = path relativi opachi per
+//! il motore, es. `bin/shell.bin`). Le directory sono EMERGENTI (esistono ⟺
+//! chiavi col prefisso) + set transient in RAM per le `mkdir` esplicite:
+//! `mkdir` non scrive mai su disco (niente commit); il set si perde a
+//! restart/remount (le vuote spariscono, le piene riemergono dalle chiavi).
+//! `rmdir` di mai-esistita = errore (mai `Ok` silenzioso).
+//!
+//! Il motore e' quello globale (`disk` in `server.rs`, un solo proprietario
+//! per volume): i metodi `ns_*` lo prendono esplicito. `ArcaWith` lo lega al
+//! mount per il dispatch `LocalFsDyn` dagli handler (uuid combaciante,
+//! altrimenti `None` e si cade sullo stub loud — mai dati altrui).
+//! Lo stub `LocalFs for ArcaFs` resta come rete di sicurezza (motore
+//! assente/mismatch: errori tipizzati, init ripiega su FAT come prima).
 
 use super::*;
 use crate::provider::{EntrySink, LocalFs, LocalFsDyn, Meta, StatVfs};
+use crate::btree_drv::DiskEngine;
+use alloc::collections::BTreeMap;
+use alloc::string::String;
+use alloc::vec::Vec;
 
-/// Handle ArcaFS (vista POSIX ancora stub — `open` rifiuta; il tipo esiste
-/// perche' `AnyHandle::Arca` lo richiede; la dir persistente arriva in 56.3).
+/// Handle ArcaFS: path copiato (come `RamHandle`: niente aliasing per
+/// prefisso, mai troncamento silenzioso — oltre `MAX_PATH` rifiuto).
 #[derive(Clone, Copy, PartialEq)]
-pub struct ArcaHandle;
+pub struct ArcaHandle {
+    path: [u8; crate::MAX_PATH],
+    len: usize,
+}
 
-/// Istanza ArcaFS (stub per il mount: generazione/uuid/offset diagnostici;
-/// i dati vivono nel motore disco legato via `R_ARCA_DEBUG`).
+impl ArcaHandle {
+    fn new(path: &str) -> Option<Self> {
+        if path.len() > crate::MAX_PATH {
+            return None;
+        }
+        let mut h = Self { path: [0u8; crate::MAX_PATH], len: path.len() };
+        h.path[..path.len()].copy_from_slice(path.as_bytes());
+        Some(h)
+    }
+
+    fn as_str(&self) -> &str {
+        core::str::from_utf8(&self.path[..self.len]).unwrap_or("")
+    }
+}
+
+/// Istanza ArcaFS: identita' dal mount + set transient delle dir esplicite.
 pub struct ArcaFs {
     /// Generation del superblock montato (diagnostica, come uuid).
     pub generation: u64,
@@ -26,17 +52,431 @@ pub struct ArcaFs {
     pub uuid: u64,
     /// Offset LBA della partizione (0 = whole-disk; traduzione nel driver).
     pub partition_offset: u64,
+    /// Dir create per `mkdir` (path → mtime creazione): SOLO RAM, mai disco.
+    /// Perso a restart/remount (le vuote spariscono, le piene riemergono).
+    ram_dirs: BTreeMap<String, u64>,
 }
 
 impl ArcaFs {
     pub fn stub(generation: u64, uuid: u64, partition_offset: u64) -> Self {
-        Self { generation, uuid, partition_offset }
+        Self { generation, uuid, partition_offset, ram_dirs: BTreeMap::new() }
+    }
+
+    /// Prefissi propri di `rel` (`a/b/c` → `["a", "a/b"]`): heap, `mkdir`
+    /// e' fredda (mai nel percorso dati caldo).
+    fn ancestors(rel: &str) -> Vec<String> {
+        let mut out = Vec::new();
+        let mut start = 0usize;
+        for (i, b) in rel.as_bytes().iter().enumerate() {
+            if *b == b'/' {
+                out.push(String::from(&rel[start..i]));
+                start = i + 1;
+            }
+        }
+        out
+    }
+
+    /// Testa di `rest` (`b/c` → (`b`, Some(`c`)); `b` → (`b`, None)).
+    fn split_head(rest: &str) -> (&str, Option<&str>) {
+        match rest.find('/') {
+            Some(i) => (&rest[..i], Some(&rest[i + 1..])),
+            None => (rest, None),
+        }
+    }
+
+    /// Classificazione di un path: file, dir (RAM e/o emergente), assente.
+    /// La scansione e' O(n) sul namespace (full-scan dichiarata in
+    /// `scan_prefix`): per un FS di boot va bene, la range-scan e' futura.
+    #[inline(never)]
+    fn classify(&mut self, eng: &DiskEngine, rel: &str) -> NsKind {
+        if rel.is_empty() {
+            return NsKind::Dir { ram_mtime: None };
+        }
+        if crate::btree_drv::ns_stat(eng, rel.as_bytes()).is_some() {
+            return NsKind::File;
+        }
+        let ram_mtime = self.ram_dirs.get(rel).copied();
+        let mut pref = Vec::with_capacity(rel.len() + 1);
+        pref.extend_from_slice(rel.as_bytes());
+        pref.push(b'/');
+        let emergent = crate::btree_drv::ns_scan(eng, &pref)
+            .map(|v| !v.is_empty())
+            .unwrap_or(false);
+        if ram_mtime.is_some() || emergent {
+            NsKind::Dir { ram_mtime }
+        } else {
+            NsKind::Missing
+        }
+    }
+
+    /// Figli immediati di `rel` (nomi ordinati): file (resto senza `/`) +
+    /// dir (resto con `/`, testa) + dir RAM senza chiavi. Deterministico
+    /// come la `BTreeMap` di ramfs.
+    #[inline(never)]
+    fn children(&mut self, eng: &DiskEngine, rel: &str) -> Option<(Vec<String>, Vec<String>)> {
+        let mut pref: Vec<u8> = Vec::new();
+        if !rel.is_empty() {
+            pref.extend_from_slice(rel.as_bytes());
+            pref.push(b'/');
+        }
+        let keys = crate::btree_drv::ns_scan(eng, &pref)?;
+        let mut files: Vec<String> = Vec::new();
+        let mut dirs: Vec<String> = Vec::new();
+        for k in keys.iter() {
+            let rem = k.strip_prefix(pref.as_slice())?;
+            let rem = core::str::from_utf8(rem).ok()?;
+            let (head, rest) = Self::split_head(rem);
+            if rest.is_none() {
+                if !files.iter().any(|f| f == head) {
+                    files.push(String::from(head));
+                }
+            } else if !dirs.iter().any(|d| d == head) {
+                dirs.push(String::from(head));
+            }
+        }
+        for p in self.ram_dirs.keys() {
+            let suff = if rel.is_empty() {
+                p.as_str()
+            } else {
+                match p.strip_prefix(rel).and_then(|s| s.strip_prefix('/')) {
+                    Some(s) => s,
+                    None => continue,
+                }
+            };
+            if suff.is_empty() {
+                continue;
+            }
+            let (head, _) = Self::split_head(suff);
+            if !head.is_empty()
+                && !dirs.iter().any(|d| d == head)
+                && !files.iter().any(|f| f == head)
+            {
+                dirs.push(String::from(head));
+            }
+        }
+        files.sort();
+        dirs.sort();
+        Some((files, dirs))
+    }
+
+    /// mtime dir = max(mtime figli su disco, mtime RAM se presente). Costo
+    /// O(figli): per un FS di boot va bene (nota di scaling per il futuro).
+    #[inline(never)]
+    fn dir_mtime(&mut self, eng: &DiskEngine, rel: &str, ram_mtime: Option<u64>) -> u64 {
+        let mut mt = ram_mtime.unwrap_or(0);
+        let mut pref: Vec<u8> = Vec::new();
+        if !rel.is_empty() {
+            pref.extend_from_slice(rel.as_bytes());
+            pref.push(b'/');
+        }
+        if let Some(keys) = crate::btree_drv::ns_scan(eng, &pref) {
+            // Le chiavi tornano intere (niente prefisso da ricucire).
+            for k in keys.iter() {
+                if let Some((_, m)) = crate::btree_drv::ns_stat(eng, k) {
+                    if m > mt {
+                        mt = m;
+                    }
+                }
+            }
+        }
+        mt
+    }
+
+    /// Apertura con motore esplicito (semantica `RamFs::open`: O_CREAT crea,
+    /// O_TRUNC azzera, dir = ISDIR, antenato file = NOTDIR).
+    #[inline(never)]
+    pub fn ns_open(
+        &mut self,
+        eng: &mut DiskEngine,
+        rel: &str,
+        flags: u32,
+    ) -> Result<ArcaHandle, u64> {
+        if rel.is_empty() {
+            return Err(crate::ERR_NOTFOUND);
+        }
+        for a in Self::ancestors(rel) {
+            if crate::btree_drv::ns_stat(eng, a.as_bytes()).is_some() {
+                return Err(crate::ERR_NOTDIR);
+            }
+        }
+        let creat = flags & civis::O_CREAT != 0;
+        let trunc = flags & civis::O_TRUNC != 0;
+        match self.classify(eng, rel) {
+            NsKind::File => {
+                if trunc {
+                    crate::btree_drv::ns_put(eng, rel.as_bytes(), 0, &[])?;
+                }
+                ArcaHandle::new(rel).ok_or(crate::ERR_INVALID)
+            }
+            NsKind::Dir { .. } => Err(crate::ERR_ISDIR),
+            NsKind::Missing => {
+                if !creat {
+                    return Err(crate::ERR_NOTFOUND);
+                }
+                crate::btree_drv::ns_put(eng, rel.as_bytes(), 0, &[])?;
+                ArcaHandle::new(rel).ok_or(crate::ERR_INVALID)
+            }
+        }
+    }
+
+    /// Lettura con motore esplicito (oltre EOF = `Ok(0)`, mai panic).
+    #[inline(never)]
+    pub fn ns_read(
+        &mut self,
+        eng: &DiskEngine,
+        h: ArcaHandle,
+        off: usize,
+        buf: &mut [u8],
+    ) -> Result<usize, u64> {
+        let data = crate::btree_drv::ns_get(eng, h.as_str().as_bytes()).ok_or(crate::ERR_NOTFOUND)?;
+        if off >= data.len() {
+            return Ok(0);
+        }
+        let n = (data.len() - off).min(buf.len());
+        buf[..n].copy_from_slice(&data[off..off + n]);
+        Ok(n)
+    }
+
+    /// Scrittura con motore esplicito (`put_chunk(0)` = fresco: gli overlap
+    /// parziali passano da read-modify-write, l'append va diretto in coda).
+    #[inline(never)]
+    pub fn ns_write(
+        &mut self,
+        eng: &mut DiskEngine,
+        h: ArcaHandle,
+        off: usize,
+        buf: &[u8],
+        append: bool,
+    ) -> Result<usize, u64> {
+        if buf.is_empty() {
+            return Ok(0);
+        }
+        let cur = crate::btree_drv::ns_get(eng, h.as_str().as_bytes()).ok_or(crate::ERR_NOTFOUND)?;
+        let at = if append { cur.len() } else { off };
+        if at == 0 && buf.len() >= cur.len() {
+            crate::btree_drv::ns_put(eng, h.as_str().as_bytes(), 0, buf)?;
+            return Ok(buf.len());
+        }
+        if at >= cur.len() {
+            crate::btree_drv::ns_put(eng, h.as_str().as_bytes(), at, buf)?;
+            return Ok(buf.len());
+        }
+        let mut merged = cur;
+        let end = at.checked_add(buf.len()).ok_or(crate::ERR_INVALID)?;
+        if merged.len() < end {
+            merged.resize(end, 0);
+        }
+        merged[at..end].copy_from_slice(buf);
+        crate::btree_drv::ns_put(eng, h.as_str().as_bytes(), 0, &merged)?;
+        Ok(buf.len())
+    }
+
+    /// Readdir con motore esplicito (file = NOTFOUND come ramfs, assente =
+    /// NOTFOUND, dir = figli ordinati file+dir).
+    #[inline(never)]
+    pub fn ns_readdir(
+        &mut self,
+        eng: &DiskEngine,
+        rel: &str,
+        out: &mut dyn EntrySink,
+    ) -> Result<usize, u64> {
+        match self.classify(eng, rel) {
+            NsKind::Dir { .. } => {}
+            _ => return Err(crate::ERR_NOTFOUND),
+        }
+        let (files, dirs) = self.children(eng, rel).ok_or(crate::ERR)?;
+        for f in files.iter() {
+            out.emit(f);
+        }
+        for d in dirs.iter() {
+            out.emit(d);
+        }
+        Ok(files.len() + dirs.len())
+    }
+
+    /// Stat con motore esplicito (root sintetica come gli handler).
+    #[inline(never)]
+    pub fn ns_stat(&mut self, eng: &DiskEngine, rel: &str) -> Result<Meta, u64> {
+        if rel.is_empty() {
+            return Ok(Meta { size: 0, kind: 1, readonly: false, mtime: 0 });
+        }
+        match self.classify(eng, rel) {
+            NsKind::File => {
+                let (size, mtime) =
+                    crate::btree_drv::ns_stat(eng, rel.as_bytes()).ok_or(crate::ERR_NOTFOUND)?;
+                Ok(Meta { size, kind: 0, readonly: false, mtime })
+            }
+            NsKind::Dir { ram_mtime } => {
+                let mtime = self.dir_mtime(eng, rel, ram_mtime);
+                Ok(Meta { size: 0, kind: 1, readonly: false, mtime })
+            }
+            NsKind::Missing => Err(crate::ERR_NOTFOUND),
+        }
+    }
+
+    /// Mkdir con motore esplicito: SOLO RAM (mai disco, mai commit).
+    /// Idempotente; file in `rel` = EXISTS, antenato file = NOTDIR.
+    #[inline(never)]
+    pub fn ns_mkdir(&mut self, eng: &DiskEngine, rel: &str) -> Result<(), u64> {
+        if rel.is_empty() {
+            return Err(crate::ERR_INVALID);
+        }
+        if crate::btree_drv::ns_stat(eng, rel.as_bytes()).is_some() {
+            return Err(crate::ERR_EXISTS);
+        }
+        for a in Self::ancestors(rel) {
+            if crate::btree_drv::ns_stat(eng, a.as_bytes()).is_some() {
+                return Err(crate::ERR_NOTDIR);
+            }
+        }
+        let now = crate::wall::wall_secs();
+        for a in Self::ancestors(rel) {
+            self.ram_dirs.entry(a).or_insert(now);
+        }
+        self.ram_dirs.entry(String::from(rel)).or_insert(now);
+        Ok(())
+    }
+
+    /// Remove con motore esplicito: file = delete+commit; dir con figli =
+    /// NOTFOUND (come ramfs); dir RAM vuota = tolta dal set; mai-esistita =
+    /// NOTFOUND (mai `Ok` silenzioso).
+    #[inline(never)]
+    pub fn ns_remove(&mut self, eng: &mut DiskEngine, rel: &str) -> Result<(), u64> {
+        if rel.is_empty() {
+            return Err(crate::ERR_INVALID);
+        }
+        if crate::btree_drv::ns_stat(eng, rel.as_bytes()).is_some() {
+            crate::btree_drv::ns_delete(eng, rel.as_bytes())?;
+            return Ok(());
+        }
+        let mut pref = Vec::with_capacity(rel.len() + 1);
+        pref.extend_from_slice(rel.as_bytes());
+        pref.push(b'/');
+        let nonempty = crate::btree_drv::ns_scan(eng, &pref).map(|v| !v.is_empty()).unwrap_or(false);
+        if nonempty {
+            return Err(crate::ERR_NOTFOUND);
+        }
+        match self.ram_dirs.remove(rel) {
+            Some(_) => Ok(()),
+            None => Err(crate::ERR_NOTFOUND),
+        }
+    }
+
+    /// Statvfs con motore esplicito (blocchi 3584; liberi illimitati come
+    /// ramfs — sensore vero con quota/taglio, mai numero inventato).
+    #[inline(never)]
+    pub fn ns_statvfs(&mut self, eng: &DiskEngine) -> Result<StatVfs, u64> {
+        let (high_water, _, _) = eng.store.vol().stats();
+        Ok(StatVfs {
+            bsize: arcafs::format::ARCA_BLOCK_SIZE as u64,
+            blocks: high_water,
+            bfree: u64::MAX,
+            bavail: u64::MAX,
+        })
+    }
+}
+
+/// Classificazione path del namespace (vista POSIX).
+enum NsKind {
+    Missing,
+    File,
+    Dir { ram_mtime: Option<u64> },
+}
+
+/// Mount Arca + motore globale legati per un'op (56.3): uuid combaciante o
+/// niente (mai dati di un altro volume sullo stesso motore).
+pub struct ArcaWith<'e> {
+    a: &'e mut ArcaFs,
+    eng: &'e mut DiskEngine,
+}
+
+impl<'e> ArcaWith<'e> {
+    /// Lega mount + motore (solo da `mount::arca_with`, dopo il check uuid).
+    pub fn bind(a: &'e mut ArcaFs, eng: &'e mut DiskEngine) -> Self {
+        Self { a, eng }
+    }
+
+    fn open(&mut self, rel: &str, flags: u32) -> Result<ArcaHandle, u64> {
+        self.a.ns_open(self.eng, rel, flags)
+    }
+    fn read(&mut self, h: ArcaHandle, off: usize, buf: &mut [u8]) -> Result<usize, u64> {
+        self.a.ns_read(self.eng, h, off, buf)
+    }
+    fn write(
+        &mut self,
+        h: ArcaHandle,
+        off: usize,
+        buf: &[u8],
+        append: bool,
+    ) -> Result<usize, u64> {
+        self.a.ns_write(self.eng, h, off, buf, append)
+    }
+    fn readdir(&mut self, rel: &str, out: &mut dyn EntrySink) -> Result<usize, u64> {
+        self.a.ns_readdir(self.eng, rel, out)
+    }
+    fn stat(&mut self, rel: &str) -> Result<Meta, u64> {
+        self.a.ns_stat(self.eng, rel)
+    }
+    fn mkdir(&mut self, rel: &str) -> Result<(), u64> {
+        self.a.ns_mkdir(self.eng, rel)
+    }
+    fn remove(&mut self, rel: &str) -> Result<(), u64> {
+        self.a.ns_remove(self.eng, rel)
+    }
+    fn statvfs(&mut self) -> Result<StatVfs, u64> {
+        self.a.ns_statvfs(self.eng)
+    }
+}
+
+impl LocalFsDyn for ArcaWith<'_> {
+    fn open_dyn(&mut self, rel: &str, flags: u32) -> Result<crate::provider::AnyHandle, u64> {
+        self.open(rel, flags).map(|h| crate::provider::AnyHandle::Arca(h))
+    }
+    fn read_dyn(
+        &mut self,
+        h: crate::provider::AnyHandle,
+        off: usize,
+        buf: &mut [u8],
+    ) -> Result<usize, u64> {
+        match h {
+            crate::provider::AnyHandle::Arca(ah) => self.read(ah, off, buf),
+            _ => Err(crate::ERR_INVALID),
+        }
+    }
+    fn write_dyn(
+        &mut self,
+        h: crate::provider::AnyHandle,
+        off: usize,
+        buf: &[u8],
+        append: bool,
+    ) -> Result<usize, u64> {
+        match h {
+            crate::provider::AnyHandle::Arca(ah) => self.write(ah, off, buf, append),
+            _ => Err(crate::ERR_INVALID),
+        }
+    }
+    fn readdir_dyn(&mut self, rel: &str, out: &mut dyn EntrySink) -> Result<usize, u64> {
+        self.readdir(rel, out)
+    }
+    fn stat_dyn(&mut self, rel: &str) -> Result<Meta, u64> {
+        self.stat(rel)
+    }
+    fn mkdir_dyn(&mut self, rel: &str) -> Result<(), u64> {
+        self.mkdir(rel)
+    }
+    fn remove_dyn(&mut self, rel: &str) -> Result<(), u64> {
+        self.remove(rel)
+    }
+    fn statvfs_dyn(&mut self, _rel: &str) -> Result<StatVfs, u64> {
+        self.statvfs()
     }
 }
 
 impl LocalFs for ArcaFs {
     type Handle = ArcaHandle;
 
+    /// Rete di sicurezza (motore assente/mismatch: gli handler usano
+    /// `ArcaWith` e non arrivano mai qui — errori tipizzati come prima).
     fn open(&mut self, _rel: &str, _flags: u32) -> Result<Self::Handle, u64> {
         Err(crate::ERR_NOTFOUND)
     }
@@ -66,15 +506,27 @@ impl LocalFs for ArcaFs {
 
 impl LocalFsDyn for ArcaFs {
     fn open_dyn(&mut self, rel: &str, flags: u32) -> Result<crate::provider::AnyHandle, u64> {
-        <Self as LocalFs>::open(self, rel, flags).map(|_| crate::provider::AnyHandle::Arca(ArcaHandle))
+        // Sempre `Err` (stub): il `map` non scatta mai, niente handle costruito.
+        <Self as LocalFs>::open(self, rel, flags).map(crate::provider::AnyHandle::Arca)
     }
-    fn read_dyn(&mut self, h: crate::provider::AnyHandle, off: usize, buf: &mut [u8]) -> Result<usize, u64> {
+    fn read_dyn(
+        &mut self,
+        h: crate::provider::AnyHandle,
+        off: usize,
+        buf: &mut [u8],
+    ) -> Result<usize, u64> {
         match h {
             crate::provider::AnyHandle::Arca(ah) => <Self as LocalFs>::read(self, ah, off, buf),
             _ => Err(crate::ERR_INVALID),
         }
     }
-    fn write_dyn(&mut self, h: crate::provider::AnyHandle, off: usize, buf: &[u8], append: bool) -> Result<usize, u64> {
+    fn write_dyn(
+        &mut self,
+        h: crate::provider::AnyHandle,
+        off: usize,
+        buf: &[u8],
+        append: bool,
+    ) -> Result<usize, u64> {
         match h {
             crate::provider::AnyHandle::Arca(ah) => <Self as LocalFs>::write(self, ah, off, buf, append),
             _ => Err(crate::ERR_INVALID),

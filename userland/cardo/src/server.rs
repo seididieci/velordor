@@ -603,17 +603,17 @@ fn real_main(_sp: u64) -> ! {
                 match core::str::from_utf8(&payload) {
                     // w1 del frame R_OPEN = flags (O_CREAT, w0 = len path):
                     // il server li ignorava (creava sempre) — ora POSIX.
-                    Ok(path) => handlers::handle_open(&mut fs, &mut ftable, &mut fat_mounts, &mounts, chan, w1, path, &mut fat_gen),
+                    Ok(path) => handlers::handle_open(&mut fs, &mut ftable, &mut fat_mounts, &mounts, chan, w1, path, &mut fat_gen, &mut disk),
                     Err(_) => Err(ERR_INVALID),
                 }
             }
 
             R_READ => {
-                handlers::handle_read(&mut fs, &mut ftable, &mut pipes, &mut fat_mounts, &rings, chan, w0 as u32, w1 as usize, &mut fat_gen)
+                handlers::handle_read(&mut fs, &mut ftable, &mut pipes, &mut fat_mounts, &rings, chan, w0 as u32, w1 as usize, &mut fat_gen, &mut disk)
             }
 
             R_WRITE => {
-                handlers::handle_write_local(&mut fs, &mut ftable, &mut pipes, &mut fat_mounts, chan, w0 as u32, w1 as usize, &payload, &mut fat_gen)
+                handlers::handle_write_local(&mut fs, &mut ftable, &mut pipes, &mut fat_mounts, chan, w0 as u32, w1 as usize, &payload, &mut fat_gen, &mut disk)
             }
 
             R_CLOSE => {
@@ -622,15 +622,15 @@ fn real_main(_sp: u64) -> ! {
 
             R_READDIR => {
                 match core::str::from_utf8(&payload) {
-                    Ok("") | Ok("/") => handlers::handle_readdir(&mut fs, &mut fat_mounts, &mounts, &rings, chan, "/", &mut fat_gen),
-                    Ok(path) => handlers::handle_readdir(&mut fs, &mut fat_mounts, &mounts, &rings, chan, path, &mut fat_gen),
+                    Ok("") | Ok("/") => handlers::handle_readdir(&mut fs, &mut fat_mounts, &mounts, &rings, chan, "/", &mut fat_gen, &mut disk),
+                    Ok(path) => handlers::handle_readdir(&mut fs, &mut fat_mounts, &mounts, &rings, chan, path, &mut fat_gen, &mut disk),
                     Err(_) => Err(ERR_INVALID),
                 }
             }
 
             R_MKDIR => {
                 match core::str::from_utf8(&payload) {
-                    Ok(path) => handlers::handle_mkdir(&mut fs, &mut fat_mounts, path, &mut fat_gen),
+                    Ok(path) => handlers::handle_mkdir(&mut fs, &mut fat_mounts, path, &mut fat_gen, &mut disk),
                     Err(_) => Err(ERR_INVALID),
                 }
             }
@@ -651,15 +651,15 @@ fn real_main(_sp: u64) -> ! {
 
             R_DELETE => {
                 match core::str::from_utf8(&payload) {
-                    Ok(path) => handlers::handle_delete(&mut fs, &mut fat_mounts, &mounts, path, &mut fat_gen),
+                    Ok(path) => handlers::handle_delete(&mut fs, &mut fat_mounts, &mounts, path, &mut fat_gen, &mut disk),
                     Err(_) => Err(ERR_INVALID),
                 }
             }
 
             R_STAT => {
                 match core::str::from_utf8(&payload) {
-                    Ok("") | Ok("/") => handlers::handle_stat(&mut fs, &mut fat_mounts, &mounts, &rings, chan, "/", &mut fat_gen),
-                    Ok(path) => handlers::handle_stat(&mut fs, &mut fat_mounts, &mounts, &rings, chan, path, &mut fat_gen),
+                    Ok("") | Ok("/") => handlers::handle_stat(&mut fs, &mut fat_mounts, &mounts, &rings, chan, "/", &mut fat_gen, &mut disk),
+                    Ok(path) => handlers::handle_stat(&mut fs, &mut fat_mounts, &mounts, &rings, chan, path, &mut fat_gen, &mut disk),
                     Err(_) => Err(ERR_INVALID),
                 }
             }
@@ -673,21 +673,21 @@ fn real_main(_sp: u64) -> ! {
             }
 
             R_SYNC => {
-                handlers::handle_sync(&mut fat_mounts, &mut sync_expect, chan, w0 as u32)
+                handlers::handle_sync(&mut fat_mounts, &mut sync_expect, chan, w0 as u32, &mut disk)
             }
 
             R_GET_HASH => {
                 match core::str::from_utf8(&payload) {
                     Ok("") | Ok("/") => Err(ERR_INVALID),
-                    Ok(path) => handlers::handle_get_hash(&mut fs, &mut fat_mounts, &mounts, &rings, chan, path, &mut fat_gen),
+                    Ok(path) => handlers::handle_get_hash(&mut fs, &mut fat_mounts, &mounts, &rings, chan, path, &mut fat_gen, &mut disk),
                     Err(_) => Err(ERR_INVALID),
                 }
             }
 
             R_STATVFS => {
                 match core::str::from_utf8(&payload) {
-                    Ok("") | Ok("/") => handlers::handle_statvfs(&mut fs, &mut fat_mounts, &mounts, &rings, chan, "/", &mut fat_gen),
-                    Ok(path) => handlers::handle_statvfs(&mut fs, &mut fat_mounts, &mounts, &rings, chan, path, &mut fat_gen),
+                    Ok("") | Ok("/") => handlers::handle_statvfs(&mut fs, &mut fat_mounts, &mounts, &rings, chan, "/", &mut fat_gen, &mut disk),
+                    Ok(path) => handlers::handle_statvfs(&mut fs, &mut fat_mounts, &mounts, &rings, chan, path, &mut fat_gen, &mut disk),
                     Err(_) => Err(ERR_INVALID),
                 }
             }
@@ -862,7 +862,7 @@ fn real_main(_sp: u64) -> ! {
                 // payload[0] = whence (expect = 1 garantisce il byte).
                 let off = w1 as i64;
                 let whence = payload.first().copied().unwrap_or(0xFF) as u64;
-                handlers::handle_lseek(&fs, &mut ftable, &mut fat_mounts, chan, w0 as u32, off, whence, &mut fat_gen)
+                handlers::handle_lseek(&fs, &mut ftable, &mut fat_mounts, chan, w0 as u32, off, whence, &mut fat_gen, &mut disk)
             }
 
             R_DUP_GRANT => {

@@ -481,6 +481,76 @@ pub fn disk_delete(eng: &mut DiskEngine, payload: &[u8]) -> Result<u64, u64> {
     }
 }
 
+// ── Vista POSIX del namespace (56.3) ─────────────────────────────────────
+// Stesse sentinelle dei fratelli (`INVALID` oltre bound, `NOTFOUND` assente,
+// `ERR` a IO fallito). Il bucket e' sempre `NS_BUCKET` (chiavi = path
+// relativi, opachi per il motore). Mutanti con commit per-op come `disk_*`.
+
+/// Bucket del namespace POSIX (56.3): chiavi = path relativi (`a/b/c`),
+/// separato da `sys`/dati. Bound nomi da `seckey_encode` (mai troncamenti).
+pub const NS_BUCKET: &[u8] = b"ns";
+
+/// UUID del volume legato al motore (56.3: la vista POSIX serve solo questo
+/// volume — mount di altri volumi = errore loud in `arca_with`, mai dati
+/// altrui sullo stesso motore).
+#[inline(never)]
+pub fn volume_uuid(eng: &DiskEngine) -> u64 {
+    eng.store.vol().uuid()
+}
+
+/// PUT namespace a `offset` (stessa semantica `put_chunk`: 0 = fresco,
+/// >0 = patch con zero-fill): sempre commit. Ritorna i byte scritti.
+#[inline(never)]
+pub fn ns_put(eng: &mut DiskEngine, key: &[u8], offset: usize, data: &[u8]) -> Result<usize, u64> {
+    if key.len() > civis::OBJ_KEY_MAX {
+        return Err(ERR_INVALID);
+    }
+    let n = eng
+        .put_chunk(NS_BUCKET, key, offset, data, crate::wall::wall_secs(), RETAIN)
+        .ok_or(ERR)?;
+    commit_or(eng, n as u64).map(|v| v as usize)
+}
+
+/// GET namespace intero (il chiamante affetta a `offset`: i file di boot
+/// stanno sotto il bound 16 MiB per oggetto; heap, mai stack — regola §18).
+#[inline(never)]
+pub fn ns_get(eng: &DiskEngine, key: &[u8]) -> Option<alloc::vec::Vec<u8>> {
+    if key.len() > civis::OBJ_KEY_MAX {
+        return None;
+    }
+    eng.get(NS_BUCKET, key)
+}
+
+/// STAT namespace: (size head, mtime head). Assente = `None`.
+#[inline(never)]
+pub fn ns_stat(eng: &DiskEngine, key: &[u8]) -> Option<(u64, u64)> {
+    if key.len() > civis::OBJ_KEY_MAX {
+        return None;
+    }
+    eng.stat(NS_BUCKET, key).map(|(_, size, _, mtime)| (size, mtime))
+}
+
+/// DELETE namespace: sempre commit. Assente = `Err(ERR_NOTFOUND)`.
+#[inline(never)]
+pub fn ns_delete(eng: &mut DiskEngine, key: &[u8]) -> Result<(), u64> {
+    if key.len() > civis::OBJ_KEY_MAX {
+        return Err(ERR_INVALID);
+    }
+    match eng.delete(NS_BUCKET, key) {
+        Some(true) => commit_or(eng, 0).map(|_| ()),
+        Some(false) => Err(ERR_NOTFOUND),
+        None => Err(ERR),
+    }
+}
+
+/// Scansione chiavi per prefisso (56.3, readdir/stat-dir emergenti): chiavi
+/// del bucket namespace che iniziano per `prefix` (heap, ordinate dal
+/// chiamante per risposte deterministiche).
+#[inline(never)]
+pub fn ns_scan(eng: &DiskEngine, prefix: &[u8]) -> Option<alloc::vec::Vec<alloc::vec::Vec<u8>>> {
+    eng.scan_prefix(NS_BUCKET, prefix)
+}
+
 /// SNAP_CREATE bucket → id: persiste la tabella + commit (refcount e meta
 /// cambiano le radici; il vecchio blocco meta resta orfano per la GC).
 #[inline(never)]

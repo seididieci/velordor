@@ -2029,3 +2029,20 @@
           chiusa**: gate 5/5 + 7/7 + 40/40 + 4/4 + 54/54, zero FAIL/PANIC/FAULT;
           shell suite intera verde; invariante `rg "posix::" libs/civis/src` =
           zero.
+    - [x] 56.3 (namespace POSIX su ArcaFS, ADR-0042): dir emergenti (esistono
+          ⟺ chiavi col prefisso nel bucket `ns`, mai marker su disco) + set
+          transient in RAM per le `mkdir` (`mkdir` mai scrive/commit, idem-
+          potente; `rmdir` mai-esistita = errore; vuote perse al restart, piene
+          riemergenti). Vista POSIX in `userland/cardo` (`arca.rs`: `ArcaFs` +
+          `ram_dirs`, `ArcaHandle` col path) via motore globale a uuid
+          combaciante (`mount::arca_with` → `ArcaWith`, mai dati altrui;
+          senza motore si cade sullo stub di prima). `BTree::scan_prefix`
+          full-scan O(n) con guardia + `ns_*` in `btree_drv` (commit per-op);
+          `R_SYNC GROUP` = commit esplicito; `put_chunk(0)` = fresco quindi gli
+          overwrite parziali passano da read-modify-write. Wiring senza trait-
+          churn: rami `arca_ns` nei 10 handler + `disk` nei call-site di
+          `server.rs` (R_OBJ_* intoccati, un solo proprietario per volume).
+          Suite 40/40 → 50/50 (v41-50: mkdir/stat/readdir/round-trip/overwrite/
+          trunc+append/delete+rmdir/bounce+remount; stub-test ribaltati in
+          positivi). Gate: 5/5 +
+          7/7 + 50/50 + 4/4 + 54/54, zero FAIL/PANIC/FAULT.

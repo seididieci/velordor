@@ -69,3 +69,4 @@
 - [ADR-0039: Logging L1 nativo (Fase 57)](./adr/0039-logging-l1.md)
 - [ADR-0040: Pantheon dei nomi + rename a fasi (R0)](./adr/0040-naming-pantheon.md)
 - [ADR-0041: Personalità POSIX separata (civis + flavours/posix, Fase 58)](./adr/0041-civis-flavours-posix.md)
+- [ADR-0042: Namespace POSIX su ArcaFS — dir emergenti + set RAM (56.3)](./adr/0042-arcaposix-emergent-dirs.md)

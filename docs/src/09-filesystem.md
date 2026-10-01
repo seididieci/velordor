@@ -223,10 +223,11 @@ usertests 17/17, shell 3/3.
   host `create` (mai duplicati; il round-trip create→mount→stat lo verifica).
 - **`negotiate()`**: legge LBA0 del nodo e prova ArcaFS PRIMA di vfat (match
   stretto: magic + versione + block size + checksum). Monta un'istanza
-  `MountedFs::Arca(ArcaFs)`; la vista POSIX resta stub (ogni op
-  `ERR_NOTFOUND`/`ERR_READONLY`), la vista nativa e' `R_OBJ_PUT`/`R_OBJ_GET`
-  su store in-memory (Fase 55, A1: bucket `sys` seedato da /fat a ogni
-  avvio; la persistenza su volume e' A2). Mount ArcaFS anche in partizione
+  `MountedFs::Arca(ArcaFs)`; la vista POSIX e' completa dalla 56.3
+  (ADR-0042: dir emergenti + set RAM, bucket `ns`, motore globale a uuid
+  combaciante), la vista nativa e' `R_OBJ_PUT`/`R_OBJ_GET` su store
+  persistente (56.2: bucket `sys` seedato dal volume a ogni avvio).
+  Mount ArcaFS anche in partizione
   MBR/GPT (superblock partition-relative, parser GPT per spec UEFI).
 - **`R_GET_HASH`** (`civis::get_hash`, opzione A compute-on-query): cardo
   rilegge il file a chunk 4K e calcola BLAKE2s-256 (nessuno stato, nessuno
@@ -243,7 +244,9 @@ Cosa e' stabile, e quando (misurato, non presunto):
 | ramfs write/create/mkdir | Mai su disco: visibile al `read` dopo la reply, perso a restart/reboot (ogni modo, per disegno) |
 | FAT overwrite entro size | Al ritorno `n`: ogni chunk e' oltre `FLUSH CACHE` (PIO per-settore/per-run, DMA via `finish_dma`) |
 | FAT grow/create/truncate | `size`/entry stabile a `patch_entry` flushato (commit point); crash prima = vecchia size + cluster orfani fsck-fixabili |
-| `R_SYNC(GROUP)` | Barriera subito: FLUSH CACHE su ogni mount FAT attivo (write-cache del drive); ramfs intoccata |
+| ArcaFS put/delete namespace (56.3) | Al ritorno: commit shadow+flip (gen+1); crash prima = vecchia generazione intatta (COW + root-last) |
+| ArcaFS mkdir/rmdir | Mai su disco per disegno (set RAM): visibili subito, perse le vuote a restart |
+| `R_SYNC(GROUP)` | Barriera subito: FLUSH CACHE su ogni mount FAT attivo (write-cache del drive) + commit ArcaFS; ramfs intoccata |
 | `R_SYNC(NONE/PERWRITE)` | Dichiarazioni registrate per-canale (prev ritornato); `PERWRITE` e' gia' il FAT, ramfs resta volatile |
 
 Sensori: `R_STATVFS` (spazio mount: FAT blocchi=cluster da FSInfo con clamp, ramfs usati camminati + `MAX` illimitato) e `SYS_MEMINFO` (frame liberi/totali/usati del PMM; il kernel non decide mai: niente OOM-kill). Ganci per quota (A3) e swap (B1).

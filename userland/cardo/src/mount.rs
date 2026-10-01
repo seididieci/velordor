@@ -367,14 +367,33 @@ impl FsMount {
     /// ramfs montata e future varianti: dispatch diretto. Ritorna None se il
     /// mount e' inattivo o non ha un provider locale. (Fase 48: wiring FAT
     /// via trait; Fase 49: handle `AnyHandle` by-value, niente Box per-op.)
-    pub fn local_dyn(&mut self) -> Option<&mut dyn crate::provider::LocalFsDyn> {
-        match &mut self.fs {
+    pub fn local_dyn(&mut self) -> Option<&mut dyn crate::provider::LocalFsDyn> {        match &mut self.fs {
             MountedFs::Fat(Some(f)) => Some(f), // Fat32<B> implements LocalFsDyn
             MountedFs::Local(dyn_handle) => Some(&mut **dyn_handle),
             // ArcaFS (P5 stub: op tipizzate, mai panic) e' un provider
             // dinamico come gli altri: Fase 54 estende `MountedFs::Arca`
             // (variante propria per il dispatch nativo `R_OBJ_*` futuro).
             MountedFs::Arca(a) => Some(a),
+            _ => None,
+        }
+    }
+
+    /// Vista POSIX ArcaFS col motore globale (56.3): lega l'istanza del mount
+    /// al `DiskEngine` passato SOLO se l'uuid combacia. `None` = motore
+    /// assente o altro volume (il chiamante cade sullo stub loud: mai dati
+    /// di un altro volume sullo stesso motore, un solo proprietario).
+    pub fn arca_with<'a>(
+        &'a mut self,
+        eng: Option<&'a mut crate::btree_drv::DiskEngine>,
+    ) -> Option<crate::arca::ArcaWith<'a>> {
+        let e = eng?;
+        if crate::btree_drv::volume_uuid(e) == 0 {
+            return None;
+        }
+        match &mut self.fs {
+            MountedFs::Arca(a) if a.uuid == crate::btree_drv::volume_uuid(e) => {
+                Some(crate::arca::ArcaWith::bind(a, e))
+            }
             _ => None,
         }
     }

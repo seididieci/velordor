@@ -586,6 +586,55 @@ impl<S: BlockStore> BTree<S> {
         Some(())
     }
 
+    /// Scansione secondaria per prefisso (56.3, vista POSIX): tutte le chiavi
+    /// del `bucket` che iniziano per `prefix` (i valori NON si leggono: solo
+    /// i nomi servono a readdir/stat-dir). Walk con stack esplicito come
+    /// `rebuild_by_id` (niente ricorsione: stack cardo 16 KiB + LTO), guardia
+    /// anti-loop + visited (stesso pattern di `walk_tree`). Full-scan O(n):
+    /// per un FS di boot va bene; la range-scan con discesa e' futura.
+    /// `None` = struttura illeggibile o oltre il cap (mai dati parziali
+    /// spacciati per completi).
+    #[inline(never)]
+    pub fn scan_prefix(&self, bucket: &[u8], prefix: &[u8]) -> Option<Vec<Vec<u8>>> {
+        const CAP_KEYS: usize = 1 << 16;
+        let mut out: Vec<Vec<u8>> = Vec::new();
+        let mut seen: Vec<u64> = Vec::new();
+        let mut stack = Vec::from([self.root_secondary]);
+        let mut guard = 1usize << 20;
+        while let Some(blk) = stack.pop() {
+            if guard == 0 {
+                return None;
+            }
+            guard -= 1;
+            if blk == 0 || seen.contains(&blk) {
+                continue;
+            }
+            seen.push(blk);
+            let (ty, tag, _, p) = self.node_read(blk)?;
+            if tag != TREE_SECONDARY {
+                return None;
+            }
+            if ty == ARCA_NODE_TYPE_LEAF {
+                if let Some(leaf) = leaf_parse(&p[..], TREE_SECONDARY) {
+                    for k in leaf.keys.iter() {
+                        if out.len() >= CAP_KEYS {
+                            return None;
+                        }
+                        let (bk, key, _) = seckey_parse(k)?;
+                        if bk == bucket && key.starts_with(prefix) {
+                            out.push(key.to_vec());
+                        }
+                    }
+                }
+            } else if let Some(it) = internal_parse(&p[..], TREE_SECONDARY) {
+                stack.extend(it.children.iter().copied());
+            } else {
+                return None;
+            }
+        }
+        Some(out)
+    }
+
     // ── Tabella snapshot persistente (56.2c, blocco meta TREE_META) ─────
     // Chiave `snap/<sid:8 LE>` (13 B); valore `[blen:1][bucket][tick:8][n:4]`
     // poi n × `[uuid:8][seq:8][sklen:2][seckey]`. Tutto a lunghezze esplicite,
@@ -1762,8 +1811,24 @@ mod tests {
     }
 
     #[test]
-    fn versioni_catena_latest_e_retention() {
+    fn scan_prefix_per_bucket_e_prefisso() {
         let mut t = engine();
+        t.put_chunk(b"ns", b"bin/sh", 0, b"x", 1, 8).unwrap();
+        t.put_chunk(b"ns", b"bin/ls", 0, b"y", 1, 8).unwrap();
+        t.put_chunk(b"ns", b"etc/hosts", 0, b"z", 1, 8).unwrap();
+        t.put_chunk(b"other", b"bin/sh", 0, b"w", 1, 8).unwrap();
+        let mut got = t.scan_prefix(b"ns", b"bin/").expect("scan");
+        got.sort();
+        assert_eq!(got, alloc::vec![b"bin/ls".to_vec(), b"bin/sh".to_vec()]);
+        assert_eq!(t.scan_prefix(b"ns", b"").unwrap().len(), 3);
+        assert_eq!(t.scan_prefix(b"ns", b"nope").unwrap(), alloc::vec::Vec::new());
+        assert_eq!(t.scan_prefix(b"other", b"bin/").unwrap(), alloc::vec![b"bin/sh".to_vec()]);
+        t.delete(b"ns", b"bin/ls").unwrap();
+        assert_eq!(t.scan_prefix(b"ns", b"bin/").unwrap(), alloc::vec![b"bin/sh".to_vec()]);
+    }
+
+    #[test]
+    fn versioni_catena_latest_e_retention() {        let mut t = engine();
         t.put_chunk(b"v", b"k", 0, b"A", 1, 8).unwrap();
         t.put_chunk(b"v", b"k", 0, b"B", 2, 8).unwrap();
         assert_eq!(t.get(b"v", b"k"), Some(alloc::vec![b'B']));
