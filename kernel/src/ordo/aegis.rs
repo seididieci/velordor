@@ -5,7 +5,7 @@
 //! al 100% (gli altri processi non possono consumare piu' di 1 - Σ BW).
 //!
 //! Pool statica di `MAX_CBS_SERVERS` slot, nessuna heap allocation. Sempre
-//! compilato: lo scheduler RT unico di Velordor include il CBS.
+//! compilato: lo scheduler RT unico di Velordo include il CBS.
 
 use spin::Mutex;
 

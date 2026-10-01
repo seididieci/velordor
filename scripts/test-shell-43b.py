@@ -25,7 +25,7 @@ def recall(sh, keys, sleep=1.2):
 
 
 def main():
-    args = parse_shell_args("/tmp/velordor-43b-mon.sock", "/tmp/velordor-43b-serial.log")
+    args = parse_shell_args("/tmp/velordo-43b-mon.sock", "/tmp/velordo-43b-serial.log")
     if not args.no_prep:
         prep_images()
     sh = Shell(mon=args.mon, serial=args.serial, fat=args.fat, fat2=args.fat2,

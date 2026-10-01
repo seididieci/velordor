@@ -20,9 +20,9 @@ use civis::println;
 
 /// Manifest degli hash dei servizi (Fase 36, identita' misurata): generato a
 /// build-time da scripts/gen-service-hashes.sh, incluso via
-/// `VELORDOR_SERVICE_HASHES` (esportata da build-tests.sh; usertests e'
+/// `VELORDO_SERVICE_HASHES` (esportata da build-tests.sh; usertests e'
 /// compilato li'). t51 confronta `peer_info` col manifest.
-include!(env!("VELORDOR_SERVICE_HASHES"));
+include!(env!("VELORDO_SERVICE_HASHES"));
 
 
 mod helpers;

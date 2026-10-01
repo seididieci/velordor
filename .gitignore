@@ -1,4 +1,4 @@
-# Velordor — solo codice e docs nel repo. Tutto cio' che e' rigenerabile
+# Velordo — solo codice e docs nel repo. Tutto cio' che e' rigenerabile
 # (build, binari, immagini, log) resta fuori dal commit.
 
 # Output Cargo a qualunque livello (root, kernel, crate userland/testland,

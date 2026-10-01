@@ -7,7 +7,7 @@
 # e scrive `build-meta/service_hashes.rs` con una `pub const HASH_*` per
 # binario. I crate che ne hanno bisogno (init per il manifest, cardo per la
 # policy `FS_REGISTER`, usertests per t51) lo includono con
-# `include!(env!("VELORDOR_SERVICE_HASHES"))` — variabile esportata da
+# `include!(env!("VELORDO_SERVICE_HASHES"))` — variabile esportata da
 # build-userland.sh / build-tests.sh DOPO questa generazione.
 #
 # Correttezza dei byte misurati: gli stessi file vengono (a) embeddati nel
@@ -63,8 +63,8 @@ tmp, poltmp = sys.argv[-2], sys.argv[-1]
 bins = sorted(p for d in dirs for p in glob.glob(os.path.join(d, "*.bin")))
 if not bins:
     sys.exit("nessun .bin in %s" % ", ".join(dirs))
-# userinit.bin e cardo.bin ESCLUSI: entrambi includono il manifest a compile
-# time (init: expected_hash; cardo: driver_name_of), quindi il loro hash nel
+# rector.bin e cardo.bin ESCLUSI: entrambi includono il manifest a compile
+# time (rector: expected_hash; cardo: driver_name_of), quindi il loro hash nel
 # manifest sarebbe stale-by-construction E instabile (ciclo: il binario
 # incorpora l'hash di se stesso → ogni build lo cambia → la successiva lo
 # ricambia, mai fixpoint — osservato: HASH_CARDO flippa a ogni run).
@@ -74,15 +74,15 @@ if not bins:
 # Il manifest copre esattamente i servizi caricati da disco + disk (embedded
 # ma senza ciclo: block non include il manifest) — per questi il fixpoint
 # e' raggiunto in UN passaggio (i loro binari non incorporano alcun hash).
-bins = [p for p in bins if os.path.basename(p) not in ("userinit.bin", "cardo.bin")]
+bins = [p for p in bins if os.path.basename(p) not in ("rector.bin", "cardo.bin")]
 
 lines = [
     "// Generato da scripts/gen-service-hashes.sh — MAI modificare a mano.",
     "// Identita' misurata (Fase 36, Strato 2 di ADR-0026): FNV-1a a 64 bit",
     "// (`syscall_numbers::image_hash`) sui binari userland (esclusi",
-    "// userinit/cardo: incorporano il manifest, il loro hash sarebbe un",
+    "// rector/cardo: incorporano il manifest, il loro hash sarebbe un",
     "// ciclo instabile — vedi filtro sotto).",
-    "// Consumatori via `include!(env!(\"VELORDOR_SERVICE_HASHES\"))`: init",
+    "// Consumatori via `include!(env!(\"VELORDO_SERVICE_HASHES\"))`: rector",
     "// (manifest pre-spawn), cardo (policy FS_REGISTER su identita'),",
     "// usertests (t51: peer_info atteso). Rigenerato a ogni build.",
     "// Fase 55 (N0): per ogni binario anche BLAKE2s-256 (`BLAKE_*`, array",
@@ -123,9 +123,9 @@ DEFAULT_MASK = 0xFFF  # ALL (servizi TCB)
 pol = [
     "// Generato da scripts/gen-service-hashes.sh — MAI modificare a mano.",
     "// Sandbox build (Fase 45): tetto ops per hash noto, applicato da cardo",
-    "// (`userland/fs/src/policy.rs`) come `drop_mask & policy_mask`. Le mask",
+    "// (`userland/cardo/src/policy.rs`) come `drop_mask & policy_mask`. Le mask",
     "// usano i bit RIGHTS_* di syscall-numbers (ALL=0xFFF con GRANT+PIPE+SYNC).",
-    "// Consumato via `include!(env!(\"VELORDOR_SERVICE_POLICY\"))` SOLO da",
+    "// Consumato via `include!(env!(\"VELORDO_SERVICE_POLICY\"))` SOLO da",
     "// cardo (dopo service_hashes: referenzia le HASH_*). Rigenerato a build.",
     "pub const SERVICE_POLICY: &[(u64, u32)] = &[",
 ]

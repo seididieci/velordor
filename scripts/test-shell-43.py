@@ -13,7 +13,7 @@ SH = "/fat/test/sh"
 
 
 def main():
-    args = parse_shell_args("/tmp/velordor-43-mon.sock", "/tmp/velordor-43-serial.log")
+    args = parse_shell_args("/tmp/velordo-43-mon.sock", "/tmp/velordo-43-serial.log")
     if not args.no_prep:
         prep_images()
     sh = Shell(mon=args.mon, serial=args.serial, fat=args.fat, fat2=args.fat2,

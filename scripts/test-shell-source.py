@@ -15,7 +15,7 @@ SH = "/fat/test/sh"
 
 
 def main():
-    args = parse_shell_args("/tmp/velordor-source-mon.sock", "/tmp/velordor-source-serial.log")
+    args = parse_shell_args("/tmp/velordo-source-mon.sock", "/tmp/velordo-source-serial.log")
     if not args.no_prep:
         prep_images()
     sh = Shell(mon=args.mon, serial=args.serial, fat=args.fat, fat2=args.fat2,
@@ -34,10 +34,10 @@ def main():
         c.check("source smoke (&&)", b"ok-a" in out and b"ok-b" in out)
         c.check("source smoke (||)", b"or-took" in out)
         c.check("source smoke ($?)", b"after-0" in out)
-        c.check("source smoke (cat)", b"Hello from Velordor ramfs!" in out)
+        c.check("source smoke (cat)", b"Hello from Velordo ramfs!" in out)
         # cat in pipe aggiunge un \n in coda (come in test-shell-42.py:
-        # hello.txt 27B/1 riga -> la pipe vede 2 linee, 28 byte).
-        c.check("source smoke (pipe)", b"2 4 28 -" in out)
+        # hello.txt 26B/1 riga -> la pipe vede 2 linee, 27 byte).
+        c.check("source smoke (pipe)", b"2 4 27 -" in out)
         c.check("source smoke (heredoc)", b"hd-line-one" in out)
         c.check("source smoke (redirect)", b"payload" in out)
         c.check("source smoke (run)", b"runhello: hello" in out)

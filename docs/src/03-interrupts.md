@@ -3,7 +3,7 @@
 ## Panoramica
 
 Gli interrupt sono il meccanismo con cui la CPU risponde a eventi hardware
-o software. Velordor gestisce tre categorie:
+o software. Velordo gestisce tre categorie:
 
 | Tipo | Range | Esempi |
 |------|-------|--------|

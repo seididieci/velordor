@@ -21,15 +21,15 @@ macro_rules! user_binary {
 // binari.
 //
 // Fase 21 (servizi da disco): il kernel embedda SOLO il boot-TCB
-// (init/disk/fs/log, caricati prima che il FS esista — log per primo per
+// (rector/disk/fs/log, caricati prima che il FS esista — log per primo per
 // disegno ADR-0039); tutto il resto vive in `/bin` e `/test` su /fat e parte
 // via `spawn_image` (syscall 38).
-mod init_bin { user_binary!(userinit_elf, "/../userland/build/userinit.bin"); }
+mod rector_bin { user_binary!(rector_elf, "/../userland/build/rector.bin"); }
 mod fs_bin { user_binary!(cardo_elf, "/../userland/build/cardo.bin"); }
 mod disk_bin { user_binary!(block_elf, "/../userland/build/block.bin"); }
 mod log_bin { user_binary!(vestigia_elf, "/../userland/build/vestigia.bin"); }
 
-use init_bin::userinit_elf;
+use rector_bin::rector_elf;
 use fs_bin::cardo_elf;
 use disk_bin::block_elf;
 use log_bin::vestigia_elf;
@@ -93,7 +93,7 @@ pub fn spawn_image(
 /// prima di qualunque altro processo user, cosi' init sia l'antenato dei servizi
 /// che poi creera' via `spawn` (Fase 8.1). Parent e canale `None` (kernel).
 pub fn spawn_init() -> usize {
-    spawn_user("userinit", crate::ordo::sched::Priority::Normal, userinit_elf(), None, None, &[])
+    spawn_user("rector", crate::ordo::sched::Priority::Normal, rector_elf(), None, None, &[])
         .expect("spawn di init fallito")
 }
 
@@ -145,8 +145,8 @@ use crate::ordo::sched::Priority;
 const NAMED_BINARIES: &[NamedBinary] = &[
     NamedBinary { name: "cardo",       elf: cardo_elf,       io_ranges: &[], priority: Priority::Normal },
     NamedBinary { name: "block",       elf: block_elf,       io_ranges: ATA_PIO_RANGES, priority: Priority::Normal },
-    NamedBinary { name: "userinit",    elf: userinit_elf,    io_ranges: &[], priority: Priority::Normal },
-    NamedBinary { name: "vestigia",     elf: vestigia_elf,     io_ranges: &[], priority: Priority::Normal },
+    NamedBinary { name: "rector",      elf: rector_elf,      io_ranges: &[], priority: Priority::Normal },
+    NamedBinary { name: "vestigia",    elf: vestigia_elf,    io_ranges: &[], priority: Priority::Normal },
 ];
 
 /// Crea un nuovo processo dal binario embedded chiamato `name`. `parent` e'

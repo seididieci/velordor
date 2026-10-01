@@ -4,15 +4,15 @@
 #
 # Genera `build-meta/test_policy.rs` con `pub const TEST_POLICY: &[(u64,u32)]`
 # (hash FNV-1a -> mask ops, TUTTI ALL: la suite esercita ogni op). Incluso
-# SOLO da cardo via `VELORDOR_TEST_POLICY` (mai dai binari test: niente ciclo
-# hash-di-se', stesso motivo dell'esclusione userinit/cardo dal manifest
+# SOLO da cardo via `VELORDO_TEST_POLICY` (mai dai binari test: niente ciclo
+# hash-di-se', stesso motivo dell'esclusione rector/cardo dal manifest
 # servizi — vedi gen-service-hashes.sh).
 #
 # Esclusi:
 # - `userforeign.bin` (l'attore "ignoto" di t57: DEVE restare fuori da ogni
 #   tabella per provare il default restrittivo fail-closed);
 # - `cardo.bin` (artefatto del rebuild di cardo in coda a build-tests.sh:
-#   cardo e' fuori da entrambe le tabelle per costruzione, come userinit).
+#   cardo e' fuori da entrambe le tabelle per costruzione, come rector).
 #
 # Chiamato in coda a build-tests.sh (i .bin test esistono solo allora) e
 # seguito dal rebuild di cardo (unico consumatore). Fixpoint in un passaggio:
@@ -59,7 +59,7 @@ lines = [
     "// Generato da scripts/gen-test-policy.sh — MAI modificare a mano.",
     "// Sandbox build (Fase 45): hash dei binari testland -> mask ALL (la",
     "// suite esercita ogni op; i negativi stanno in t57 sul default ignoto).",
-    "// Consumato via `include!(env!(\"VELORDOR_TEST_POLICY\"))` SOLO da cardo",
+    "// Consumato via `include!(env!(\"VELORDO_TEST_POLICY\"))` SOLO da cardo",
     "// (dopo service_hashes+service_policy). Rigenerato a ogni build test.",
     "pub const TEST_POLICY: &[(u64, u32)] = &[",
 ]

@@ -25,7 +25,7 @@ use super::*;
 //
 // La tabella test e' un file SEPARATO incluso SOLO da cardo: i binari test
 // incorporano service_hashes (t51) ma NON test_policy, quindi niente ciclo
-// (stesso motivo dell'esclusione userinit/cardo in Fase 36).
+// (stesso motivo dell'esclusione rector/cardo in Fase 36).
 
 /// Default fail-closed per hash ignoto (Fase 45, SYNC escluso in Fase 52):
 /// ALL senza MOUNT (0x20), UMOUNT (0x40), GRANT (0x200), PIPE (0x400),

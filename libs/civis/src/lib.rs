@@ -1,5 +1,5 @@
 //! civis — libreria di sistema per processi user (equivalente minimale di una
-//! libc per Velordor). Fornisce i wrapper alle syscall del kernel.
+//! libc per Velordo). Fornisce i wrapper alle syscall del kernel.
 //!
 //! ABI syscall (vedi docs/src/06-syscalls.md — numerazione arbitraria del
 //! progetto, NON standard):

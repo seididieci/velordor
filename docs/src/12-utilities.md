@@ -2,7 +2,7 @@
 
 ## Panoramica
 
-Velordor ha una **shell interattiva** (`usershell`) con comandi built-in e vari
+Velordo ha una **shell interattiva** (`usershell`) con comandi built-in e vari
 **servizi userspace** che eseguono in Ring 3. Tutti usano `civis` come meccanismo
 condiviso (e i programmi POSIX anche `libr`). POSIX e' API di `libr`, non ABI del
 sistema ([ADR-0015](./adr/0015-posix-api-libr-protocollo-interno.md)):

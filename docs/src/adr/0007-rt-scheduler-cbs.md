@@ -3,7 +3,7 @@
 ## Status
 
 Accepted. **Aggiornato (post-Fase 13/14)**: lo scheduler RT e' stato
-consolidato come **unico scheduler** di Velordor — lo scheduler classico a 3
+consolidato come **unico scheduler** di Velordo — lo scheduler classico a 3
 priorita' (`sched.rs`) e' stato rimosso, insieme alla feature Cargo
 `rt_scheduler` e ai relativi `#[cfg]`. Motivo: dopo la validazione su tutta
 la suite (Fase 13/14, 21/21 su entrambi gli scheduler) il doppio percorso di

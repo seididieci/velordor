@@ -60,15 +60,15 @@ else
     # fatale, niente overlay -> QEMU "No such file").
     for p in "${PHASES[@]}"; do
         qemu-img create -f qcow2 -F raw -b "$PWD/userland/fs/fat.img" \
-            "/tmp/velordor-$p-fat.qcow2" > /dev/null
+            "/tmp/velordo-$p-fat.qcow2" > /dev/null
         qemu-img create -f qcow2 -F raw -b "$PWD/userland/fs/fat2.img" \
-            "/tmp/velordor-$p-fat2.qcow2" > /dev/null
-        run_one "$p" "/tmp/velordor-$p-fat.qcow2" "/tmp/velordor-$p-fat2.qcow2" &
+            "/tmp/velordo-$p-fat2.qcow2" > /dev/null
+        run_one "$p" "/tmp/velordo-$p-fat.qcow2" "/tmp/velordo-$p-fat2.qcow2" &
         PID_OF[$p]=$!
     done
     for p in "${PHASES[@]}"; do
         if wait "${PID_OF[$p]}"; then PASS+=("$p"); else FAILED+=("$p"); fi
-        rm -f "/tmp/velordor-$p-fat.qcow2" "/tmp/velordor-$p-fat2.qcow2"
+        rm -f "/tmp/velordo-$p-fat.qcow2" "/tmp/velordo-$p-fat2.qcow2"
     done
 fi
 

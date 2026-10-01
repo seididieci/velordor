@@ -121,7 +121,7 @@ def count_lines(out: bytes, text: bytes) -> int:
 
 
 class Shell:
-    """Una istanza QEMU + shell Velordor. I path distinguono le istanze
+    """Una istanza QEMU + shell Velordo. I path distinguono le istanze
     parallele (il runner li assegna per fase)."""
 
     def __init__(self, mon, serial, fat=FAT_DFLT, fat2=FAT2_DFLT,

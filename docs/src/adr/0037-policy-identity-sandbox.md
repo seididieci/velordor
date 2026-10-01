@@ -54,7 +54,7 @@ Due tabelle generate con lo stesso pattern del manifest (Fase 36):
 
 ### Neutral
 - `0x19F` come default ignoto: OPEN/READ/WRITE/READDIR/MKDIR/DELETE/SEEK restano; niente MOUNT/UMOUNT/GRANT/PIPE (le op che creano stato globale o capability per altri).
-- Tabella test separata (`TEST_POLICY`): mai inclusa dai binari test (niente ciclo, come l'esclusione userinit/userfs in Fase 36).
+- Tabella test separata (`TEST_POLICY`): mai inclusa dai binari test (niente ciclo, come l'esclusione rector/userfs in Fase 36).
 
 ## Alternatives Considered
 

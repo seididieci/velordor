@@ -19,9 +19,9 @@ use civis::{SVC_READY, TEST_DONE};
 
 /// Manifest degli hash dei servizi (Fase 36, identita' misurata, Strato 2 di
 /// ADR-0026): generato a build-time da scripts/gen-service-hashes.sh sui
-/// `.bin` finali, incluso qui via `VELORDOR_SERVICE_HASHES` (esportata da
+/// `.bin` finali, incluso qui via `VELORDO_SERVICE_HASHES` (esportata da
 /// build-userland.sh; senza, questa compilazione fallisce loud).
-include!(env!("VELORDOR_SERVICE_HASHES"));
+include!(env!("VELORDO_SERVICE_HASHES"));
 
 /// Hash atteso del servizio `bin` (nome display, es. `b"gpu"`), o
 /// `None` se non e' nel manifest: embedded disk/fs (TCB del kernel — init non

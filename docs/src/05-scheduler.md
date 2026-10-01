@@ -18,7 +18,7 @@ Lo scheduler gestisce l'esecuzione concorrente di piu' processi:
 
 ## Stato attuale
 
-Velordor usa un **unico scheduler RT**: 32 livelli di priorita' (0 = idle,
+Velordo usa un **unico scheduler RT**: 32 livelli di priorita' (0 = idle,
 31 = massima) con run queue per-priorita' O(1), piu' Constant Bandwidth Server
 (CBS) per i task che richiedono continuita' garantita. Dettagli in
 [RT Scheduler + CBS](./10-scheduler-rt-cbs.md).
@@ -131,7 +131,7 @@ non vanno salvati. Vedi `kernel/src/context.rs`.
 
 ## Criteri di scheduling
 
-| Criterio | Come funziona in Velordor |
+| Criterio | Come funziona in Velordo |
 |----------|--------------------------|
 | Fixed-priority (32 livelli) | il processo a priorita' piu' alta tra i Ready gira per primo |
 | Round-robin nel livello | a pari priorita', i processi si alternano a ogni quantum (2 tick) |

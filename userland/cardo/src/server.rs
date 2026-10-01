@@ -233,7 +233,7 @@ fn real_main(_sp: u64) -> ! {
 
     // Pre-populate: file di esempio
     if let Some(data) = fs.create_file("hello.txt") {
-        data.extend_from_slice(b"Hello from Velordor ramfs!\n");
+        data.extend_from_slice(b"Hello from Velordo ramfs!\n");
     }
     if let Some(data) = fs.create_file("test.txt") {
         data.extend_from_slice(b"Line 1\nLine 2\nLine 3\n");

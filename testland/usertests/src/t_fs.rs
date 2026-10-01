@@ -273,7 +273,7 @@ pub fn t_ps() -> bool {
         }
         if pid == 1 {
             // init: gira da boot, ha consumato tick di sicuro.
-            if e.name_str() != "userinit" || e.parent.is_some() || e.ticks == 0 {
+            if e.name_str() != "rector" || e.parent.is_some() || e.ticks == 0 {
                 println!("[usertests] t37: init anomalo");
                 return false;
             }

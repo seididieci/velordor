@@ -30,7 +30,7 @@ disco manomesso diventa codice con i pieni poteri del servizio sostituito.
 3. **Manifest generato.** `scripts/gen-service-hashes.sh` calcola FNV-1a sui
    `.bin` finali (gli stessi byte embeddati via `include_bytes!` e copiati
    verbatim su `/fat` via mcopy) e scrive `build-meta/service_hashes.rs`
-   (`HASH_*`), incluso via `VELORDOR_SERVICE_HASHES` (senza: compile fail-loud).
+   (`HASH_*`), incluso via `VELORDO_SERVICE_HASHES` (senza: compile fail-loud).
    `build-userland.sh` è riordinata (bin → gen → fs, init); `build-tests.sh`
    riesporta la variabile per t51. `build-meta/` è in `.gitignore`.
 4. **Policy init (36.4).** `spawn_file` ricalcola l'hash dei byte caricati e
@@ -67,7 +67,7 @@ disco manomesso diventa codice con i pieni poteri del servizio sostituito.
 - Il manifest incorpora hash: un binario che incorpora il manifest non può
   contenere il proprio hash (ciclo instabile, mai fixpoint — osservato:
   `HASH_USERFS` flippava a ogni run). Regola: il manifest esclude
-  `userinit`/`userfs`; su userfs embedded non c'è pinning da manifest (la
+  `rector`/`userfs`; su userfs embedded non c'è pinning da manifest (la
   regola same-image non ne ha bisogno).
 - `peer_info` è +1 syscall (stessa giustificazione di `peer_pid`: solo dati
   già visibili via `ps`).
@@ -101,6 +101,6 @@ disco manomesso diventa codice con i pieni poteri del servizio sostituito.
   (canali), ADR-0024 (fork: eredita l'hash), Fase 32 (`text`: stesso algoritmo)
 - `syscall-numbers` (`image_hash`, `SYS_PEER_INFO`), `kernel/src/process.rs`
   (`image_hash`), `kernel/src/syscall/service.rs` (`sys_peer_info`),
-  `scripts/gen-service-hashes.sh`, `userland/init/src/main.rs`
+  `scripts/gen-service-hashes.sh`, `userland/rector/src/main.rs`
   (`spawn_file`), `userland/fs/src/server.rs` (`FS_REGISTER`, same-image)
 - Fase 36 (questa fase), t51 (`testland/usertests/src/t_stable.rs`)

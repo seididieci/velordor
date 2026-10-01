@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Gate di regressione Velordor: boot con la test suite completa.
+# Gate di regressione Velordo: boot con la test suite completa.
 #
 # `./run.sh` di default e' produzione (init salta i test, shell subito).
 # Questo wrapper imposta RUN_TESTS=1 (init compilato con --no-default-features

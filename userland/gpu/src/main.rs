@@ -212,7 +212,7 @@ fn real_main(_sp: u64) -> ! {
     }
 
     // 3. Stampa banner (il terminale parte in fondo, come un prompt).
-    let msg = b"Velordor console server";
+    let msg = b"Velordo console server";
     let mut cursor = 0usize;
     // Stato parser ESC (Fase 43b): persiste tra le DEV_WRITE.
     let mut esc: u8 = 0;

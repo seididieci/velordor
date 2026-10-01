@@ -28,7 +28,7 @@ Linux `SCHED_DEADLINE`, RTEMS e Rialto (Microsoft Research).
 
 ## Architettura: lo scheduler unico
 
-Lo scheduler RT e' l'**unico** scheduler di Velordor. E' nato nella Fase 11 come
+Lo scheduler RT e' l'**unico** scheduler di Velordo. E' nato nella Fase 11 come
 secondo scheduler selezionato a compile time accanto a quello classico (3
 priorita'); dopo la validazione su tutta la suite (Fase 13/14, 21/21) lo
 scheduler classico e' stato rimosso e RT resta sempre attivo, senza feature

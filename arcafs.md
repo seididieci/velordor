@@ -1,6 +1,6 @@
 # ArcaFS — specifica (bozza A0)
 
-Filesystem nativo non-POSIX per Velordor: object store versionato con COW,
+Filesystem nativo non-POSIX per Velordo: object store versionato con COW,
 snapshot, quota, ACL/ABAC. POSIX solo come vista (mapping sintetico).
 Filosofia ADR-0025: nativo dentro (cardo), personalita' al bordo (libr);
 provider trait ADR-0038; policy/identita'/sandbox ADR-0037.
@@ -279,7 +279,7 @@ Prossimo: 59+ (A3 quota/subvolumi, A4 ABAC, ...). Packing S1/S2,
 ## 11. Accesso database (supporto nel FS, motore fuori)
 
 Il motore database (vettoriale o altro, ispirato a Jigen ma scritto per
-Velordor in Rust come servizio userspace) vive **fuori** dal FS. Qui solo
+Velordo in Rust come servizio userspace) vive **fuori** dal FS. Qui solo
 le primitive di supporto — niente logica di indici, query o embedding:
 
 - Modello I/O: **esplicito + cache nel servizio** (niente porting

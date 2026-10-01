@@ -72,7 +72,7 @@ fn real_main(_sp: u64) -> ! {
     }
 
     // Banner
-    term::term_print("Velordor shell v0.1\n");
+    term::term_print("Velordo shell v0.1\n");
     term::term_print("Type 'help' for commands\n");
     term::term_print("\n");
     cwd::cwd_set(String::from("/"));

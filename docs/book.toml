@@ -1,7 +1,7 @@
 [book]
-title = "Velordor Documentation"
-authors = ["Velordor Contributors"]
-description = "Documentation for the Velordor kernel project"
+title = "Velordo Documentation"
+authors = ["Velordo Contributors"]
+description = "Documentation for the Velordo kernel project"
 language = "en"
 src = "src"
 

@@ -13,7 +13,7 @@ SH = "/fat/test/sh"
 
 
 def main():
-    args = parse_shell_args("/tmp/velordor-42-mon.sock", "/tmp/velordor-42-serial.log")
+    args = parse_shell_args("/tmp/velordo-42-mon.sock", "/tmp/velordo-42-serial.log")
     if not args.no_prep:
         prep_images()
     sh = Shell(mon=args.mon, serial=args.serial, fat=args.fat, fat2=args.fat2,
@@ -25,10 +25,10 @@ def main():
         out = sh.run_source(SH + "/p42a.txt")
         found = b"hello42" in out
         c.check("42 pipe base (echo | cat)", found)
-        # cat aggiunge sempre un \n finale: hello.txt da 27B/1 riga diventa
-        # 28B/2 righe nella pipe (coerente col redirect su file).
-        found = b"2 4 28 -" in out
-        c.check("42 cat | wc (2 4 28)", found)
+        # cat aggiunge sempre un \n finale: hello.txt da 26B/1 riga diventa
+        # 27B/2 righe nella pipe (coerente col redirect su file).
+        found = b"2 4 27 -" in out
+        c.check("42 cat | wc (2 4 27)", found)
         found = b"b" in out and b"[exit" not in out
         c.check("42 pipe 3 stadi", found)
 

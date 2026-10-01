@@ -2,7 +2,7 @@
 
 ## Architettura microkernel
 
-Velordor è un **microkernel** (ADR-0005): il kernel contiene solo scheduling,
+Velordo è un **microkernel** (ADR-0005): il kernel contiene solo scheduling,
 IPC, gestione della memoria e routing degli interrupt. Tutti i servizi —
 driver inclusi — sono processi userspace che comunicano via IPC (sincrona +
 async su canali per-nome, con bulk dati su ring SPSC).
@@ -46,7 +46,7 @@ server userspace fa rendering VGA, la tastiera vive in `kbd`/`porta`
 
 ## Scelte progettuali del kernel
 
-Le scelte originali introdotte in Velordor (sintesi in
+Le scelte originali introdotte in Velordo (sintesi in
 [00-introduzione](./00-introduzione.md)) declinate a livello di kernel:
 
 ### Scheduler unico RT + CBS

@@ -1,8 +1,8 @@
-# Velordor - Introduzione
+# Velordo - Introduzione
 
 ## Perché questo progetto?
 
-Velordor è un **microkernel x86_64** scritto in Rust (ADR-0005). Il kernel
+Velordo è un **microkernel x86_64** scritto in Rust (ADR-0005). Il kernel
 contiene solo scheduling, IPC, gestione della memoria e routing degli
 interrupt; driver e servizi (console, file system, devfs, shell) sono processi
 userspace che comunicano via IPC. Il sistema nasce come progetto di
@@ -28,7 +28,7 @@ dei servizi, IPC ad alte prestazioni e CPU time garantito, non a un kernel
 
 ## Scelte originali
 
-Rispetto a un microkernel "minimo" da manuale, Velordor combina alcune scelte
+Rispetto a un microkernel "minimo" da manuale, Velordo combina alcune scelte
 distintive (dettagli tecnici in [01-architettura](./01-architettura.md)):
 
 - **scheduler unico RT + CBS**: nessun dual scheduler classico/RT — un solo
@@ -81,7 +81,7 @@ cargo build --release
 ## Struttura del progetto
 
 ```
-velordor/
+velordo/
 ├── kernel/         # Il kernel (src/, boot.asm, linker.ld con nota PVH)
 ├── libs/civis/     # Meccanismo di sistema condiviso (userland + testland)
 ├── libs/vela/      # Codice driver condiviso (hub/block/input/gpu)

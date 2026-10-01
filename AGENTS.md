@@ -2,7 +2,7 @@
 
 ## Contesto del Progetto
 
-Velordor è un **microkernel x86_64** scritto in Rust (ADR-0005). Architettura
+Velordo è un **microkernel x86_64** scritto in Rust (ADR-0005). Architettura
 microkernel: il kernel contiene scheduling, IPC, gestione della memoria e
 routing degli interrupt; driver e servizi (console, file system, devfs, shell)
 sono processi userspace che comunicano via IPC per nome con reply implicita,
@@ -13,7 +13,7 @@ bandwidth reservation.
 **Obiettivo**: un microkernel con isolamento dei servizi in userspace, IPC ad
 alte prestazioni (per-nome, async, zero-copy) e CPU time garantito sotto carico.
 
-**Orizzonte (dichiarato, non roadmap)**: self-hosting — un Velordor capace di
+**Orizzonte (dichiarato, non roadmap)**: self-hosting — un Velordo capace di
 ricompilare se stesso. Non pianifica nulla da solo, ma ordina le priorita'
 (storage veloce prima, servizi fuori dal kernel poi, personalita' per software
 reale dopo). Stato e backlog vivono in `ROADMAP.md` (sorgente unica: tabella
@@ -76,7 +76,7 @@ cd docs && mdbook serve
 ## File Structure
 
 ```
-velordor/
+velordo/
 ├── kernel/         # Il kernel stesso
 │   ├── src/
 │   │   ├── main.rs     # Entry point Rust (rust_main)
@@ -188,7 +188,7 @@ Gate: `[testfs] PASS 5/5` + `[testfat] PASS 7/7` + `[testsarca] PASS 40/40` + `[
   attribuire, `SYS_PEER_INFO` 47 per l'identita'). Strato 2 (Fase 36): hash
   FNV-1a nel PCB misurato allo spawn, manifest generato a build-time verificato
   da init pre-spawn; il kernel resta neutro (ADR-0025: POSIX e' personalità, non
-  struttura). Il manifest esclude i binari che lo incorporano (userinit/cardo:
+  struttura). Il manifest esclude i binari che lo incorporano (rector/cardo:
   hash di sé = ciclo instabile, mai fixpoint).
 - **IPC reply implicita**: la reply del server va al peer del canale del
   messaggio correntemente elaborato (fissato da `recv` in `reply_chan`), non

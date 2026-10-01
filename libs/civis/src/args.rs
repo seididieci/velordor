@@ -281,6 +281,6 @@ macro_rules! entry {
         // `$main` e' referenziata solo dall'asm sopra: senza questo root
         // `--gc-sections` la scarterebbe (undefined symbol al link).
         #[used]
-        static _VELORDOR_ENTRY_KEEP: fn(u64) -> ! = $main;
+        static _VELORDO_ENTRY_KEEP: fn(u64) -> ! = $main;
     };
 }

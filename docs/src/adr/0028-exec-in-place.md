@@ -7,7 +7,7 @@ zero FAIL/PANIC/FAULT).
 
 ## Context
 
-Velordor crea processi con `spawn` (embedded) e `spawn_image` (da disco, Fase
+Velordo crea processi con `spawn` (embedded) e `spawn_image` (da disco, Fase
 21) e li duplica con `fork` (Fase 34, ADR-0024): entrambi danno un processo
 *nuovo*. Manca la sostituzione *in-place* dell'immagine del chiamante
 (stesso PID): senza, la shell non puo' lanciare programmi di terzi (motivo

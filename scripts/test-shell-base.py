@@ -14,7 +14,7 @@ SH = "/fat/test/sh"
 
 
 def main():
-    args = parse_shell_args("/tmp/velordor-base-mon.sock", "/tmp/velordor-base-serial.log")
+    args = parse_shell_args("/tmp/velordo-base-mon.sock", "/tmp/velordo-base-serial.log")
     if not args.no_prep:
         prep_images()
     sh = Shell(mon=args.mon, serial=args.serial, fat=args.fat, fat2=args.fat2,
@@ -42,7 +42,7 @@ def main():
         found = (b"hello.txt" in out and b"test.txt" in out
                  and b"fat" in out and b"dev" in out)
         c.check("ls / (hello.txt, test.txt, fat, dev)", found)
-        found = b"Hello from Velordor ramfs!" in out
+        found = b"Hello from Velordo ramfs!" in out
         c.check("cat hello.txt", found)
         # "prova" non appare nell'eco (source silenzioso, niente echo su
         # seriale): deve comparire SOLO come entry della directory.
@@ -89,8 +89,8 @@ def main():
         out = sh.run_source(SH + "/base2.txt")
         found = b"hello world" in out
         c.check("echo hello world", found)
-        found = b"1 4 27 hello.txt" in out
-        c.check("wc hello.txt (=1 4 27)", found)
+        found = b"1 4 26 hello.txt" in out
+        c.check("wc hello.txt (=1 4 26)", found)
         found = b"48 65 6c 6c 6f" in out
         c.check("hexdump hello.txt", found)
         found = b"/prova" in out
@@ -102,13 +102,13 @@ def main():
 
         # Fase 19.2 (stretch ls -l): tipo + size via R_STAT (1 RT per entry).
         out = sh.run_source(SH + "/base3.txt")
-        found = b"- 27 hello.txt" in out
+        found = b"- 26 hello.txt" in out
         c.check("ls -l (tipo + size)", found)
         found = b"d 0 lldir" in out
         c.check("ls -l (marcatore dir)", found)
         # /fat in script separato: l'assenza di (ro) e' sullo slice.
         out = sh.run_source(SH + "/base3b.txt")
-        found = b"- 27 HELLO.TXT" in out and b"(ro)" not in out
+        found = b"- 26 HELLO.TXT" in out and b"(ro)" not in out
         c.check("ls -l /fat (scrivibile)", found)
 
         # kill errori + ps.
@@ -116,7 +116,7 @@ def main():
         found = (b"kill: unknown pid/service" in out
                  and out.count(b"kill: failed") >= 2)
         c.check("kill errori + init rifiutato", found)
-        found = (b"PID  NAME" in out and b"userinit" in out
+        found = (b"PID  NAME" in out and b"rector" in out
                  and b"usershell" in out)
         c.check("ps tabellare (init+shell)", found)
 
@@ -138,23 +138,23 @@ def main():
 
         # cp/mv ramfs.
         out = sh.run_source(SH + "/base6.txt")
-        found = b"Hello from Velordor ramfs!" in out
+        found = b"Hello from Velordo ramfs!" in out
         c.check("cp hello.txt copy.txt", found)
-        c.check("mv preserva contenuto", b"Hello from Velordor ramfs!" in out)
+        c.check("mv preserva contenuto", b"Hello from Velordo ramfs!" in out)
         found = b"cannot open" in out
         c.check("mv rimuove sorgente", found)
 
         # Fase 20 (/fat scrivibile): cp verso /fat CREA + read-back; rm resta
         # rifiutato (niente unlink su FAT, fuori scope); HELLO.TXT intatta.
         out = sh.run_source(SH + "/base7.txt")
-        found = b"Hello from Velordor FAT32!" in out
+        found = b"Hello from Velordo FAT32!" in out
         c.check("cp /fat/HELLO.TXT -> ramfs", found)
-        found = b"Hello from Velordor ramfs!" in out
+        found = b"Hello from Velordo ramfs!" in out
         c.check("cp verso /fat + read-back", found)
         found = b"cannot remove" in out
         c.check("rm su /fat ancora rifiutato", found)
         c.check("rm su /fat rifiutato", b"cannot remove" in out)
-        found = b"Hello from Velordor FAT32!" in out
+        found = b"Hello from Velordo FAT32!" in out
         c.check("/fat/HELLO.TXT intatto", found)
 
         # clear: scherma testo, pulisce, shell resta viva (interattivo, VGA).

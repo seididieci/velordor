@@ -165,7 +165,7 @@ pub extern "C" fn rust_main(boot_info_phys: u64) -> ! {
 
     x86_64::instructions::interrupts::enable();
 
-    println!("Welcome to Velordor v0.5");
+    println!("Welcome to Velordo v0.5");
     println!("Scheduler preemptive timer-driven attivo");
     println!();
 

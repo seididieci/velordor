@@ -1,4 +1,4 @@
-//! Scheduler unico di Velordor: RT a 32 priorita' + CBS (Fase 11).
+//! Scheduler unico di Velordo: RT a 32 priorita' + CBS (Fase 11).
 //!
 //! 32 livelli di priorita' (0 = idle, 31 = massima) con run queue per-priorita'
 //! O(1) tramite bitmask `u32` + `leading_zeros()`, piu' Constant Bandwidth

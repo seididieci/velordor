@@ -1,4 +1,4 @@
-//! usershell — Shell interattiva per Velordor (Fase 9.4, utility Fase 18).
+//! usershell — Shell interattiva per Velordo (Fase 9.4, utility Fase 18).
 //!
 //! Client del terminale: NON mappa il VGA. Apre `/dev/input/keyboard` e usa lo
 //! stesso fd per leggere i tasti (read) e per scrivere l'output (write): il

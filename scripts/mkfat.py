@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Genera un'immagine disco FAT32 minimale per Velordor.
+"""Genera un'immagine disco FAT32 minimale per Velordo.
 
 Produce `fat.img` da montare come `/fat` dal fs server (Fase 9.2, scrivibile
 da Fase 20): BPB corretto, 2 FAT identiche, root directory nel cluster 2,
@@ -24,7 +24,7 @@ TOTAL_SEC = 527000      # ~257 MiB -> >= 65525 cluster (minimo FAT32)
 # FAT abbastanza grande per coprire i cluster: 66048 entry (516 settori).
 FAT_SIZE_SEC = 516
 ROOT_CLUSTER = 2
-VOL_LABEL = b"VELORDOR   "
+VOL_LABEL = b"VELORDO    "
 VOL_SERIAL = 0x4F4C4556  # "VELO" LE: UUID stabile del disco di boot (16d)
 SPT = 63                # settori per traccia (CHS, solo per compatibilita' tool)
 HEADS = 255
@@ -120,7 +120,7 @@ class Builder:
     def _boot_sector(self):
         boot = bytearray(512)
         boot[0:3] = b"\xEB\x3C\x90"
-        boot[3:11] = b"VELORDOR"
+        boot[3:11] = b"VELORDO "
         struct.pack_into("<H", boot, 11, BYTES_PER_SEC)
         boot[13] = SPC
         struct.pack_into("<H", boot, 14, RSVD_SEC)
@@ -172,12 +172,12 @@ class Builder:
 
 def main() -> None:
     import argparse
-    ap = argparse.ArgumentParser(description="Immagine FAT32 per Velordor (16d: seriale/label/marker parametrici)")
+    ap = argparse.ArgumentParser(description="Immagine FAT32 per Velordo (16d: seriale/label/marker parametrici)")
     ap.add_argument("out", nargs="?", default="userland/fs/fat.img")
     ap.add_argument("--serial", default="4F4C4556",
                     help="seriale volume esadecimale (UUID stabile, default 4F4C4556)")
-    ap.add_argument("--label", default="VELORDOR",
-                    help="label volume (max 11 char, default VELORDOR)")
+    ap.add_argument("--label", default="VELORDO",
+                    help="label volume (max 11 char, default VELORDO)")
     ap.add_argument("--marker", default=None, metavar="TESTO",
                     help="se dato, aggiunge il file MARKER.TXT con TESTO (disco secondario di test)")
     args = ap.parse_args()
@@ -185,8 +185,8 @@ def main() -> None:
     serial = int(args.serial, 16)
     label = (args.label.upper() + " " * 11)[:11].encode()
     b = Builder(vol_serial=serial, vol_label=label)
-    b.add_file("HELLO.TXT", b"Hello from Velordor FAT32!\n")
-    b.add_file("README.TXT", b"Velordor FAT32 demo (Fase 9.2, scrivibile da Fase 20)\n")
+    b.add_file("HELLO.TXT", b"Hello from Velordo FAT32!\n")
+    b.add_file("README.TXT", b"Velordo FAT32 demo (Fase 9.2, scrivibile da Fase 20)\n")
     if args.marker is not None:
         b.add_file("MARKER.TXT", args.marker.encode())
     b.add_subdir("SUB", [("NOTES.TXT", b"Subdirectory note.\n")])

@@ -6,7 +6,7 @@ Accepted
 
 ## Context
 
-Vincolo di progetto introdotto dopo la Fase 2: **Velordor deve essere un
+Vincolo di progetto introdotto dopo la Fase 2: **Velordo deve essere un
 microkernel**. Il piano originario era implicitamente monolitico (driver VGA e
 seriale scritti dal kernel, user mode alla Fase 6 come extra, IPC assente).
 

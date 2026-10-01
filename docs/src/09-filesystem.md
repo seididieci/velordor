@@ -270,7 +270,7 @@ Sensori: `R_STATVFS` (spazio mount: FAT blocchi=cluster da FSInfo con clamp, ram
 | `userland/block/src/main.rs` | block: detect+part, `/dev/sdX`, protocolli `DISK_*`+`DEV_*` (Fase 16; `DISK_RESOLVE` single-source-of-truth, Fase 16c) |
 | `userland/vela/src/main.rs` | vela: `/dev/null`, `/dev/zero` |
 | `userland/gpu/src/main.rs` | gpu: rendering `/dev/console` su VGA (tastiera in `kbd`/`porta` dalla Fase 15) |
-| `userland/init/src/main.rs` | init: spawn servizi + test in sequenza |
+| `userland/rector/src/main.rs` | rector: spawn servizi + test in sequenza |
 | `syscall-numbers/src/lib.rs` | Costanti `SYS_RING_ALLOC=26`, `SYS_MAP_IN=27` |
 
 ## Riferimenti

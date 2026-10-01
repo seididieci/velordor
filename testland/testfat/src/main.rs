@@ -72,7 +72,7 @@ fn real_main(_sp: u64) -> ! {
             let mut buf = [0u8; 128];
             match read_all(fd, &mut buf) {
                 Ok(n) => {
-                    let want = b"Hello from Velordor FAT32!\n";
+                    let want = b"Hello from Velordo FAT32!\n";
                     all_ok &= expect("HELLO.TXT", &buf[..n], want);
                 }
                 Err(e) => {
@@ -113,7 +113,7 @@ fn real_main(_sp: u64) -> ! {
     // HELLO.TXT resta identica dopo il test (contenuto E size): i test dopo
     // (usertests, shell) la leggono come fixture.
     println!("[testfat] Test 4: overwrite + restore /fat/HELLO.TXT");
-    let orig = b"Hello from Velordor FAT32!\n";
+    let orig = b"Hello from Velordo FAT32!\n";
     match civis::open("/fat/HELLO.TXT", 0) {
         Ok(fd) => {
             let wok = civis::write_fs(fd, b"modified", 8) == Ok(8);
@@ -127,10 +127,10 @@ fn real_main(_sp: u64) -> ! {
                     match read_all(fd, &mut buf) {
                         Ok(n) => {
                             println!("[testfat] reread n={}", n);
-                            let mut want = [0u8; 27]; // orig = 27 B (contati)
+                            let mut want = [0u8; 26]; // orig = 26 B (contati)
                             want[..8].copy_from_slice(b"modified");
                             want[8..].copy_from_slice(&orig[8..]);
-                            let rok = n == 27 && buf[..27] == want;
+                            let rok = n == 26 && buf[..26] == want;
                             all_ok &= expect("read-back overwrite", &[rok as u8], &[1]);
                         }
                         Err(e) => {

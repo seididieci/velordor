@@ -21,7 +21,7 @@ else
 fi
 
 # Immagini disco FAT32 (Fase 9.2 + 16d): generate a ogni run.
-# fat.img = disco di boot (UUID 4F4C4556, label VELORDOR, montato a /fat);
+# fat.img = disco di boot (UUID 4F4C4556, label VELORDO, montato a /fat);
 # fat2.img = secondo disco (UUID e label diversi + MARKER.TXT) per i test di
 # identità stabile (t36) e il reorder (SWAP_DRIVES=1 inverte l'ordine IDE:
 # le lettere sdX si scambiano, UUID=/LABEL= restano validi).

@@ -20,7 +20,7 @@ Le opzioni disponibili sono:
 
 ## Decision
 
-Usare il crate `bootloader` (versione 0.11) come bootloader per Velordor.
+Usare il crate `bootloader` (versione 0.11) come bootloader per Velordo.
 
 ```toml
 [dependencies]

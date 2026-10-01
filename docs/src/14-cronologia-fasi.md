@@ -1246,7 +1246,7 @@
   - [x] 36.3 `scripts/gen-service-hashes.sh`: FNV-1a sui `.bin` finali →
         `build-meta/service_hashes.rs` (`HASH_*`, fail-loud, idempotente);
         `build-userland.sh` riordinata (bin → gen → export
-        `VELORDOR_SERVICE_HASHES` → fs, init); `build-tests.sh` riesporta per
+        `VELORDO_SERVICE_HASHES` → fs, init); `build-tests.sh` riesporta per
         t51; `build-meta/` in `.gitignore`.
   - [x] 36.4 init verifica il manifest in `spawn_file` (mismatch = fail-loud
         a boot, retry-con-hold in supervisione; log `hash-ok` solo a verifica
@@ -1265,7 +1265,7 @@
         run-tests (commento gate), conteggi qui, SUMMARY (nuovo ADR).
   - Bug vero trovato: userfs incorporava il manifest CON `HASH_USERFS` →
         ciclo (hash di sé = mai fixpoint, flippava a ogni run). Regola: il
-        manifest esclude i binari che lo incorporano (userinit/userfs);
+        manifest esclude i binari che lo incorporano (rector/userfs);
         fixpoint in un passaggio (provato: rebuild → diff vuoto).
   - Verifica: gate 5/5 + 7/7 + 51/51 + shell 30/30, zero FAIL/PANIC/FAULT.
 - [x] Fase 37: `exec` in-place + shell che lancia programmi (ADR-0028;

@@ -206,7 +206,7 @@ fn real_main(_sp: u64) -> ! {
     );
 
     // 2. ramfs: content_hash via R_GET_HASH == ricalcolo indipendente.
-    let payload = b"velordor-arcafs-p5-content";
+    let payload = b"velordo-arcafs-p5-content";
     let mut rt_ok = false;
     if let Ok(fd) = civis::open("/sarca.txt", civis::O_CREAT) {
         let w = civis::write_fs(fd, payload, payload.len());
@@ -221,7 +221,7 @@ fn real_main(_sp: u64) -> ! {
     // 3. tamper: contenuto diverso -> hash diverso (e non quello vecchio).
     let mut tamper_ok = false;
     if let Ok(fd) = civis::open("/sarca.txt", civis::O_TRUNC) {
-        let other = b"velordor-arcafs-p5-TAMPERED";
+        let other = b"velordo-arcafs-p5-TAMPERED";
         let w = civis::write_fs(fd, other, other.len());
         let _ = civis::close(fd);
         if w == Ok(other.len()) {

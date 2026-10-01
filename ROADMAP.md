@@ -1,4 +1,4 @@
-# ROADMAP Velordor
+# ROADMAP Velordo
 
 Sorgente unica di **stato** (fasi completate) e **futuro** (Pianificate +
 Parcheggiate). La storia dettagliata per fase (decisioni, bug trovati,
@@ -6,7 +6,7 @@ lezioni, validazioni) vive in `docs/src/14-cronologia-fasi.md`; i gate
 citati li' sono snapshot storici — il gate corrente e' in
 `docs/src/11-testing.md`.
 
-Orizzonte (dichiarato, non roadmap): self-hosting — un Velordor capace di
+Orizzonte (dichiarato, non roadmap): self-hosting — un Velordo capace di
 ricompilare se stesso. Ordina le priorita' (storage veloce prima, servizi
 fuori dal kernel poi, personalita' per software reale dopo) senza pianificare
 nulla da solo.

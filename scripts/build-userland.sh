@@ -25,18 +25,18 @@ rm -f "$BUILD"/*.bin
 # produzione dritto alla shell). Con RUN_TESTS=1 (run-tests.sh) init
 # viene compilato con `--no-default-features` ed esegue la suite completa.
 if [ "${RUN_TESTS:-0}" = "1" ]; then
-    INIT_FEATURES="--no-default-features"
-    echo "[build] userinit CON test suite (RUN_TESTS=1)"
+    RECTOR_FEATURES="--no-default-features"
+    echo "[build] rector CON test suite (RUN_TESTS=1)"
 else
-    INIT_FEATURES=""
-    echo "[build] userinit production (test saltati)"
+    RECTOR_FEATURES=""
+    echo "[build] rector production (test saltati)"
 fi
 
 # Bench throughput (Fase 23, scripts/bench.sh): feature `bench` ortogonale a
 # skip_tests (il bench gira anche senza suite, mai nel gate).
 if [ "${RUN_BENCH:-0}" = "1" ]; then
-    INIT_FEATURES="$INIT_FEATURES --features bench"
-    echo "[build] userinit CON bench (RUN_BENCH=1)"
+    RECTOR_FEATURES="$RECTOR_FEATURES --features bench"
+    echo "[build] rector CON bench (RUN_BENCH=1)"
 fi
 
 build_one userland/block   userland/block/src/block.ld     block.bin       block
@@ -64,11 +64,11 @@ bash scripts/build-posix.sh
 
 # Manifest degli hash dei servizi (Fase 36, Strato 2): FNV-1a sui `.bin`
 # appena prodotti. fs e init vengono DOPO perche' lo includono a compile time
-# (cardo: policy FS_REGISTER su identita'; init: manifest pre-spawn) via
-# `include!(env!("VELORDOR_SERVICE_HASHES"))` — senza la variabile la loro
+# (cardo: policy FS_REGISTER su identita'; rector: manifest pre-spawn) via
+# `include!(env!("VELORDO_SERVICE_HASHES"))` — senza la variabile la loro
 # compilazione fallisce loud (mai manifest stale silenzioso).
 bash scripts/gen-service-hashes.sh
-export VELORDOR_SERVICE_HASHES="$(pwd)/build-meta/service_hashes.rs"
+export VELORDO_SERVICE_HASHES="$(pwd)/build-meta/service_hashes.rs"
 # Tabella policy servizi (Fase 45, sandbox build): emessa dallo stesso script.
 # TEST_POLICY ancora assente qui (i .bin test non esistono): placeholder
 # vuoto per la prima build di cardo, SOSTITUITO dal rebuild in coda a
@@ -78,8 +78,8 @@ export VELORDOR_SERVICE_HASHES="$(pwd)/build-meta/service_hashes.rs"
 if [ ! -f "build-meta/test_policy.rs" ]; then
     printf '// Placeholder pre-test (Fase 45): sostituito dal rebuild in build-tests.sh.\n// A tabella vuota ogni hash test cade nel default restrittivo.\npub const TEST_POLICY: &[(u64, u32)] = &[];\n' > build-meta/test_policy.rs
 fi
-export VELORDOR_SERVICE_POLICY="$(pwd)/build-meta/service_policy.rs"
-export VELORDOR_TEST_POLICY="$(pwd)/build-meta/test_policy.rs"
+export VELORDO_SERVICE_POLICY="$(pwd)/build-meta/service_policy.rs"
+export VELORDO_TEST_POLICY="$(pwd)/build-meta/test_policy.rs"
 
 build_one userland/cardo   userland/cardo/src/cardo.ld     cardo.bin       cardo
-build_one userland/init    userland/init/src/init.ld       userinit.bin    userinit $INIT_FEATURES
+build_one userland/rector  userland/rector/src/rector.ld   rector.bin      rector $RECTOR_FEATURES

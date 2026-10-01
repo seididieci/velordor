@@ -77,7 +77,7 @@ pub const VA_A: u64 = 0x0000_4000_0030_0000;
 pub const VA_B: u64 = 0x0000_4000_0038_0000;
 pub const SPIN_VA: u64 = 0x0000_4000_003C_0000;
 
-pub const HELLO: &[u8] = b"Hello from Velordor ramfs!\n";
+pub const HELLO: &[u8] = b"Hello from Velordo ramfs!\n";
 
 // ── mini-harness ─────────────────────────────────────────────────────
 
@@ -213,7 +213,7 @@ pub fn stop_flooder(fchan: u64) {
 }
 
 /// Contenuto atteso di /fat/HELLO.TXT (come testfat Test 2).
-pub const FAT_HELLO: &[u8] = b"Hello from Velordor FAT32!\n";
+pub const FAT_HELLO: &[u8] = b"Hello from Velordo FAT32!\n";
 
 /// Apre /dev/sda raw (throttled, Livello 1), legge il settore 0 e verifica la
 /// firma boot 0x55AA a offset 510 (stesso settore del mount /fat: prova il

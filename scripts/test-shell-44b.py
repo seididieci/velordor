@@ -19,7 +19,7 @@ def job_state(out, pid):
 
 
 def main():
-    args = parse_shell_args("/tmp/velordor-44b-mon.sock", "/tmp/velordor-44b-serial.log")
+    args = parse_shell_args("/tmp/velordo-44b-mon.sock", "/tmp/velordo-44b-serial.log")
     if not args.no_prep:
         prep_images()
     sh = Shell(mon=args.mon, serial=args.serial, fat=args.fat, fat2=args.fat2,

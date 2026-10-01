@@ -254,14 +254,14 @@ pub fn load_elf(data: &[u8]) -> Result<LoadedProgram, LoadError> {
 
 ## Processo Init (Fase 8.1)
 
-Il primo processo user è **`init`** (`userland/init`, binario `userinit.bin`),
+Il primo processo user è **`init`** (`userland/rector`, binario `rector.bin`),
 creato dal kernel a boot tramite `user_binary::spawn_init()` con parent `None`
 (è la radice della process tree):
 
 ```rust
 // kernel/src/user_binary.rs (semplificato)
 pub fn spawn_init() -> usize {
-    spawn_user("userinit", sched::Priority::Normal, userinit_phys(), userinit_frames(), None)
+    spawn_user("rector", sched::Priority::Normal, rector_phys(), rector_frames(), None)
 }
 ```
 
