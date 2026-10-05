@@ -13,7 +13,7 @@ nulla da solo.
 
 ## Stato (completate 1-55)
 
-Gate: `[testfs] PASS 5/5` + `[testfat] PASS 7/7` + `[testsarca] PASS 50/50` +
+Gate: `[testfs] PASS 5/5` + `[testfat] PASS 7/7` + `[testsarca] PASS 54/54` +
 `[posixtests] PASS 4/4` + `[usertests] PASS 54/54` + shell (10/10 fasi), zero FAIL/PANIC/FAULT.
 
 | Fase | Descrizione | Stato |
@@ -146,10 +146,21 @@ Voci con scope e vittoria dichiarati (non date).
       `11-testing.md`).
       Vittoria conseguita: gate 5/5+7/7+50/50+4/4+54/54 + shell 10/10, zero
       fallback FAT in init e nella shell.
-- [ ] **59+ (A3–A8, V1, B1)** (dopo 56, come da `arcafs.md` §13): quota,
-      ABAC engine, device-awareness, RAID, tool completo, rete; servizio
-      vettoriale e backend VM/block fuori dal FS, mai dentro.
-      Vittoria: una fase alla volta, ciascuna col suo gate.
+- [x] **59 (A3 quota + subvolumi)** (chiusa, ADR-0044): subvolume = bucket
+       con budget blocchi dati (`quota_blocks`, 0 = illimitato; `used`
+       misurato esatto: catene overflow distinte di tutte le versioni +
+       pinnati snapshot anche a nome cancellato; nodi indice/inline/meta
+       fuori quota per disegno); enforcement pre-allocazione su put/patch/
+       rollback/clone (`ERR_NOSPC` → `Error::NoSpace` → ENOSPC); tabella
+       nella foglia meta (`quota/<bucket>`, persiste via meta+commit);
+       sub-op `QUOTA_SET`/`QUOTA_GET` su `R_ARCA_DEBUG` (solo motore disco);
+       testsarca 50→54 (over-budget tipizzato, indipendenza, persistenza
+       dopo bounce, used con snapshot/delete) + unit host su `MemStore`.
+       Vittoria conseguita: quota che scatta davvero + gate invariato.
+- [ ] **59+ (A4–A8, V1, B1)** (dopo A3, come da `arcafs.md` §13): ABAC
+       engine, device-awareness, RAID, tool completo, rete; servizio
+       vettoriale e backend VM/block fuori dal FS, mai dentro.
+       Vittoria: una fase alla volta, ciascuna col suo gate.
 
 ## Parcheggiate
 

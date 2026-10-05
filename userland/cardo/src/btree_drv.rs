@@ -412,13 +412,29 @@ fn commit_or(eng: &mut DiskEngine, v: u64) -> Result<u64, u64> {
     }
 }
 
+/// Cancello quota (A3, ADR-0044): il bucket puo' accogliere `add_bytes`?
+/// Oltre budget → `ERR_NOSPC` PRIMA di allocare (mai mezze scritte);
+/// misura impossibile → `ERR` (fallire chiuso, mai over-budget silenzioso).
+#[inline(never)]
+fn quota_gate(eng: &DiskEngine, bucket: &[u8], add_bytes: usize) -> Result<(), u64> {
+    match eng.quota_check(bucket, add_bytes) {
+        Some(true) => Ok(()),
+        Some(false) => Err(ERR_NOSPC),
+        None => Err(ERR),
+    }
+}
+
 /// PUT chunk a `offset` (0 = nuova versione, >0 = patch): sempre commit.
+/// Gated quota sul blob risultante (`offset+len` conservativo per le patch:
+/// i blocchi vecchi sono ancora in `used`, il trim liberera' dopo).
 #[inline(never)]
 pub fn disk_put(eng: &mut DiskEngine, payload: &[u8], offset: usize) -> Result<u64, u64> {
     let (bucket, key, data) = arcafs::wire::parse_obj_prefix(payload).ok_or(ERR_INVALID)?;
     if bounds_invalid(bucket, key) {
         return Err(ERR_INVALID);
     }
+    let total = offset.checked_add(data.len()).ok_or(ERR_INVALID)?;
+    quota_gate(eng, bucket, total)?;
     let n = eng
         .put_chunk(bucket, key, offset, data, crate::wall::wall_secs(), RETAIN)
         .ok_or(ERR)?;
@@ -564,6 +580,8 @@ pub fn ns_put(eng: &mut DiskEngine, key: &[u8], offset: usize, data: &[u8]) -> R
     if key.len() > civis::OBJ_KEY_MAX {
         return Err(ERR_INVALID);
     }
+    let total = offset.checked_add(data.len()).ok_or(ERR_INVALID)?;
+    quota_gate(eng, NS_BUCKET, total)?;
     let n = eng
         .put_chunk(NS_BUCKET, key, offset, data, crate::wall::wall_secs(), RETAIN)
         .ok_or(ERR)?;
@@ -645,6 +663,9 @@ pub fn disk_snap_rollback(eng: &mut DiskEngine, payload: &[u8]) -> Result<u64, u
     if snap.bucket != bucket {
         return Err(ERR_INVALID);
     }
+    // Gated sul pinnato (nuova head = nuovi blocchi): prima di allocare.
+    let need = eng.snap_pinned_size(id, bucket, key).ok_or(ERR)?;
+    quota_gate(eng, bucket, need)?;
     let size = eng
         .snap_rollback(bucket, key, id, crate::wall::wall_secs(), RETAIN)
         .ok_or(ERR)?;
@@ -659,8 +680,34 @@ pub fn disk_snap_clone(eng: &mut DiskEngine, payload: &[u8]) -> Result<u64, u64>
     if !eng.snaps.contains_key(&id) {
         return Err(ERR_NOTFOUND);
     }
+    // Gated sul dst (il clone COPIA i dati: somma pinnati conservativa,
+    // le chiavi dst esistenti restano in `used` fino al trim).
+    let need = eng.snap_total_size(id).ok_or(ERR)?;
+    quota_gate(eng, dst, need)?;
     let n = eng.snap_clone(id, dst, crate::wall::wall_secs(), RETAIN).ok_or(ERR)?;
     commit_or(eng, n)
+}
+
+/// QUOTA_SET `[quota:8][blen:1][bucket]`: budget blocchi dati (0 = toglie il
+/// tetto). Persiste via meta+commit (come gli snapshot); il seed non e' mai
+/// gated (il boot non deve fallire su quota).
+#[inline(never)]
+pub fn disk_quota_set(eng: &mut DiskEngine, payload: &[u8]) -> Result<u64, u64> {
+    let (quota, tail) = arcafs::wire::split_id_rest(payload).ok_or(ERR_INVALID)?;
+    let bucket = arcafs::wire::parse_bucket_only(tail).ok_or(ERR_INVALID)?;
+    eng.quota_set(bucket, quota).ok_or(ERR_INVALID)?;
+    eng.meta_store().ok_or(ERR)?;
+    commit_or(eng, 0)
+}
+
+/// QUOTA_GET `[blen:1][bucket]` → (quota, used misurata ora). Solo motore
+/// disco: il backend RAM resta senza quota (A3).
+#[inline(never)]
+pub fn disk_quota_get(eng: &DiskEngine, payload: &[u8]) -> Result<(u64, u64), u64> {
+    let bucket = arcafs::wire::parse_bucket_only(payload).ok_or(ERR_INVALID)?;
+    let quota = eng.quotas.get(bucket).copied().unwrap_or(0);
+    let used = eng.quota_used(bucket).ok_or(ERR)?;
+    Ok((quota, used))
 }
 
 // ── Scaffold RAW dopo il bind (stesso handle: via `eng.store`) ──────────
@@ -721,6 +768,8 @@ pub enum ArcaDebugOut {
     Scalar(u64),
     Read(u64, Box<[u8; arcafs::format::ARCA_NODE_PAYLOAD_LEN]>),
     Stats(u64, u64, u64),
+    /// QUOTA_GET: (quota_blocks, used_blocks misurata).
+    Quota(u64, u64),
 }
 
 /// Unico handler RAW pre/post bind (stesso store del motore dopo USEDISK:

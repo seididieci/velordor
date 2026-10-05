@@ -35,6 +35,7 @@ pub const EFBIG: i64 = 27;
 pub const EROFS: i64 = 30;
 pub const EAGAIN: i64 = 35;
 pub const EPIPE: i64 = 32;
+pub const ENOSPC: i64 = 28;
 
 /// UNICA traduzione nativo→errno (Fase 39). Totale sul dominio (il compilatore
 /// impone un braccio per variante: nessuna nuova variante senza errno). Il caso
@@ -59,5 +60,6 @@ pub fn to_errno(e: Error) -> i64 {
         Error::TooBig => EFBIG,
         Error::Empty => EAGAIN,
         Error::Closed => EPIPE,
+        Error::NoSpace => ENOSPC,
     }
 }

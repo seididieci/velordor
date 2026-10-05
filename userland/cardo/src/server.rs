@@ -868,6 +868,32 @@ fn real_main(_sp: u64) -> ! {
                             Err(_) => Err(ERR_INVALID),
                         }
                     }
+                } else if payload.first() == Some(&civis::ARCA_SUB_QUOTA_SET) {
+                    // QUOTA_SET: solo motore (la tabella vive nel BTree, mai
+                    // nel backend RAM: pre-bind = ERR loud, A3).
+                    let rest = payload.get(1..).unwrap_or(&[]);
+                    match disk.as_mut() {
+                        Some(d) => btree_drv::disk_quota_set(d, rest),
+                        None => Err(ERR),
+                    }
+                } else if payload.first() == Some(&civis::ARCA_SUB_QUOTA_GET) {
+                    // QUOTA_GET: reply a due registri (quota, used) + frame
+                    // dedicato, pattern STAT qui sotto.
+                    let rest = payload.get(1..).unwrap_or(&[]);
+                    let out = match disk.as_mut() {
+                        Some(d) => btree_drv::disk_quota_get(d, rest).map(
+                            |(q, u)| btree_drv::ArcaDebugOut::Quota(q, u),
+                        ),
+                        None => Err(ERR),
+                    };
+                    match out {
+                        Ok(btree_drv::ArcaDebugOut::Quota(q, u)) => {
+                            rings::resp_ring_write(q, u, &[]);
+                            let _ = civis::reply(0, q, u);
+                            continue;
+                        }
+                        _ => Err(ERR),
+                    }
                 } else {
                     // Sub-op nel payload (`arcafs::proto::ARCA_SUB_*`): scalari
                     // per via generica; READ/STAT scrivono frame dedicato qui
@@ -894,6 +920,7 @@ fn real_main(_sp: u64) -> ! {
                             let _ = civis::reply(0, high, live);
                             continue;
                         }
+                        Ok(btree_drv::ArcaDebugOut::Quota(_, _)) => Err(ERR),
                         Err(e) => Err(e),
                     }
                 }

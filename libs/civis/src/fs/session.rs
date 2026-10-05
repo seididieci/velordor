@@ -123,6 +123,7 @@ pub(crate) fn fs_reply_check(w0: u64) -> Result<u64, Error> {
         ERR_INVALID => Err(Error::Invalid),
         ERR_EMPTY => Err(Error::Empty),
         ERR_CLOSED => Err(Error::Closed),
+        ERR_NOSPC => Err(Error::NoSpace),
         v => Ok(v),
     }
 }

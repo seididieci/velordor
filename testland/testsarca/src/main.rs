@@ -721,6 +721,91 @@ fn real_main(_sp: u64) -> ! {
                 ok
             };
             c.ok("gc orfani + snapshot sopravvissuto", v33);
+            // 51-54. Quota per bucket (A3, ADR-0044): budget blocchi dati +
+            // `ERR_NOSPC` tipizzato prima di allocare (mai mezze scritte).
+            // Bucket isolati `q5*`, blob 3000 B = 1 blocco dati + slack COW
+            // 8: tetto 10 = due blob dentro (0+9, 1+9), il terzo fuori (2+9).
+            let qbig = |seed: u8| -> alloc::vec::Vec<u8> {
+                (0..3000u32).map(|i| ((i + seed as u32 * 7) % 251) as u8).collect()
+            };
+            // 51. over-budget: rifiuto ESATTAMENTE NoSpace, dati intatti.
+            let v51 = {
+                let (a, b, cc) = (qbig(51), qbig(52), qbig(53));
+                let mut ok = civis::arca_quota_set(b"q51", 10).is_ok();
+                ok = ok && civis::obj_put(b"q51", b"k1", &a) == Ok(a.len() as u64);
+                ok = ok && civis::obj_put(b"q51", b"k2", &b) == Ok(b.len() as u64);
+                ok = ok && civis::obj_put(b"q51", b"k3", &cc) == Err(civis::Error::NoSpace);
+                ok = ok && matches!(civis::obj_get(b"q51", b"k1"), Ok(v) if v == a);
+                ok = ok && matches!(civis::obj_get(b"q51", b"k2"), Ok(v) if v == b);
+                ok = ok && civis::obj_get(b"q51", b"k3").is_err();
+                ok = ok && matches!(civis::arca_quota_get(b"q51"), Ok((10, 2)));
+                ok
+            };
+            c.ok("quota over-budget NoSpace + intatti", v51);
+            // 52. indipendenza bucket: tetto su uno, l'altro libero.
+            let v52 = {
+                let (a, b, cc, d) = (qbig(54), qbig(55), qbig(56), qbig(57));
+                let mut ok = civis::arca_quota_set(b"q52a", 10).is_ok();
+                ok = ok && civis::obj_put(b"q52a", b"k1", &a) == Ok(a.len() as u64);
+                ok = ok && civis::obj_put(b"q52a", b"k2", &b) == Ok(b.len() as u64);
+                ok = ok && civis::obj_put(b"q52a", b"k3", &cc) == Err(civis::Error::NoSpace);
+                ok = ok && civis::obj_put(b"q52b", b"k1", &a) == Ok(a.len() as u64);
+                ok = ok && civis::obj_put(b"q52b", b"k2", &b) == Ok(b.len() as u64);
+                ok = ok && civis::obj_put(b"q52b", b"k3", &cc) == Ok(cc.len() as u64);
+                ok = ok && civis::obj_put(b"q52b", b"k4", &d) == Ok(d.len() as u64);
+                ok
+            };
+            c.ok("quota indipendenza bucket", v52);
+            // 53. persistenza: quota + used sopravvivono al bounce di cardo
+            // (tabella nella foglia meta, used rimisurata allo scrub).
+            let v53 = {
+                let a = qbig(58);
+                let mut ok = civis::arca_quota_set(b"q53", 40).is_ok();
+                ok = ok && civis::obj_put(b"q53", b"k1", &a) == Ok(a.len() as u64);
+                ok = ok && matches!(civis::arca_quota_get(b"q53"), Ok((40, 1)));
+                ok = ok && civis::init_bounce(civis::Service::Cardo).is_ok();
+                ok = ok && civis::poll_wait(1000, civis::POLL_PERIOD_TICKS, || {
+                    civis::service_pid(civis::Service::Cardo).is_err()
+                });
+                ok = ok && civis::poll_value(1000, civis::POLL_PERIOD_TICKS, || {
+                    civis::service_pid(civis::Service::Cardo).ok()
+                })
+                .is_some();
+                let _ = civis::arca_open("/dev/sdc");
+                ok = ok && civis::poll_wait(1000, civis::POLL_PERIOD_TICKS, || {
+                    civis::arca_use_disk(true).is_ok()
+                });
+                ok = ok && matches!(civis::arca_quota_get(b"q53"), Ok((40, 1)));
+                ok = ok && matches!(civis::obj_get(b"q53", b"k1"), Ok(v) if v == a);
+                ok = ok && civis::obj_put(b"q53", b"k2", &a) == Ok(a.len() as u64);
+                ok
+            };
+            c.ok("quota persistenza dopo bounce", v53);
+            // 54. used coerente: pinnato a nome cancellato resta sul budget
+            // (delete con snapshot vivo → 1), la delete dello snapshot
+            // libera il conteggio (→ 0).
+            let v54 = {
+                let (a, b) = (qbig(59), qbig(60));
+                let mut ok = civis::obj_put(b"q54", b"k", &a) == Ok(a.len() as u64);
+                let sid = match civis::snap_create(b"q54") {
+                    Ok(s) => Some(s),
+                    Err(_) => {
+                        ok = false;
+                        None
+                    }
+                };
+                ok = ok && civis::obj_put(b"q54", b"k", &b) == Ok(b.len() as u64);
+                ok = ok && matches!(civis::arca_quota_get(b"q54"), Ok((0, 2)));
+                ok = ok && civis::obj_delete(b"q54", b"k").is_ok();
+                ok = ok && matches!(civis::arca_quota_get(b"q54"), Ok((0, 1)));
+                ok = ok && match sid {
+                    Some(s) => civis::snap_delete(s).is_ok(),
+                    None => false,
+                };
+                ok = ok && matches!(civis::arca_quota_get(b"q54"), Ok((0, 0)));
+                ok
+            };
+            c.ok("quota used con snapshot/delete", v54);
             // 34-40. Logging L1 (Fase 57, ADR-0039): gateway `Vestigia` RAM-first
             // con flush via cardo nativo. Bucket per IDENTITA' (hash del
             // chiamante, mai dichiarato): ogni client legge solo il proprio

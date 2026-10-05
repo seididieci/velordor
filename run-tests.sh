@@ -7,7 +7,7 @@
 # shell) e rimanda a run.sh. Righe attese + zero FAIL/PANIC/FAULT:
 #   [testfs] PASS 5/5
 #   [testfat] PASS 7/7
-#   [testsarca] PASS 50/50
+#   [testsarca] PASS 54/54
 #   [posixtests] PASS 4/4
 #   [usertests] PASS 54/54
 set -euo pipefail
@@ -15,5 +15,6 @@ cd "$(dirname "$0")"
 # Diagnostica scheduler/IRQ attiva nei run di test (feature `sched_debug`).
 # ARCA_IMG=1: quarto drive ArcaFS (partizione GPT su arca-gpt.img, sdd/sdd1)
 # per testsarca 12-13 (il terzo, arca.img=root sdc, e' sempre attaccato da
-# run.sh; 22-40 girano sul root vivo in bucket isolati, 41-50 su mount root).
+# run.sh; 22-40 girano sul root vivo in bucket isolati, 41-50 su mount root,
+# 51-54 quota A3 in bucket q5*).
 RUN_TESTS=1 SCHED_DEBUG=1 ARCA_IMG=1 exec ./run.sh "$@"

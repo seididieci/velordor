@@ -50,3 +50,9 @@ pub const ARCA_SUB_STAT: u8 = 6;
 /// sul backend disco (`on=1`) o su quello in-RAM (`on=0`, default).
 /// Flag secco server-side: un backend alla volta, mai merge silenziosi.
 pub const ARCA_SUB_USEDISK: u8 = 7;
+/// QUOTA_SET (A3, ADR-0044): payload `[8][quota:8][blen:1][bucket]` → budget
+/// blocchi dati del bucket (0 = illimitato); persiste via meta+commit.
+/// QUOTA_GET (A3): payload `[9][blen:1][bucket]` → reply (quota, used).
+/// Solo motore disco (pre-bind = ERR): il backend RAM resta senza quota.
+pub const ARCA_SUB_QUOTA_SET: u8 = 8;
+pub const ARCA_SUB_QUOTA_GET: u8 = 9;

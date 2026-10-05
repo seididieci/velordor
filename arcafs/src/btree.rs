@@ -501,6 +501,11 @@ pub struct BTree<S: BlockStore> {
     pub next_id: u64,
     pub next_snap: u64,
     pub snaps: BTreeMap<u64, Snapshot>,
+    /// Budget quota per bucket (A3, ADR-0044): bucket → `quota_blocks`
+    /// (0/assente = illimitato). Persistito nella foglia meta come gli
+    /// snapshot (`quota/<bucket>`), mai contatori incrementali: `used` si
+    /// misura esatto a ogni check (niente drift da trim/GC).
+    pub quotas: BTreeMap<Vec<u8>, u64>,
     /// Indice inverso id → seckey (F2: id mai riusati). Persistito dal driver.
     pub by_id: BTreeMap<u64, Vec<u8>>,
 }
@@ -517,7 +522,7 @@ impl<S: BlockStore> BTree<S> {
         let mut me = Self {
             store, gen, root_primary: rp, root_secondary: rs, root_refcount: rr,
             meta_root: 0, next_id: 1, next_snap: 1, snaps: BTreeMap::new(),
-            by_id: BTreeMap::new(),
+            quotas: BTreeMap::new(), by_id: BTreeMap::new(),
         };
         me.fmt_empty(rp, TREE_PRIMARY)?;
         me.fmt_empty(rs, TREE_SECONDARY)?;
@@ -543,7 +548,7 @@ impl<S: BlockStore> BTree<S> {
         Some(Self {
             store, gen, root_primary, root_secondary, root_refcount,
             meta_root: 0, next_id: 1, next_snap: 1, snaps: BTreeMap::new(),
-            by_id: BTreeMap::new(),
+            quotas: BTreeMap::new(), by_id: BTreeMap::new(),
         })
     }
 
@@ -641,11 +646,22 @@ impl<S: BlockStore> BTree<S> {
     // verificato al load: meta corrotta = tabella ignorata loud (dati
     // intatti), mai mount rifiutato per la retention.
 
-    /// Serializza la tabella snapshot in coppie (key, val). `None` solo oltre
-    /// i bound nomi (mai troncamenti).
+    /// Serializza tabella snapshot + tabella quota in coppie (key, val).
+    /// Quote come `quota/<bucket>` → `[quota:8]` in coda agli `snap/`
+    /// (stesso blocco meta, stesso commit: mai generazioni diverse).
+    /// `None` solo oltre i bound nomi (mai troncamenti).
     #[inline(never)]
     fn snaps_encode(&self) -> Option<Vec<(Vec<u8>, Vec<u8>)>> {
-        let mut out = Vec::with_capacity(self.snaps.len());
+        let mut out = Vec::with_capacity(self.snaps.len() + self.quotas.len());
+        for (bucket, quota) in self.quotas.iter() {
+            if bucket.is_empty() || bucket.len() > super::proto::OBJ_BUCKET_MAX {
+                return None;
+            }
+            let mut k = Vec::with_capacity(6 + bucket.len());
+            k.extend_from_slice(b"quota/");
+            k.extend_from_slice(bucket);
+            out.push((k, quota.to_le_bytes().to_vec()));
+        }
         for (sid, snap) in self.snaps.iter() {
             let mut k = Vec::with_capacity(13);
             k.extend_from_slice(b"snap/");
@@ -681,7 +697,24 @@ impl<S: BlockStore> BTree<S> {
     #[inline(never)]
     pub fn snaps_decode(&mut self, entries: &[(Vec<u8>, Vec<u8>)]) -> Option<()> {
         let mut table = BTreeMap::new();
+        let mut qtable: BTreeMap<Vec<u8>, u64> = BTreeMap::new();
         for (k, v) in entries.iter() {
+            // Quote (A3): `quota/<bucket>` → `[quota:8]` esatti.
+            if k.len() > 6 && k[..6] == *b"quota/" {
+                let bucket = k[6..].to_vec();
+                if bucket.is_empty()
+                    || bucket.len() > super::proto::OBJ_BUCKET_MAX
+                    || v.len() != 8
+                {
+                    return None;
+                }
+                let mut qb = [0u8; 8];
+                qb.copy_from_slice(v);
+                if qtable.insert(bucket, u64::from_le_bytes(qb)).is_some() {
+                    return None; // bucket duplicato: corrotto
+                }
+                continue;
+            }
             if k.len() != 13 || k[..5] != *b"snap/" {
                 return None;
             }
@@ -734,6 +767,7 @@ impl<S: BlockStore> BTree<S> {
             }
         }
         self.snaps = table;
+        self.quotas = qtable;
         Some(())
     }
 
@@ -768,6 +802,7 @@ impl<S: BlockStore> BTree<S> {
     pub fn meta_load(&mut self) -> Option<()> {
         if self.meta_root == 0 {
             self.snaps.clear();
+            self.quotas.clear();
             return Some(());
         }
         let (ty, tag, _, p) = self.node_read(self.meta_root)?;
@@ -778,6 +813,149 @@ impl<S: BlockStore> BTree<S> {
         let pairs: Vec<(Vec<u8>, Vec<u8>)> =
             leaf.keys.into_iter().zip(leaf.vals.into_iter()).collect();
         self.snaps_decode(&pairs)
+    }
+
+    // ── Quota per bucket (A3, ADR-0044) ────────────────────────────────
+    // `used` = blocchi dati DISTINTI trattenuti (catene overflow di TUTTE le
+    // versioni, pinnate incluse: lo snapshot conta contro chi lo trattiene).
+    // Misura esatta a ogni check (walk O(bucket), niente contatori
+    // incrementali: niente drift da trim/GC). Fuori quota per disegno: nodi
+    // indice (condivisi, attribuzione arbitraria), inline ≤512 B, meta.
+
+    /// Slack di nodi COW per op mutante (rewrite del path + split eventuali:
+    /// sovrastima conservativa, il check e' pre-put e rifiuta presto).
+    pub const QUOTA_SLACK_BLOCKS: u64 = 8;
+
+    /// Blocchi dati di un blob di `nbytes` (0 se inline).
+    pub fn quota_blocks_for(nbytes: usize) -> u64 {
+        if nbytes <= INLINE_MAX {
+            return 0;
+        }
+        ((nbytes - 1) / OV_CHUNK + 1) as u64
+    }
+
+    /// Blocchi dati distinti trattenuti dal bucket. `None` a walk illeggibile
+    /// (il chiamante fallisce chiuso: mai over-budget silenzioso).
+    #[inline(never)]
+    pub fn quota_used(&self, bucket: &[u8]) -> Option<u64> {
+        let mut blocks: Vec<u64> = Vec::new();
+        // Nomi live: tutte le versioni in storia (pinnate incluse).
+        let keys = self.keys_of_bucket(bucket, self.root_secondary);
+        for (_, sec) in keys.iter() {
+            for seq in self.seqs_of(sec.uuid, sec.head_seq) {
+                let rec = self.head_rec(sec.uuid, seq)?;
+                if let Some((ov, _)) = rec.data_ov {
+                    self.quota_walk_ov(ov, &mut blocks)?;
+                }
+            }
+        }
+        // Pinnati delle snapshot del bucket ANCHE a nome cancellato (il
+        // delete sgancia il nome ma i blocchi restano finche' lo snapshot
+        // vive: restano sul budget di chi li trattiene, mai buco).
+        for snap in self.snaps.values() {
+            if snap.bucket != bucket {
+                continue;
+            }
+            for (_, uuid, seq) in snap.entries.iter() {
+                let rec = self.head_rec(*uuid, *seq)?;
+                if let Some((ov, _)) = rec.data_ov {
+                    self.quota_walk_ov(ov, &mut blocks)?;
+                }
+            }
+        }
+        blocks.sort_unstable();
+        blocks.dedup();
+        Some(blocks.len() as u64)
+    }
+
+    /// Walk di catena overflow che tollera i blocchi gia' visti (dedup, non
+    /// ciclo: le catene non si condividono per costruzione, ma un puntatore
+    /// riveduto si conta una volta sola invece di dichiarare corruzione —
+    /// i detector di corruzione restano `reachable_blocks`/GC).
+    #[inline(never)]
+    fn quota_walk_ov(&self, head: u64, out: &mut Vec<u64>) -> Option<()> {
+        let mut cur = head;
+        let mut guard = 1usize << 20;
+        let mut payload = format::boxed_node();
+        while cur != 0 {
+            if guard == 0 {
+                return None;
+            }
+            guard -= 1;
+            if out.contains(&cur) {
+                break;
+            }
+            out.push(cur);
+            let (ty, _) = self.store.read_node(cur, &mut payload)?;
+            if ty != ARCA_NODE_TYPE_RAW {
+                return None;
+            }
+            cur = rd64(&payload[..], 0)?;
+        }
+        Some(())
+    }
+
+    /// Il bucket puo' accogliere `add_bytes` in piu'? `None` = misura
+    /// impossibile (fallire chiuso). Quota 0/assente = illimitato.
+    #[inline(never)]
+    pub fn quota_check(&self, bucket: &[u8], add_bytes: usize) -> Option<bool> {
+        let quota = match self.quotas.get(bucket) {
+            Some(&q) if q > 0 => q,
+            _ => return Some(true),
+        };
+        let used = self.quota_used(bucket)?;
+        let need = Self::quota_blocks_for(add_bytes).checked_add(Self::QUOTA_SLACK_BLOCKS)?;
+        let end = used.checked_add(need)?;
+        Some(end <= quota)
+    }
+
+    /// Dimensione della versione pinnata (solo record, niente dati): budget
+    /// del rollback prima di allocare la nuova head.
+    #[inline(never)]
+    pub fn snap_pinned_size(&self, snap_id: u64, bucket: &[u8], key: &[u8]) -> Option<usize> {
+        let snap = self.snaps.get(&snap_id)?;
+        if snap.bucket != bucket {
+            return None;
+        }
+        let sk = seckey_encode(bucket, key)?;
+        let (_, uuid_pin, seq_pin) = snap.entries.iter().find(|(k, _, _)| *k == sk)?;
+        let rec = self.head_rec(*uuid_pin, *seq_pin)?;
+        Some(match rec.data_ov {
+            Some((_, size)) => size as usize,
+            None => rec.data_inline.len(),
+        })
+    }
+
+    /// Somma delle dimensioni pinnate (solo record): budget del clone sul
+    /// bucket dst prima di copiare.
+    #[inline(never)]
+    pub fn snap_total_size(&self, snap_id: u64) -> Option<usize> {
+        let snap = self.snaps.get(&snap_id)?;
+        let mut total = 0usize;
+        for (_, uuid_pin, seq_pin) in snap.entries.iter() {
+            let rec = self.head_rec(*uuid_pin, *seq_pin)?;
+            let s = match rec.data_ov {
+                Some((_, size)) => size as usize,
+                None => rec.data_inline.len(),
+            };
+            total = total.checked_add(s)?;
+        }
+        Some(total)
+    }
+
+    /// Imposta il budget (0 = rimuove il tetto). Solo tabella RAM: la
+    /// persistenza e' `meta_store` + commit del chiamante (come gli snapshot).
+    #[inline(never)]
+    pub fn quota_set(&mut self, bucket: &[u8], quota: u64) -> Option<()> {
+        if bucket.is_empty() || bucket.len() > super::proto::OBJ_BUCKET_MAX {
+            return None;
+        }
+        if quota == 0 {
+            self.quotas.remove(bucket);
+        } else {
+            self.quotas.insert(bucket.to_vec(), quota);
+        }
+        Some(())
     }
 
     // ── Reachability per orphan-GC (56.2c) ──────────────────────────────
@@ -2022,6 +2200,61 @@ mod tests {
         let r2 = t.reachable_blocks().unwrap();
         assert!(!r2.contains(&orf));
         assert!(r2.len() == r.len());
+    }
+
+    #[test]
+    fn quota_tabella_meta_e_check() {
+        let mut t = engine();
+        // Due blob overflow (3000 B > INLINE_MAX = 1 blocco dati ciascuno).
+        let big: Vec<u8> = (0..3000u32).map(|i| (i * 7 % 251) as u8).collect();
+        t.put_chunk(b"q", b"k1", 0, &big, 1, 8).unwrap();
+        t.put_chunk(b"q", b"k2", 0, &big, 2, 8).unwrap();
+        t.put_chunk(b"altro", b"k", 0, &big, 3, 8).unwrap();
+        // used: 2 blocchi su q (senza doppio conteggio: catene distinte),
+        // 1 su altro; inline gratis.
+        t.put_chunk(b"q", b"tiny", 0, b"x", 4, 8).unwrap();
+        assert_eq!(t.quota_used(b"q"), Some(2));
+        assert_eq!(t.quota_used(b"altro"), Some(1));
+        assert_eq!(t.quota_used(b"vuoto"), Some(0));
+        // Senza tetto tutto passa; bound oltre-nome rifiutato.
+        assert_eq!(t.quota_check(b"q", 100000), Some(true));
+        assert!(t.quota_set(&alloc::vec![b'y'; 17], 10).is_none());
+        // Tetto 10 blocchi (used=2): inline+slack ci sta (2+8<=10),
+        // un blob da 3000 B no (2+1+8=11>10).
+        t.quota_set(b"q", 10).unwrap();
+        assert_eq!(t.quota_check(b"q", 100), Some(true));
+        assert_eq!(t.quota_check(b"q", 3000), Some(false));
+        // Altro bucket senza tetto: passa sempre.
+        assert_eq!(t.quota_check(b"altro", 100000), Some(true));
+        // Pinnato a nome cancellato resta sul budget (delete con snapshot
+        // vivo: v1 pinnata resta, v2 libera → used==1; senza snapshot 0).
+        let a3k: Vec<u8> = (0..3000u32).map(|i| (i * 3 % 251) as u8).collect();
+        let b3k: Vec<u8> = (0..3000u32).map(|i| (i * 5 % 251) as u8).collect();
+        t.put_chunk(b"s", b"k", 0, &a3k, 5, 8).unwrap();
+        let sid = t.snap_create(b"s", 6).unwrap();
+        t.put_chunk(b"s", b"k", 0, &b3k, 7, 8).unwrap();
+        assert_eq!(t.quota_used(b"s"), Some(2));
+        t.delete(b"s", b"k").unwrap();
+        assert_eq!(t.quota_used(b"s"), Some(1));
+        t.snap_delete(sid);
+        assert_eq!(t.quota_used(b"s"), Some(0));
+        // Persistenza: meta_store + restart simulato, quote sopravvivono.
+        t.meta_store().unwrap();
+        let (rp, rs, rr, mr, nid, nsn) =
+            (t.root_primary, t.root_secondary, t.root_refcount, t.meta_root, t.next_id, t.next_snap);
+        let store = t.into_store();
+        let mut t2 = BTree::new_with_roots(store, 1, rp, rs, rr).unwrap();
+        t2.meta_root = mr;
+        t2.next_id = nid;
+        t2.next_snap = nsn;
+        t2.rebuild_by_id().unwrap();
+        t2.meta_load().unwrap();
+        assert_eq!(t2.quotas.get(b"q".as_slice()), Some(&10));
+        assert_eq!(t2.quota_used(b"q"), Some(2));
+        assert_eq!(t2.quota_check(b"q", 3000), Some(false));
+        // Tetto rimosso (0): di nuovo illimitato.
+        t2.quota_set(b"q", 0).unwrap();
+        assert_eq!(t2.quota_check(b"q", 100000), Some(true));
     }
 
     #[test]

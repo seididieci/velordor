@@ -71,3 +71,4 @@
 - [ADR-0041: Personalità POSIX separata (civis + flavours/posix, Fase 58)](./adr/0041-civis-flavours-posix.md)
 - [ADR-0042: Namespace POSIX su ArcaFS — dir emergenti + set RAM (56.3)](./adr/0042-arcaposix-emergent-dirs.md)
 - [ADR-0043: Bucket oggetti sys/vela/usr + tree bin, bin/posix, usr/bin (D1)](./adr/0043-object-buckets-sys-drv-usr.md)
+- [ADR-0044: Quota e subvolumi ArcaFS — budget per bucket + ERR_NOSPC (A3)](./adr/0044-arca-quota-subvolumi.md)

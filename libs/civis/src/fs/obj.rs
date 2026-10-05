@@ -316,8 +316,9 @@ pub fn obj_delete(bucket: &[u8], key: &[u8]) -> Result<(), Error> {
 
 use arcafs::format::ARCA_NODE_PAYLOAD_LEN;
 use arcafs::proto::{
-    ARCA_SUB_ALLOC, ARCA_SUB_FREE, ARCA_SUB_OPEN, ARCA_SUB_READ, ARCA_SUB_STAT,
-    ARCA_SUB_USEDISK, ARCA_SUB_WRITE, R_ARCA_DEBUG,
+    ARCA_SUB_ALLOC, ARCA_SUB_FREE, ARCA_SUB_OPEN, ARCA_SUB_QUOTA_GET,
+    ARCA_SUB_QUOTA_SET, ARCA_SUB_READ, ARCA_SUB_STAT, ARCA_SUB_USEDISK,
+    ARCA_SUB_WRITE, R_ARCA_DEBUG,
 };
 
 /// Invia un sub-op debug: ritorna (w0, w1, len) della reply SENZA consumare
@@ -395,6 +396,30 @@ pub fn arca_write_node(block: u64, data: &[u8; ARCA_NODE_PAYLOAD_LEN]) -> Result
 /// (`false`, default). Flag secco: niente merge tra backend.
 pub fn arca_use_disk(on: bool) -> Result<(), Error> {
     arca_scalar(ARCA_SUB_USEDISK, &[on as u8]).map(|_| ())
+}
+
+/// Imposta il budget quota del bucket (0 = toglie il tetto). Solo motore
+/// disco (pre-bind = errore loud server-side, A3, ADR-0044).
+pub fn arca_quota_set(bucket: &[u8], quota: u64) -> Result<(), Error> {
+    let mut p = quota.to_le_bytes().to_vec();
+    p.extend_from_slice(&wire::bucket_only(bucket).ok_or(Error::Invalid)?);
+    arca_scalar(ARCA_SUB_QUOTA_SET, &p).map(|_| ())
+}
+
+/// (quota_blocks, used_blocks misurata) del bucket. Quota 0 = illimitato.
+pub fn arca_quota_get(bucket: &[u8]) -> Result<(u64, u64), Error> {
+    let p = wire::bucket_only(bucket).ok_or(Error::Invalid)?;
+    let (q, u, _) = arca_request(ARCA_SUB_QUOTA_GET, &p)?;
+    match fs_reply_check(q).and(fs_reply_check(u)) {
+        Ok(_) => {
+            resp_ring_consume(16);
+            Ok((q, u))
+        }
+        Err(e) => {
+            resp_ring_consume(16);
+            Err(e)
+        }
+    }
 }
 
 /// (high_water, live, free_head) del volume.

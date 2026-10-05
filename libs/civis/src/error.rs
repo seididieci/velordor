@@ -62,6 +62,11 @@ pub enum Error {
     /// Estremita' opposta chiusa (write senza lettori): al bordo EPIPE.
     /// Niente segnali in Fase 42: il chiamante vede l'errore e decide.
     Closed,
+    // ── Quota (A3, ADR-0044) ──
+    /// Budget quota del bucket superato (put/clone/rollback oltre
+    /// `quota_blocks`): al bordo ENOSPC. Rifiuto pre-allocazione: mai mezze
+    /// scritte, i dati precedenti restano intatti.
+    NoSpace,
 }
 
 impl From<WaitReplyError> for Error {

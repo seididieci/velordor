@@ -2082,3 +2082,22 @@
           invece di retry: fase 42 rossa deterministica). Gate: 5/5 + 7/7 +
           50/50 + 4/4 + 54/54 + shell 10/10 (seq e `--jobs 5`), zero
           FAIL/PANIC/FAULT.
+          Fase 59 (A3 quota+subvolumi, ADR-0044): subvolume = bucket con
+          budget blocchi dati (`quota_blocks`, 0 = illimitato); `used`
+          misurato esatto a ogni check (walk secondary + catene di tutte le
+          versioni + pinnati snapshot anche a nome cancellato — il delete
+          con snapshot vivo NON buca il budget; nodi indice/inline/meta
+          fuori quota per disegno, slack COW 8 blocchi conservativo);
+          enforcement pre-allocazione su put/patch/rollback/clone
+          (`ERR_NOSPC` → `NoSpace` → ENOSPC); tabella nella foglia meta
+          (`quota/<bucket>`, persiste via meta+commit come gli snapshot);
+          sub-op `QUOTA_SET`/`GET` su `R_ARCA_DEBUG` (solo motore disco,
+          pre-bind = ERR); seed mai gated. Test 51-54 (over-budget
+          tipizzato con dati intatti, indipendenza bucket, persistenza dopo
+          bounce cardo, used con snapshot/delete) + unit host su `MemStore`
+          (non eseguibile: l'harness host di `arcafs` non compila mai,
+          465 errori preesistenti — la verifica e' in-guest). Flake: 1×
+          posixtests t54 (`create = Failed` su ramfs) al primo gate con la
+          suite allungata, verde ai due rerun senza tocchi (stessa famiglia
+          v29/v38: timing da suite piu' lunga + bounce extra). Gate: 5/5 +
+          7/7 + 54/54 + 4/4 + 54/54 + shell 10/10, zero FAIL/PANIC/FAULT.

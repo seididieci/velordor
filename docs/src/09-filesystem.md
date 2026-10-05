@@ -249,7 +249,7 @@ Cosa e' stabile, e quando (misurato, non presunto):
 | `R_SYNC(GROUP)` | Barriera subito: FLUSH CACHE su ogni mount FAT attivo (write-cache del drive) + commit ArcaFS; ramfs intoccata |
 | `R_SYNC(NONE/PERWRITE)` | Dichiarazioni registrate per-canale (prev ritornato); `PERWRITE` e' gia' il FAT, ramfs resta volatile |
 
-Sensori: `R_STATVFS` (spazio mount: FAT blocchi=cluster da FSInfo con clamp, ramfs usati camminati + `MAX` illimitato) e `SYS_MEMINFO` (frame liberi/totali/usati del PMM; il kernel non decide mai: niente OOM-kill). Ganci per quota (A3) e swap (B1).
+Sensori: `R_STATVFS` (spazio mount: FAT blocchi=cluster da FSInfo con clamp, ramfs usati camminati + `MAX` illimitato) e `SYS_MEMINFO` (frame liberi/totali/usati del PMM; il kernel non decide mai: niente OOM-kill). Quota per bucket chiusa in A3 (ADR-0044: budget blocchi dati, `ERR_NOSPC`, tabella nella foglia meta); resta gancio per swap (B1).
 50   P1 orologio (mtime veri): `usertime` (CMOS+Time), baseline lazy in cardo (`wall.rs`, niente IPC per-op), `mtime` su `FsNode`/decode DOS WrtTime/Date + stamp a create/grow/truncate, `Meta.mtime` via trait, `civis::Stat.mtime`; t38 esteso (Time monotono, mtime plausibile+crescente, FAT noto) [x]
 20   FAT32 scrivibile ([ADR-0016](./adr/0016-fat-writable.md): DISK_WRITE + write PIO + overwrite/grow/alloc/O_CREAT write-through, `testfat` 7/7, fsck pulito) [x]
 21   Servizi da disco: cardo con cache FileInfo per-fd + generazione (bump a ogni mutazione FAT; stat sempre fresca) e `IpcDisk` con OPEN-once per connessione (re-OPEN solo a canale caduto) — dimezza i round-trip DISK dei load da disco [x]

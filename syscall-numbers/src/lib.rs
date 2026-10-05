@@ -533,6 +533,10 @@ pub const ERR_EMPTY: u64 = !0u64 - 9;
 /// Estremita' opposta della pipe chiusa (Fase 42): write senza lettori o
 /// grant/claim su stato morto. Il client la mappa in `Error::Closed` (EPIPE).
 pub const ERR_CLOSED: u64 = !0u64 - 10;
+/// Budget quota superato (A3, ADR-0044): put/clone/rollback oltre
+/// `quota_blocks` del bucket. Il client la mappa in `Error::NoSpace` (ENOSPC
+/// al bordo). Mai oltre il bound prima di allocare: niente mezze scritte.
+pub const ERR_NOSPC: u64 = !0u64 - 11;
 
 // ── Costanti condivise kernel/userland ─────────────────────────────────────
 // Pagina fisica scratch riservata dal kernel all'avvio (phys_mem::reserve):
