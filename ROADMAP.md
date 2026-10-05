@@ -161,6 +161,14 @@ Voci con scope e vittoria dichiarati (non date).
        engine, device-awareness, RAID, tool completo, rete; servizio
        vettoriale e backend VM/block fuori dal FS, mai dentro.
        Vittoria: una fase alla volta, ciascuna col suo gate.
+- [x] **S0 survey self-hosting** (chiusa, ADR-0045): strategia cross-build
+       su host + ultimo miglio nativo; nodo thread deciso con dati (rustc
+       spawna 32 thread anche per hello → S-T prerequisito duro, tcc gira
+       senza); linker = rust-lld dal sysroot, tcc come `cc` di bootstrap;
+       gap PAL in tabella (MUST: rename, chdir/getcwd, symlink, chmod,
+       thread/TLS/futex; DEFER: net, backtrace, dynamic-lib); sizing
+       (hello ~85 MB RSS, sysroot ~200–400 MB → volumi/RAM da crescere).
+       Prossimo: S1 (MUST senza thread + PAL single-thread).
 
 ## Parcheggiate
 

@@ -2101,3 +2101,13 @@
           suite allungata, verde ai due rerun senza tocchi (stessa famiglia
           v29/v38: timing da suite piu' lunga + bounce extra). Gate: 5/5 +
           7/7 + 54/54 + 4/4 + 54/54 + shell 10/10, zero FAIL/PANIC/FAULT.
+          S0 (survey self-hosting, ADR-0045): strategia cross-build + ultimo
+          miglio nativo (costruire rustc su Velordo fuori portata per
+          disegno: Python/cmake/C++/make/ninja/git/curl + GB per LLVM).
+          Misure host: hello ~85 MB RSS, sysroot utile ~200-400 MB (full
+          1.9 GB) → 256M/32MiB insufficienti. Nodo thread deciso con strace:
+          32 clone anche con codegen-units=1 (rayon/LLVM eager) → thread
+          kernel (S-T) prerequisito duro, tcc single-thread come prima
+          vittoria. Linker: rust-lld spedito nella distribuzione (pattern
+          Xous), tcc come `cc` di bootstrap. Gap PAL in tabella con strato
+          (POSIX puro = flavour). Nessun codice, nessun gate toccato.
