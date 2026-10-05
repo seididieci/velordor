@@ -22,12 +22,26 @@ fn driver_name_of(chan: u64) -> &'static str {
     }
 }
 
-/// Tabella seed del bucket `sys` (Fase 55, N0): path FAT → chiave oggetto.
-/// Solo i binari che init carica per object_id (stessi byte iniettati su
-/// /fat via `inject-bins.sh`: l'hash manifest li copre in entrambi i path).
-const SYS_SEED: &[(&str, &[u8])] = &[
-    ("/fat/bin/gpu.bin", b"bin/gpu.bin"),
-    ("/fat/bin/shell.bin", b"bin/usershell.bin"),
+/// Tabella seed dei bucket oggetti (Fase 55 N0 + D1): path FAT →
+/// (bucket, chiave). Solo i binari che init carica per object_id (stessi
+/// byte iniettati su /fat via `inject-bins.sh`: l'hash manifest li copre in
+/// entrambi i path). Bucket `vela` = driver (toccano HW), `sys` = servizi.
+const SYS_SEED: &[(&str, &[u8], &[u8])] = &[
+    ("/fat/bin/gpu.bin", b"vela", b"bin/gpu.bin"),
+    ("/fat/bin/uptime.bin", b"sys", b"bin/uptime.bin"),
+    ("/fat/bin/vela.bin", b"sys", b"bin/vela.bin"),
+    ("/fat/bin/kbd.bin", b"vela", b"bin/kbd.bin"),
+    ("/fat/bin/porta.bin", b"sys", b"bin/porta.bin"),
+    ("/fat/bin/posix.bin", b"sys", b"bin/posix/posix.bin"),
+    ("/fat/bin/shell.bin", b"sys", b"bin/posix/shell.bin"),
+    ("/fat/bin/time.bin", b"vela", b"bin/time.bin"),
+    // Suite di test (D2, bucket `tst`): init le carica per object_id.
+    ("/fat/test/testfs.bin", b"tst", b"test/testfs.bin"),
+    ("/fat/test/testfat.bin", b"tst", b"test/testfat.bin"),
+    ("/fat/test/testarca.bin", b"tst", b"test/testarca.bin"),
+    ("/fat/test/posixtst.bin", b"tst", b"test/posixtst.bin"),
+    ("/fat/test/tests.bin", b"tst", b"test/tests.bin"),
+    ("/fat/test/bench.bin", b"tst", b"test/bench.bin"),
 ];
 
 /// Bound seed: nessun servizio supera 256 KiB (stesso tetto di
@@ -98,11 +112,12 @@ fn seed_read(
     !out.is_empty()
 }
 
-/// Popola il bucket `sys` del motore disco (N0 su blocchi): seed SOLO delle
-/// chiavi assenti (idempotente: all'avvio su volume caldo non riscrive
-/// versioni, al bind su volume fresco bootstrappa da /fat). Chiamato
-/// all'auto-bind startup e al bind USEDISK. A seed mancato init ripiega su
-/// FAT (dual-mode). Commit singolo se almeno un file seedato.
+/// Popola i bucket oggetti del motore disco (N0 su blocchi + D1): seed SOLO
+/// delle chiavi assenti (idempotente: all'avvio su volume caldo non riscrive
+/// versioni, al bind su volume fresco bootstrappa da /fat). Chiamato al bind
+/// root e al bind USEDISK. D1 (niente fallback): a seed mancato init fa panic
+/// loud a boot — il log qui resta la diagnosi. Commit singolo se almeno un
+/// file seedato.
 /// `#[inline(never)]`: firewall anti-inlining (con LTO la catena seed→btree
 /// si fonde nel chiamante e sfonda i 16 KiB — osservato #PF all'auto-bind).
 #[inline(never)]
@@ -112,25 +127,25 @@ fn seed_sys_disk(
     fgen: &mut u64,
 ) {
     let mut seeded = false;
-    for (path, key) in SYS_SEED {
-        if disk.stat(b"sys", key).is_some() {
+    for (path, bucket, key) in SYS_SEED {
+        if disk.stat(bucket, key).is_some() {
             continue; // gia' sul volume: niente versioni duplicate
         }
         let mut data = Vec::new();
         if !seed_read(mounts, fgen, path, &mut data) {
-            println!("[cardo] sys: {} non seedato (init ripiega su FAT)", path);
+            println!("[cardo] seed: {} non seedato (D1: init panic loud)", path);
             continue;
         }
-        match btree_drv::seed_put(disk, b"sys", key, &data) {
+        match btree_drv::seed_put(disk, bucket, key, &data) {
             Some(n) => {
-                println!("[cardo] sys: {}B seeded", n);
+                println!("[cardo] seed: {}B seeded", n);
                 seeded = true;
             }
-            None => println!("[cardo] sys: {} oltre bound (init ripiega su FAT)", path),
+            None => println!("[cardo] seed: {} oltre bound (D1: init panic loud)", path),
         }
     }
     if seeded && !btree_drv::commit(disk) {
-        println!("[cardo] sys: commit seed fallito (init ripiega su FAT)");
+        println!("[cardo] seed: commit seed fallito (D1: init panic loud)");
     }
 }
 
@@ -282,19 +297,29 @@ fn real_main(_sp: u64) -> ! {
     // gli op nativi danno errore loud e init ripiega su FAT (dual-mode).
     let mut disk: Option<btree_drv::DiskEngine> = None;
 
-    // Auto-bind 56.2c: scansiona i dischi e lega il primo volume ArcaFS.
-    // PRIMA del READY: init spawna console/shell per object_id solo dopo
-    // l'ACK e li deve trovare gia' serviti (N0 end-to-end nel gate).
-    // Senza volume: silenzio, nessun motore (produzione/ARCA_IMG=0 invariati).
-    if let Some(store) = btree_drv::scan_and_open() {
-        println!("[cardo] arca-disk: auto-bind all'avvio");
-        dbgvol = Some(store);
-        if btree_drv::set_backend(&mut dbgvol, &mut disk).is_some() {
-            if let Some(d) = disk.as_mut() {
-                seed_sys_disk(d, &mut fat_mounts, &mut fat_gen);
-            }
-        }
+    // Fase A (root su volume): il motore si lega al volume root trovato per
+    // UUID sopra (un solo proprietario: niente doppia open, niente primo-
+    // trovato che diverge dalla root). PRIMA del READY: init spawna
+    // console/shell per object_id solo dopo l'ACK e li deve trovare gia'
+    // serviti (N0 end-to-end nel gate). Bind fallito = panic loud (la root
+    // e' obbligatoria: run.sh attacca sempre arca.img come terzo drive).
+    let root_uuid_v = root_uuid.unwrap_or(0);
+    let root_gen = root_store.as_ref().and_then(|s| s.generation()).unwrap_or(0);
+    dbgvol = root_store;
+    if btree_drv::set_backend(&mut dbgvol, &mut disk).is_none() {
+        println!("[cardo] ERRORE: bind motore sul volume root fallito");
+        unsafe { core::arch::asm!("ud2"); }
     }
+    if let Some(d) = disk.as_mut() {
+        seed_sys_disk(d, &mut fat_mounts, &mut fat_gen);
+    }
+    // Mount root: il volume ArcaFS su `""` (radice, catch-all). Ramfs resta
+    // solo su `/tmp` (sopra); `/fat` resta montato per dati (niente fallback).
+    let root_id = next_mount_id;
+    next_mount_id = next_mount_id.wrapping_add(1);
+    fat_mounts.push(mount::FsMount::root_arca(root_gen, root_uuid_v, root_id));
+    fat_gen = fat_gen.wrapping_add(1);
+    println!("[cardo] root ArcaFS montata su / (uuid={:016X})", root_uuid_v);
 
     // Client registrati: pid → (req_ring_phys, resp_ring_phys).
     let mut rings: BTreeMap<u64, (u64, u64)> = BTreeMap::new();
@@ -323,14 +348,10 @@ fn real_main(_sp: u64) -> ! {
     // come rights/policy: col peer muore la riga (purge su EXIT_NOTIFY).
     let mut sync_expect: BTreeMap<u64, u32> = BTreeMap::new();
 
-    // Pre-populate: file di esempio
-    if let Some(data) = fs.create_file("hello.txt") {
-        data.extend_from_slice(b"Hello from Velordo ramfs!\n");
-    }
-    if let Some(data) = fs.create_file("test.txt") {
-        data.extend_from_slice(b"Line 1\nLine 2\nLine 3\n");
-    }
-    println!("[cardo] ramfs popolata, entro in loop");
+    // Fase A: niente piu' populate della ramfs radice — `/` e' il volume
+    // ArcaFS (hello.txt/test.txt seedati a build-time, Fase C) e ramfs vive
+    // solo su `/tmp`. `fs` resta per le firme handler (rami Ram difensivi).
+    println!("[cardo] root ArcaFS attiva, entro in loop");
 
     // Notifica a init (canale di nascita) che il servizio Fs e' pronto: init
     // aspetta questo ACK prima di spawnare chi usa il filesystem (boot

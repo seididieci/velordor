@@ -39,10 +39,11 @@ bash scripts/inject-bins.sh
 # t32/t36).
 ./scripts/arca-tool.sh
 
-# Fase 55, Parte 4: crea arca-part.img (MBR + partizione con superblock ArcaFS
-# a offset LBA63) e arca-gpt.img (GPT + partizione ArcaFS a LBA64) quando
-# ARCA_IMG=1. Servono per testare il mount in partizione MBR e GPT invece
-# che su whole-disk.
+# Fase 55, Parte 4 + E2: crea arca-part.img (MBR, LBA63) e arca-gpt.img
+# (GPT, LBA64) quando ARCA_IMG=1. Il PC ha solo 4 IDE: come quarto drive si
+# attacca la GPT (sdd: serve ai test 12-13); la MBR resta artefatto per run
+# manuali (build+self-check la tengono valida, il mount-in-partizione e'
+# coperto via GPT — perde solo il parser MBR nel gate, vedi 11-testing).
 
 # Fase 2 (root su volume): assegna UUID distinti alle derivate (MBR/GPT) per
 # evitare collisioni con arca.img — il kernel sceglie la root per UUID (mai
@@ -69,12 +70,15 @@ if [ "${SWAP_DRIVES:-0}" = "1" ]; then
 else
     DRIVES="-drive file=userland/fs/fat.img,format=raw,if=ide -drive file=userland/fs/fat2.img,format=raw,if=ide"
 fi
-# Terzo/quarto drive ArcaFS opt-in (Fase 54, P5; Fase 55, Parte 4: partizioni
-# MBR su arca-part.img e GPT su arca-gpt.img = secondary master/slave).
-# La suite li cerca via magic, mai per lettera (sda/sdb restano i due FAT).
+# Terzo drive ArcaFS SEMPRE attaccato (Fase A: e' la root `/`, scelta per UUID —
+# sda/sdb restano i due FAT). Quarto drive (partizione GPT su arca-gpt.img =
+# secondary slave) opt-in con ARCA_IMG=1 per i test 12-13 e il mount in
+# partizione di 4-8 (E2: il PC ha solo 4 IDE; la MBR resta artefatto per run
+# manuali — mount-in-partizione coperto via GPT, vedi 11-testing).
+# La suite cerca i volumi via magic/UUID, mai per lettera.
+DRIVES="$DRIVES -drive file=userland/disk/arca.img,format=raw,if=ide"
 if [ "${ARCA_IMG:-0}" = "1" ]; then
-    DRIVES="$DRIVES -drive file=userland/disk/arca.img,format=raw,if=ide"
-    DRIVES="$DRIVES -drive file=userland/disk/arca-part.img,format=raw,if=ide"
+    DRIVES="$DRIVES -drive file=userland/disk/arca-gpt.img,format=raw,if=ide"
 fi
 # Fase 2 (root su volume): passa la cmdline `-append` a QEMU. Il kernel legge
 # `hvm_start_info.cmdline_paddr` al boot e lo rende a userland via SYS_BOOT_

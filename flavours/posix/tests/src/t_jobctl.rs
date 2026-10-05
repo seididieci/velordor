@@ -48,7 +48,7 @@ pub fn t_suspend_resume() -> bool {
     }
     // Pid morto: spawna, killa, attende, poi suspend/resume = Err.
     let (d_chan, d_pid) = match helpers::spawn_cfg(
-        "/fat/test/testcli.bin", "utcli", 16, helpers::M_KILLME, 0,
+        "/test/testcli.bin", "utcli", 16, helpers::M_KILLME, 0,
     ) {
         Some(x) => x,
         None => {
@@ -71,7 +71,7 @@ pub fn t_suspend_resume() -> bool {
 
     // 1. Figlio RUNNING: testspin con budget lungo.
     let (s_chan, s_pid) = match helpers::spawn_cfg(
-        "/fat/test/testspin.bin", "utspin", 16, 200, 0,
+        "/test/testspin.bin", "utspin", 16, 200, 0,
     ) {
         Some(x) => x,
         None => {
@@ -148,7 +148,7 @@ pub fn t_suspend_resume() -> bool {
 
     // 2. Figlio BLOCCATO in recv (SRV): suspend → coda senza sveglia.
     let (v_chan, v_pid) = match helpers::spawn_cfg(
-        "/fat/test/testcli.bin", "utcli", 16, helpers::M_SRV, 0,
+        "/test/testcli.bin", "utcli", 16, helpers::M_SRV, 0,
     ) {
         Some(x) => x,
         None => {
@@ -244,7 +244,7 @@ pub fn t_suspend_resume() -> bool {
 
     // 3. Hardening: helper non-parent che sospende/riprende un fratello.
     let (b_chan, b_pid) = match helpers::spawn_cfg(
-        "/fat/test/testcli.bin", "utcli", 16, helpers::M_KILLME, 0,
+        "/test/testcli.bin", "utcli", 16, helpers::M_KILLME, 0,
     ) {
         Some(x) => x,
         None => {
@@ -253,7 +253,7 @@ pub fn t_suspend_resume() -> bool {
         }
     };
     let (h_chan, _) = match helpers::spawn_cfg(
-        "/fat/test/testcli.bin", "utcli", 16, helpers::M_SUSPENDENY, b_pid,
+        "/test/testcli.bin", "utcli", 16, helpers::M_SUSPENDENY, b_pid,
     ) {
         Some(x) => x,
         None => {
@@ -313,7 +313,7 @@ pub fn t_sigcatch_cancel() -> bool {
     helpers::drain_stray();
     // 1. Catcher: esce 42 al cancel, senza alcun kill.
     let (c_chan, c_pid) = match helpers::spawn_cfg(
-        "/fat/test/testcli.bin", "utcli", 16, helpers::M_SIGCATCH, 0,
+        "/test/testcli.bin", "utcli", 16, helpers::M_SIGCATCH, 0,
     ) {
         Some(x) => x,
         None => {
@@ -342,7 +342,7 @@ pub fn t_sigcatch_cancel() -> bool {
     }
     // 2. Non cooperante: resta vivo oltre il grace, poi escalation 130.
     let (k_chan, k_pid) = match helpers::spawn_cfg(
-        "/fat/test/testcli.bin", "utcli", 16, helpers::M_KILLME, 0,
+        "/test/testcli.bin", "utcli", 16, helpers::M_KILLME, 0,
     ) {
         Some(x) => x,
         None => {

@@ -530,24 +530,31 @@ fn cmd_seed(args: &[String]) {
                 };
             }
             other => {
-                let (bk, rest) = match other.strip_prefix("ns:").map(|r| (b"ns".as_slice(), r)) {
-                    Some(v) => v,
-                    None => match other.strip_prefix("sys:").map(|r| (b"sys".as_slice(), r)) {
-                        Some(v) => v,
-                        None => {
-                            eprintln!("voce ignota (atteso ns:chiave=host o sys:chiave=host): {}", other);
-                            exit(2);
-                        }
-                    },
+                // D1: bucket arbitrario `<nome>:chiave=host` (ns/sys/vela/usr…):
+                // nome ASCII alfanumerico entro OBJ_BUCKET_MAX (16), come il
+                // guest (`bounds_invalid` rifiuta oltre bound — mai discrepanze
+                // host/guest sui nomi).
+                let (bk, rest) = match other.split_once(':') {
+                    Some((b, r))
+                        if !b.is_empty()
+                            && b.len() <= 16
+                            && b.bytes().all(|c| c.is_ascii_alphanumeric()) =>
+                    {
+                        (b, r)
+                    }
+                    _ => {
+                        eprintln!("voce ignota (atteso <bucket>:chiave=host): {}", other);
+                        exit(2);
+                    }
                 };
                 let (key, host) = match rest.split_once('=') {
                     Some((k, h)) if !k.is_empty() && !h.is_empty() => (k, h),
                     _ => {
-                        eprintln!("voce malformata (atteso ns:chiave=host): {}", other);
+                        eprintln!("voce malformata (atteso <bucket>:chiave=host): {}", other);
                         exit(2);
                     }
                 };
-                entries.push((bk.to_vec(), key.as_bytes().to_vec(), host.as_bytes().to_vec()));
+                entries.push((bk.as_bytes().to_vec(), key.as_bytes().to_vec(), host.as_bytes().to_vec()));
             }
         }
         i += 1;

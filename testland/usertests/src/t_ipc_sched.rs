@@ -2,7 +2,7 @@ use super::*;
 
 pub fn t_ipc_echo() -> bool {
     helpers::drain_stray();
-    let (chan, _) = match helpers::spawn_cfg("/fat/test/testcli.bin", "utcli", 16, helpers::M_ECHO, 8) {
+    let (chan, _) = match helpers::spawn_cfg("/test/testcli.bin", "utcli", 16, helpers::M_ECHO, 8) {
         Some(x) => x,
         None => return false,
     };
@@ -35,7 +35,7 @@ pub fn t_ipc_multiclient() -> bool {
     let rounds = 50usize;
     let mut chans = Vec::new();
     for _ in 0..n_clients {
-        match helpers::spawn_cfg("/fat/test/testcli.bin", "utcli", 16, helpers::M_ECHO, rounds as u64) {
+        match helpers::spawn_cfg("/test/testcli.bin", "utcli", 16, helpers::M_ECHO, rounds as u64) {
             Some((c, _)) => chans.push(c),
             None => return false,
         }
@@ -76,7 +76,7 @@ pub fn t_vela_concurrent_churn() -> bool {
     // Buffer FS per-processo (Fase 9.6): ogni client ha la propria pagina, non
     // serve serializzare le OPEN. L'handshake T_OPENED resta come barriera.
     for _ in 0..3 {
-        match helpers::spawn_cfg("/fat/test/testcli.bin", "utcli", 16, helpers::M_ZERO, 30) {
+        match helpers::spawn_cfg("/test/testcli.bin", "utcli", 16, helpers::M_ZERO, 30) {
             Some((c, _)) => {
                 // Il client apre /dev/zero e notifica; reply per sbloccarlo.
                 // `recv_expect` ignora gli estranei (es. EXIT_NOTIFY di helper
@@ -121,7 +121,7 @@ pub fn t_sched_preempt() -> bool {
     let ctr = helpers::SPIN_VA as *mut u64;
     unsafe { core::ptr::write_volatile(ctr, 0) };
 
-    let (chan, _) = match helpers::spawn_cfg("/fat/test/testspin.bin", "utspin", 16, 25, 1) {
+    let (chan, _) = match helpers::spawn_cfg("/test/testspin.bin", "utspin", 16, 25, 1) {
         Some(x) => x,
         None => return false,
     };
@@ -141,11 +141,11 @@ pub fn t_sched_priority() -> bool {
     // High). Niente Low qui: i server Normal idle (fs/shell) girano in recv-loop
     // sempre-Ready e affamerebbero una fascia Low.
     helpers::drain_stray();
-    let (high, _) = match helpers::spawn_cfg("/fat/test/testspin.bin", "utspin", 31, 20, 0) {
+    let (high, _) = match helpers::spawn_cfg("/test/testspin.bin", "utspin", 31, 20, 0) {
         Some(x) => x,
         None => return false,
     };
-    let (norm, _) = match helpers::spawn_cfg("/fat/test/testspin.bin", "utspin", 16, 8, 0) {
+    let (norm, _) = match helpers::spawn_cfg("/test/testspin.bin", "utspin", 16, 8, 0) {
         Some(x) => x,
         None => return false,
     };
@@ -206,7 +206,7 @@ pub fn t_cbs_bandwidth() -> bool {
 
     // Audio: utcbstest crea server Q=3 P=10 e si attacha; busy-loop di 200
     // tick wall-clock contando i tick osservati (~60 attesi a 30%).
-    let (audio_chan, _) = match helpers::spawn_cfg("/fat/test/cbstest.bin", "utcbs", 16, 3, 10) {
+    let (audio_chan, _) = match helpers::spawn_cfg("/test/cbstest.bin", "utcbs", 16, 3, 10) {
         Some(x) => x,
         None => {
             println!("[usertests] t_cbs_bandwidth: spawn utcbstest FAILED");
@@ -216,7 +216,7 @@ pub fn t_cbs_bandwidth() -> bool {
 
     // Hog: utspin_norm senza CBS, budget 300 tick wall-clock: resta attivo
     // per l'intera finestra dell'audio (200) e contende la CPU.
-    let (hog_chan, _) = match helpers::spawn_cfg("/fat/test/testspin.bin", "utspin", 16, 300, 0) {
+    let (hog_chan, _) = match helpers::spawn_cfg("/test/testspin.bin", "utspin", 16, 300, 0) {
         Some(x) => x,
         None => {
             println!("[usertests] t_cbs_bandwidth: spawn hog FAILED");

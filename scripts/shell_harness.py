@@ -17,6 +17,9 @@ FAT_DFLT = "userland/fs/fat.img"
 # Secondo disco (stessa fixture di run.sh: UUID C0FFEE01, label SECOND):
 # senza, t36 fallisce per ambiente (mount UUID impossibile).
 FAT2_DFLT = "userland/fs/fat2.img"
+# Terzo disco (Fase A/E1: root ArcaFS — senza, cardo va in panic loud per
+# root=UUID assente e la shell non parte mai).
+ARCA_DFLT = "userland/disk/arca.img"
 
 # Nomi sendkey VERIFICATI su QEMU 10.2.2 ('period' NON esiste: il punto e'
 # 'dot'; MAIUSCOLE come combo 'shift-x'; '>' e '<' = shift-dot/shift-comma;
@@ -60,30 +63,38 @@ T_DUMP = 0.3 if FAST else 0.6
 
 
 def parse_shell_args(mon_dflt, serial_dflt):
-    """CLI minima dei file di fase: --mon/--serial/--fat/--fat2/--kernel/
-    --fat-format/--no-prep (il runner parallelo li passa per isolare le
-    istanze; in locale valgono i default)."""
+    """CLI minima dei file di fase: --mon/--serial/--fat/--fat2/--arca/
+    --kernel/--fat-format/--arca-format/--no-prep (il runner parallelo li
+    passa per isolare le istanze; in locale valgono i default)."""
     import argparse
     ap = argparse.ArgumentParser()
     ap.add_argument("--mon", default=mon_dflt)
     ap.add_argument("--serial", default=serial_dflt)
     ap.add_argument("--fat", default=FAT_DFLT)
     ap.add_argument("--fat2", default=FAT2_DFLT)
+    ap.add_argument("--arca", default=ARCA_DFLT)
     ap.add_argument("--kernel", default=KERNEL_DFLT)
     ap.add_argument("--fat-format", default="raw",
                     help="raw (default) o qcow2 per gli overlay paralleli")
+    ap.add_argument("--arca-format", default="raw",
+                    help="raw (default) o qcow2 per gli overlay paralleli")
     ap.add_argument("--no-prep", action="store_true",
-                    help="salta mkfat+inject (il runner li fa una volta sola)")
+                    help="salta mkfat+inject+arca-seed (il runner li fa una volta sola)")
     return ap.parse_args()
 
 
-def prep_images(fat=FAT_DFLT, fat2=FAT2_DFLT):
-    """Rigenera le immagini FAT + inietta /bin e /test (come run.sh)."""
+def prep_images(fat=FAT_DFLT, fat2=FAT2_DFLT, arca=ARCA_DFLT):
+    """Rigenera le immagini FAT + inietta /bin e /test + seed ArcaFS (come
+    run.sh). La root e' sul volume: senza seed fresco la shell parte su dati
+    stantii (E1: persistenza root tra fasi)."""
     subprocess.run(["python3", "scripts/mkfat.py", fat], check=True)
     subprocess.run(["python3", "scripts/mkfat.py", fat2,
                     "--serial", "C0FFEE01", "--label", "SECOND",
                     "--marker", "second disk marker"], check=True)
     subprocess.run(["bash", "scripts/inject-bins.sh"], check=True)
+    subprocess.run(["bash", "scripts/arca-tool.sh",
+                    os.path.join(os.getcwd(), arca)
+                    if not os.path.isabs(arca) else arca], check=True)
 
 
 class Checker:
@@ -125,14 +136,16 @@ class Shell:
     parallele (il runner li assegna per fase)."""
 
     def __init__(self, mon, serial, fat=FAT_DFLT, fat2=FAT2_DFLT,
-                 kernel=KERNEL_DFLT, fat_format="raw", arca_img=None):
+                 kernel=KERNEL_DFLT, fat_format="raw", arca_img=None,
+                 arca_format="raw"):
         self.mon = mon
         self.serial = serial
         self.fat = fat
         self.fat2 = fat2
         self.kernel = kernel
         self.fat_format = fat_format
-        self.arca_img = arca_img
+        self.arca_img = ARCA_DFLT if arca_img is None else arca_img
+        self.arca_format = arca_format
         self.q = None
         # wait_prompt event-driven sul conteggio prompt CONSUMATO.
         self._prompt_seen = 0
@@ -238,7 +251,11 @@ class Shell:
     def run_source(self, path: str, sleep=None):
         """Esegue uno script via `source` (1 riga digitata invece di N
         comandi): ritorna l'output nuovo come run_out. Gli sleep espliciti
-        passati restano rispettati (es. job bg che richiedono attesa)."""
+        passati restano rispettati (es. job bg che richiedono attesa). E1:
+        dopo lo sleep si sincronizza sul prompt rientrato (mai slice
+        troncata: sotto `--jobs N` il guest impiega piu' dello sleep a
+        flussare script multi-comando). Timeout 8s di wait_prompt, mai hang.
+        """
         if sleep is None:
             sleep = T_RUN
         t0 = time.time()
@@ -248,6 +265,7 @@ class Shell:
         self.send_mon("sendkey ret")
         time.sleep(sleep)
         self._need_sync = True
+        self.wait_prompt()
         dt = time.time() - t0
         if dt > 10:
             print("info slow run_source %.1fs: %s" % (dt, path), flush=True)
@@ -318,12 +336,12 @@ class Shell:
             "-drive", "file=%s,format=%s,if=ide" % (self.fat, self.fat_format),
             "-drive", "file=%s,format=%s,if=ide" % (self.fat2, self.fat_format),
         ]
-        # Fase 2: terzo drive ArcaFS + cmdline root=UUID (se presente).
-        if self.arca_img is not None:
-            args.append("-drive")
-            args.append("file=%s,format=raw,if=ide" % self.arca_img)
-            args.append("-append")
-            args.append("root=UUID=4152434100000001")
+        # E1: terzo drive ArcaFS sempre (root obbligatoria, come run.sh) +
+        # cmdline root=UUID. Senza, cardo va in panic loud e niente shell.
+        args.append("-drive")
+        args.append("file=%s,format=%s,if=ide" % (self.arca_img, self.arca_format))
+        args.append("-append")
+        args.append("root=UUID=4152434100000001")
         # KVM se disponibile: abbatte la tassa di emulazione sui round-trip
         # tastiera (IRQ1→kbd→tty→shell→prompt). `-cpu host` come bench.sh
         # (TSC/round-trip a velocita' nativa invece che emulata).

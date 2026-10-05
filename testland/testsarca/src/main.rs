@@ -156,23 +156,12 @@ fn find_arca() -> Option<[u8; 4]> {
     found_part
 }
 
-/// Monta il primo volume ACFS su `/arca` (56.3, vista POSIX): stesso ordine
-/// di scansione dell'auto-bind di cardo, quindi stesso volume del motore
-/// globale (uuid combaciante, mai dati altrui).
-fn mount_first_arca() -> bool {
-    match find_arca() {
-        Some(name) => {
-            let len = if name[3] == 0 { 3 } else { 4 };
-            let mut src = [0u8; 16];
-            src[..5].copy_from_slice(b"/dev/");
-            src[5..5 + len].copy_from_slice(&name[..len]);
-            match core::str::from_utf8(&src[..5 + len]) {
-                Ok(s) => civis::mount(s, "/arca").is_ok(),
-                Err(_) => false,
-            }
-        }
-        None => false,
-    }
+/// Monta il volume root (`/dev/sdc`, stesso uuid del motore globale legato
+/// a boot) su `/arca` (E2: la vista POSIX 56.3 gira sul root vivo — mount
+/// del primo trovato non va piu' bene: con la partizione MBR presente
+/// `find_arca` preferisce `sdd1`, uuid diverso = stub).
+fn mount_root_arca() -> bool {
+    civis::mount("/dev/sdc", "/arca").is_ok()
 }
 
 /// Cerca un disco GPT (protective-MBR: tipo prima voce 0xEE a byte 450, NON
@@ -208,11 +197,11 @@ fn find_gpt_arca() -> Option<([u8; 4], [u8; 4])> {
     None
 }
 
-/// Generazione superblock da /dev/sdc1 (retry throttled: dopo un restart il
+/// Generazione superblock da /dev/sdc (retry throttled: dopo un restart il
 /// resolve del device puo' fallire i primi tentativi).
 fn read_gen() -> Option<u64> {
     civis::poll_value(200, civis::POLL_PERIOD_TICKS, || {
-        read_sector("/dev/sdc1").map(|s| {
+        read_sector("/dev/sdc").map(|s| {
             u64::from_le_bytes(
                 s[civis::ARCA_OFF_GEN..civis::ARCA_OFF_GEN + 8].try_into().unwrap_or([0; 8]),
             )
@@ -370,21 +359,24 @@ fn real_main(_sp: u64) -> ! {
     // 14-21. Versioni + snapshot: spostati DOPO il bind (test 28), sezione
     // 22-32 — stessi assert, backend blocchi (specifica §19).
 
-    // 22-32. Motore su disco (56.2b, `/dev/sdc1` formattata da `arca create`;
-    // immagini rigenerate a ogni run, quindi allocazioni deterministiche).
-    // Senza volume (ARCA_IMG=0): salto senza FAIL, core PASS invariato.
+    // 22-32. Motore su disco (56.2b; E2: `/dev/sdc` = volume root, motore
+    // gia' legato a boot — OPEN/USEDISK tollerati, gli op corrono sul motore
+    // root in bucket isolati `test`/`v56`/`d56`/`dpin`/`dcrash`/`dgc`, mai su
+    // ns:/sys:/vela:/tst:/log:. Immagini rigenerate a ogni run, quindi
+    // allocazioni deterministiche). Senza volume: salto senza FAIL, core
+    // PASS invariato.
     // Ordine obbligato: scaffold RAW (22-27) PRIMA del bind (il bind consuma
     // la freelist: secondary fissa al blocco 2); semantica versionata (4-6,
     // 14-21: stessi assert 56.1, backend blocchi) DOPO; split/commit (29-31)
     // e crash+remount (32) per ultimi.
     {
-        let have_vol = read_sector("/dev/sdc1").map_or(false, |s| is_arca_super(&s));
+        let have_vol = read_sector("/dev/sdc").map_or(false, |s| is_arca_super(&s));
         if !have_vol {
-            println!("[testsarca] nessun volume ACFS su /dev/sdc1 (ARCA_IMG=0?): salto 22-32");
+            println!("[testsarca] nessun volume ACFS su /dev/sdc: salto 22-32");
         } else {
             // 22. open (o gia' legato all'avvio 56.2c: re-open rifiutato,
             // tollerato) + open assente rifiutata + motore attivo.
-            let _ = civis::arca_open("/dev/sdc1");
+            let _ = civis::arca_open("/dev/sdc");
             let v22 = civis::arca_use_disk(true).is_ok()
                 && civis::arca_open("/dev/sdZ").is_err();
             c.ok("vol open + assente", v22);
@@ -418,11 +410,13 @@ fn real_main(_sp: u64) -> ! {
                 _ => false,
             };
             c.ok("write/read nodi", v24);
-            // 25. stat: high_water e live avanzati di 2 dai due alloc (delta
-            // sulla baseline: il bind all'avvio consuma un numero ignoto).
+            // 25. stat: live avanzato di 2 dai due alloc, high_water al piu'
+            // di 2 (delta sulla baseline: il bind all'avvio consuma un numero
+            // ignoto; E2: sul root vivo gli alloc pescano dalla freelist GC,
+            // su volume fresco da high_water — entrambi leciti).
             let v25 = matches!(
                 civis::arca_stat_vol(),
-                Ok((high, live, _)) if high == h0 + 2 && live == l0 + 2
+                Ok((high, live, _)) if high >= h0 && high <= h0 + 2 && live == l0 + 2
             );
             c.ok("stat volume", v25);
             // 26. free + realloc LIFO dallo stesso blocco (live invariato).
@@ -447,10 +441,11 @@ fn real_main(_sp: u64) -> ! {
                 _ => false,
             };
             c.ok("rifiuti allocatore", v27);
-            // 28. bind motore B+tree + seed `sys` (server-side): da qui gli
-            // op nativi parlano ai blocchi (commit per-op, shadow + flip).
+            // 28. bind motore B+tree + seed server-side (D1: i driver stanno
+            // in `vela`): da qui gli op nativi parlano ai blocchi (commit
+            // per-op, shadow + flip).
             let v28 = civis::arca_use_disk(true).is_ok()
-                && matches!(civis::obj_get(b"sys", b"bin/gpu.bin"), Ok(v) if !v.is_empty());
+                && matches!(civis::obj_get(b"vela", b"bin/gpu.bin"), Ok(v) if !v.is_empty());
             c.ok("bind motore + seed sys", v28);
             // 4. round-trip piccolo su disco (stesso assert 56.1).
             let small = b"nativo-arcafs-obj";
@@ -627,7 +622,7 @@ fn real_main(_sp: u64) -> ! {
                 // singolo tentativo in finestra di avvio. Poi i dati, non
                 // gli snapshot (tabella in RAM: persa col restart — in 56.2c
                 // persistente, ma qui non assertita).
-                let _ = civis::arca_open("/dev/sdc1");
+                let _ = civis::arca_open("/dev/sdc");
                 ok = ok && civis::poll_wait(1000, civis::POLL_PERIOD_TICKS, || {
                     civis::arca_use_disk(true).is_ok()
                 });
@@ -635,7 +630,7 @@ fn real_main(_sp: u64) -> ! {
                 ok = ok && matches!(civis::obj_get(b"dcrash", b"bulk"), Ok(v) if v == last);
                 ok = ok
                     && matches!(
-                        civis::obj_get(b"sys", b"bin/gpu.bin"),
+                        civis::obj_get(b"vela", b"bin/gpu.bin"),
                         Ok(v) if !v.is_empty()
                     );
                 let gen1 = read_gen();
@@ -687,7 +682,7 @@ fn real_main(_sp: u64) -> ! {
                 .is_some();
                 // Re-bind tollerante (startup auto-lega gia': open puo'
                 // prendere il rifiuto re-open, use_disk e' idempotente).
-                let _ = civis::arca_open("/dev/sdc1");
+                let _ = civis::arca_open("/dev/sdc");
                 ok = ok && civis::poll_wait(1000, civis::POLL_PERIOD_TICKS, || {
                     civis::arca_use_disk(true).is_ok()
                 });
@@ -841,19 +836,13 @@ fn real_main(_sp: u64) -> ! {
     }
 
     // 41-50. Vista POSIX su ArcaFS (56.3): namespace emergente + set
-    // transient in RAM. Richiede il mount (gate: ARCA_IMG=1); senza volume
-    // salto adattivo come 4-8/12-13 (mai FAIL per drive assente).
-    // Nota: POSIX ops richiedono il motore disco legato all'UUID della root
-    // (cardo mantiene un solo engine): saltiamo se il mount e' su un disco
-    // secondario con UUID diverso (es. /dev/sdd1 con UUID 02 vs root UUID 01).
-    let posix_ok = match find_arca() {
-        Some(name) => {
-            // Verifica che il device sia la root (/dev/sdc, nome "sdc")
-            core::str::from_utf8(&name[..4]).is_ok_and(|s| s == "sdc\0" || s == "sdc")
-        }
-        None => false,
-    };
-    if mount_first_arca() && posix_ok {
+    // transient in RAM. Gira sul volume root (E2: `/dev/sdc`, motore legato
+    // a boot — mai su sdd1/uuid doversi: stub). Scritture vere con cleanup
+    // a fine blocco (il volume e' la root viva). Senza sdc: salto adattivo
+    // (mai FAIL per drive assente).
+    let posix_ok =
+        read_sector("/dev/sdc").map_or(false, |s| is_arca_super(&s));
+    if mount_root_arca() && posix_ok {
         fn rd_all(path: &str) -> Option<alloc::vec::Vec<u8>> {
             let fd = civis::open(path, 0).ok()?;
             let mut out = alloc::vec::Vec::new();
@@ -960,7 +949,7 @@ fn real_main(_sp: u64) -> ! {
                 civis::service_pid(civis::Service::Cardo).ok()
             })
             .is_some()
-            && mount_first_arca()
+            && mount_root_arca()
             && matches!(rd_all("/arca/keep/v"), Some(v) if v.as_slice() == b"persistente")
             && is_dir("/arca/keep")
             && !is_dir("/arca/vuota");

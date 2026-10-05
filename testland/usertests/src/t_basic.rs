@@ -56,7 +56,7 @@ pub fn t_spawn_identity() -> bool {
     // con ACK portando il proprio pid. Il parent non conosce il pid (identita'
     // interna al kernel): verifica che il canale sia valido e che il figlio
     // abbia risposto (ack > 0) e completato (DONE).
-    match helpers::spawn_cfg("/fat/test/testcli.bin", "utcli", 16, helpers::M_ECHO, 0) {
+    match helpers::spawn_cfg("/test/testcli.bin", "utcli", 16, helpers::M_ECHO, 0) {
         Some((chan, ack_pid)) => {
             // rounds=0 → nessun REQ, solo DONE. Risponde/scarta eventuali
             // residui finche' non arriva il DONE del figlio.
@@ -351,7 +351,7 @@ pub fn t_mprotect() -> bool {
         (helpers::M_FAULT_CODE, "code-write"),
     ] {
         let (chan, _pid) = match helpers::spawn_cfg(
-            "/fat/test/testcli.bin", "utcli", 16, mode, 0,
+            "/test/testcli.bin", "utcli", 16, mode, 0,
         ) {
             Some(x) => x,
             None => {
@@ -393,7 +393,7 @@ pub fn t_shm() -> bool {
     // Helper: mappa la stessa regione (id in param), verifica, scrive marker.
     helpers::drain_stray();
     let (chan, _pid) = match helpers::spawn_cfg(
-        "/fat/test/testcli.bin", "utcli", 16, helpers::M_SHMDEMO, id as u64,
+        "/test/testcli.bin", "utcli", 16, helpers::M_SHMDEMO, id as u64,
     ) {
         Some(x) => x,
         None => {
@@ -446,7 +446,7 @@ pub fn t_text() -> bool {
     let mut chans = [0u64; 3];
     let mut pids = [0i64; 3];
     for i in 0..3 {
-        match helpers::spawn_cfg("/fat/test/testcli.bin", "utcli", 16, helpers::M_KILLME, 0) {
+        match helpers::spawn_cfg("/test/testcli.bin", "utcli", 16, helpers::M_KILLME, 0) {
             Some((c, pid)) => {
                 chans[i] = c;
                 pids[i] = pid as i64;
@@ -501,7 +501,7 @@ pub fn t_cow() -> bool {
     let c0 = civis::cow_count();
     helpers::drain_stray();
     let (chan, _pid) = match helpers::spawn_cfg(
-        "/fat/test/testcli.bin", "utcli", 16, helpers::M_COWDEMO, id as u64,
+        "/test/testcli.bin", "utcli", 16, helpers::M_COWDEMO, id as u64,
     ) {
         Some(x) => x,
         None => {

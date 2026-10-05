@@ -13,6 +13,7 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 # Diagnostica scheduler/IRQ attiva nei run di test (feature `sched_debug`).
-# ARCA_IMG=1: terzo e quarto drive ArcaFS (MBR + GPT in partizione) per
-# testsarca (il core resta PASS anche se assenti; nel gate sono presenti).
+# ARCA_IMG=1: quarto drive ArcaFS (partizione GPT su arca-gpt.img, sdd/sdd1)
+# per testsarca 12-13 (il terzo, arca.img=root sdc, e' sempre attaccato da
+# run.sh; 22-40 girano sul root vivo in bucket isolati, 41-50 su mount root).
 RUN_TESTS=1 SCHED_DEBUG=1 ARCA_IMG=1 exec ./run.sh "$@"

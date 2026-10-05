@@ -262,7 +262,10 @@ fn spawn_image_from_vec(img: &[u8], meta: &SvcMeta) -> Option<i64> {
     }
 }
 
-/// Spawna da manifest (embedded o disco) + log unificato.
+/// Spawna da manifest (embedded, oggetto o disco) + log unificato.
+/// D1 (niente fallback): a oggetto assente/diverso ritorna None senza
+/// ripiegare su FAT — a boot il chiamante fa panic loud, al restart ritenta
+/// con hold (vedi `restart_service`). I TEST_* restano su path FAT (D2).
 fn spawn_entry(meta: &SvcMeta) -> Option<i64> {
     if let Some((bucket, key)) = meta.obj {
         print_str!("[init] load obj ");
@@ -270,11 +273,8 @@ fn spawn_entry(meta: &SvcMeta) -> Option<i64> {
         let img = match spawn_object(bucket, key) {
             Some(v) => v,
             _ => {
-                println!(" -> oggetto assente, ripiego su FAT");
-                return match meta.path {
-                    None => spawn_child(meta.bin),
-                    Some(_) => spawn_file(meta),
-                };
+                println!(" -> oggetto assente, NIENTE fallback (D1)");
+                return None;
             }
         };
         return spawn_image_from_vec(&img, meta);
@@ -490,59 +490,56 @@ fn restart_service(e: &mut Supervised) {
 const SVC_CONSOLE: SvcMeta = SvcMeta {
     bin: b"gpu",
     path: Some("/fat/bin/gpu.bin"),
-    obj: Some((b"sys", b"bin/gpu.bin")),
+    obj: Some((b"vela", b"bin/gpu.bin")),
     prio: 16,
     io: VGA_CURSOR_RANGES,
 };
 const SVC_UPTIME: SvcMeta = SvcMeta {
     bin: b"useruptime",
     path: Some("/fat/bin/uptime.bin"),
-    obj: None,
+    obj: Some((b"sys", b"bin/uptime.bin")),
     prio: 1,
     io: &[],
 };
 const SVC_VELA: SvcMeta = SvcMeta {
     bin: b"vela",
     path: Some("/fat/bin/vela.bin"),
-    obj: None,
+    obj: Some((b"sys", b"bin/vela.bin")),
     prio: 16,
     io: &[],
 };
 const SVC_KBD: SvcMeta = SvcMeta {
     bin: b"kbd",
     path: Some("/fat/bin/kbd.bin"),
-    obj: None,
+    obj: Some((b"vela", b"bin/kbd.bin")),
     prio: 16,
     io: KBD_PS2_RANGES,
 };
 const SVC_PORTA: SvcMeta = SvcMeta {
     bin: b"porta",
     path: Some("/fat/bin/porta.bin"),
-    obj: None,
+    obj: Some((b"sys", b"bin/porta.bin")),
     prio: 16,
     io: &[],
 };
 const SVC_POSIX: SvcMeta = SvcMeta {
     bin: b"userposix",
     path: Some("/fat/bin/posix.bin"),
-    obj: None,
+    obj: Some((b"sys", b"bin/posix/posix.bin")),
     prio: 16,
     io: &[],
 };
 const SVC_SHELL: SvcMeta = SvcMeta {
     bin: b"usershell",
     path: Some("/fat/bin/shell.bin"),
-    // Chiave volutamente assente dal bucket `sys` (seedato solo con
-    // console/shell veri): OGNI boot prova il ramo fallback FAT del
-    // dual-mode (log "ripiego su FAT" + shell viva = fallback provato).
-    obj: Some((b"sys", b"bin/shell-missing.bin")),
+    obj: Some((b"sys", b"bin/posix/shell.bin")),
     prio: 16,
     io: &[],
 };
 const SVC_TIME: SvcMeta = SvcMeta {
     bin: b"usertime",
     path: Some("/fat/bin/time.bin"),
-    obj: None,
+    obj: Some((b"vela", b"bin/time.bin")),
     prio: 16,
     io: TIME_CMOS_RANGES,
 };
@@ -556,15 +553,17 @@ const SVC_VESTIGIA: SvcMeta = SvcMeta {
     prio: 16,
     io: &[],
 };
-const TEST_FS: SvcMeta = SvcMeta { bin: b"usertestfs", path: Some("/fat/test/testfs.bin"), obj: None, prio: 16, io: &[] };
-const TEST_FAT: SvcMeta = SvcMeta { bin: b"usertestfat", path: Some("/fat/test/testfat.bin"), obj: None, prio: 16, io: &[] };
-const TEST_ARCA: SvcMeta = SvcMeta { bin: b"usertestsarca", path: Some("/fat/test/testarca.bin"), obj: None, prio: 16, io: &[] };
+// Suite di test (D2): caricate per object_id dal bucket `tst` (hash-pinned
+// come i servizi); `path` resta come gemello FAT documentato (t39 lo prova).
+const TEST_FS: SvcMeta = SvcMeta { bin: b"usertestfs", path: Some("/fat/test/testfs.bin"), obj: Some((b"tst", b"test/testfs.bin")), prio: 16, io: &[] };
+const TEST_FAT: SvcMeta = SvcMeta { bin: b"usertestfat", path: Some("/fat/test/testfat.bin"), obj: Some((b"tst", b"test/testfat.bin")), prio: 16, io: &[] };
+const TEST_ARCA: SvcMeta = SvcMeta { bin: b"usertestsarca", path: Some("/fat/test/testarca.bin"), obj: Some((b"tst", b"test/testarca.bin")), prio: 16, io: &[] };
 // Suite della personalita' POSIX (Fase 58.5, ADR-0041): gira PRIMA di
 // usertests (t54 deve precedere i drop di diritti di t34 in usertests).
-const TEST_POSIX: SvcMeta = SvcMeta { bin: b"userposixtests", path: Some("/fat/test/posixtst.bin"), obj: None, prio: 16, io: &[] };
-const TESTS: SvcMeta = SvcMeta { bin: b"usertests", path: Some("/fat/test/tests.bin"), obj: None, prio: 16, io: &[] };
+const TEST_POSIX: SvcMeta = SvcMeta { bin: b"userposixtests", path: Some("/fat/test/posixtst.bin"), obj: Some((b"tst", b"test/posixtst.bin")), prio: 16, io: &[] };
+const TESTS: SvcMeta = SvcMeta { bin: b"usertests", path: Some("/fat/test/tests.bin"), obj: Some((b"tst", b"test/tests.bin")), prio: 16, io: &[] };
 #[cfg(feature = "bench")]
-const TEST_BENCH: SvcMeta = SvcMeta { bin: b"userbench", path: Some("/fat/test/bench.bin"), obj: None, prio: 16, io: &[] };
+const TEST_BENCH: SvcMeta = SvcMeta { bin: b"userbench", path: Some("/fat/test/bench.bin"), obj: Some((b"tst", b"test/bench.bin")), prio: 16, io: &[] };
 
 /// Spawna dal manifest SENZA attesa (spawn parallelo, Fase 57): il chiamante
 /// sincronizza con `wait_any`. Fallimento = None (fail loud al chiamante).

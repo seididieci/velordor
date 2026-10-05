@@ -285,7 +285,7 @@ fn t_dup() -> bool {
         }
     };
     let (c_chan, _) = match helpers::spawn_cfg(
-        "/fat/test/testcli.bin", "utcli", 16, helpers::M_DUPCLAIM, nonce,
+        "/test/testcli.bin", "utcli", 16, helpers::M_DUPCLAIM, nonce,
     ) {
         Some(x) => x,
         None => {
@@ -330,7 +330,7 @@ fn t_dup() -> bool {
     }
     let _ = civis::close(sfd);
     let (a_chan, _) = match helpers::spawn_cfg(
-        "/fat/test/testcli.bin", "utcli", 16, helpers::M_DUPGRANT, 0,
+        "/test/testcli.bin", "utcli", 16, helpers::M_DUPGRANT, 0,
     ) {
         Some(x) => x,
         None => {
@@ -351,7 +351,7 @@ fn t_dup() -> bool {
         return false;
     }
     let (b_chan, _) = match helpers::spawn_cfg(
-        "/fat/test/testcli.bin", "utcli", 16, helpers::M_DUPSIBCLAIM, anonce,
+        "/test/testcli.bin", "utcli", 16, helpers::M_DUPSIBCLAIM, anonce,
     ) {
         Some(x) => x,
         None => {
@@ -437,7 +437,7 @@ fn t_stdio() -> bool {
 fn t_seekdeny() -> bool {
     // Diniego SEEK via diritti (canale dell'helper, mai suite): lseek = Failed.
     let (h_chan, _) = match helpers::spawn_cfg(
-        "/fat/test/testcli.bin", "utcli", 16, helpers::M_SEEKDENY, 0,
+        "/test/testcli.bin", "utcli", 16, helpers::M_SEEKDENY, 0,
     ) {
         Some(x) => x,
         None => {

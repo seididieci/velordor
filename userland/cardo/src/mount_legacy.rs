@@ -211,7 +211,10 @@ pub fn resolve_local(mounts_fat: &[mount::FsMount], path: &str) -> Option<FsKind
     // la variante distingue Fat da Local.
     let mut best: Option<&mount::FsMount> = None;
     for m in mounts_fat {
-        let hit = t == m.target
+        // Mount root (Fase A): target `""` catch-all — matcha tutto (il
+        // longest-prefix sotto preferisce sempre i mount specifici).
+        let hit = m.target.is_empty()
+            || t == m.target
             || (t.len() > m.target.len()
                 && t.as_bytes().get(m.target.len()) == Some(&b'/')
                 && t.starts_with(m.target.as_str()));

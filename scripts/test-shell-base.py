@@ -10,7 +10,7 @@ import sys, os, time
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__))))
 from shell_harness import Shell, Checker, prep_images, parse_shell_args, lit_pixels, diff_masked
 
-SH = "/fat/test/sh"
+SH = "/test/sh"
 
 
 def main():
@@ -18,7 +18,8 @@ def main():
     if not args.no_prep:
         prep_images()
     sh = Shell(mon=args.mon, serial=args.serial, fat=args.fat, fat2=args.fat2,
-               kernel=args.kernel, fat_format=args.fat_format)
+               kernel=args.kernel, fat_format=args.fat_format,
+               arca_img=args.arca, arca_format=args.arca_format)
     c = Checker()
     SHOT0 = args.serial + ".shot0.ppm"
     SHOT1 = args.serial + ".shot1.ppm"
@@ -37,11 +38,13 @@ def main():
             found = b"t36 UUID/LABEL + discovery stabile: PASS" in data
             c.check("t36 suite pre-shell", found)
 
-        # ls + cat + mkdir (script base1).
+        # ls + cat + mkdir (script base1). E1 (root ArcaFS): in / ci sono
+        # anche bin, test (/bin, /test) e tmp (ramfs su /tmp).
         out = sh.run_source(SH + "/base1.txt")
         found = (b"hello.txt" in out and b"test.txt" in out
-                 and b"fat" in out and b"dev" in out)
-        c.check("ls / (hello.txt, test.txt, fat, dev)", found)
+                 and b"fat" in out and b"dev" in out
+                 and b"bin" in out and b"test" in out and b"tmp" in out)
+        c.check("ls / (hello.txt, test.txt, fat, dev, bin, test, tmp)", found)
         found = b"Hello from Velordo ramfs!" in out
         c.check("cat hello.txt", found)
         # "prova" non appare nell'eco (source silenzioso, niente echo su

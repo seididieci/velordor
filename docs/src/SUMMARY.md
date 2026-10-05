@@ -70,3 +70,4 @@
 - [ADR-0040: Pantheon dei nomi + rename a fasi (R0)](./adr/0040-naming-pantheon.md)
 - [ADR-0041: Personalità POSIX separata (civis + flavours/posix, Fase 58)](./adr/0041-civis-flavours-posix.md)
 - [ADR-0042: Namespace POSIX su ArcaFS — dir emergenti + set RAM (56.3)](./adr/0042-arcaposix-emergent-dirs.md)
+- [ADR-0043: Bucket oggetti sys/vela/usr + tree bin, bin/posix, usr/bin (D1)](./adr/0043-object-buckets-sys-drv-usr.md)

@@ -29,7 +29,8 @@ def main():
     if not args.no_prep:
         prep_images()
     sh = Shell(mon=args.mon, serial=args.serial, fat=args.fat, fat2=args.fat2,
-               kernel=args.kernel, fat_format=args.fat_format)
+               kernel=args.kernel, fat_format=args.fat_format,
+               arca_img=args.arca, arca_format=args.arca_format)
     c = Checker()
     try:
         sh.boot()

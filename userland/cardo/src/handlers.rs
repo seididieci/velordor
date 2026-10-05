@@ -88,7 +88,10 @@ pub fn handle_open(
             // 56.3 — ArcaFS col motore globale (uuid combaciante): se il
             // motore manca o e' un altro volume si cade sullo stub loud.
             if let Some(mut w) = arca_ns(mounts_fat, mid, disk) {
-                let h = w.open_dyn(rel, flags).map_err(|_| ERR_NOTFOUND)?;
+                // Fase A: niente map_err — gli errori tipizzati (IsDir,
+                // NotDir, NotFound) devono arrivare al client intatti: la
+                // root e' ArcaFS e i test (t54) distinguono IsDir/NotFound.
+                let h = w.open_dyn(rel, flags)?;
                 return Ok(ftable.open_local(chan, rel, mid, h, append));
             }
             let h = mount::by_id_mut(mounts_fat, mid)
@@ -880,11 +883,8 @@ pub fn handle_statvfs(
         }
         0
     };
-    // Root ramfs: esiste sempre.
-    if path == "/" {
-        let v = LocalFs::statvfs(fs, path)?;
-        return Ok(reply_vfs(rings, &v));
-    }
+    // Fase A: niente shortcut — `/` si risolve via mount come gli altri
+    // path (root ArcaFS: bsize 3584; la ramfs resta solo sotto /tmp).
     // Device: foglie senza blocchi (mai contabilizzati).
     if mount_legacy::resolve_mount(path, mounts).is_some() {
         return Err(ERR_INVALID);

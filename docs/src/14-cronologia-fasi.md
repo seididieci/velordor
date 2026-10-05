@@ -2046,3 +2046,31 @@
           trunc+append/delete+rmdir/bounce+remount; stub-test ribaltati in
           positivi). Gate: 5/5 +
           7/7 + 50/50 + 4/4 + 54/54, zero FAIL/PANIC/FAULT.
+    - [x] Root su volume (Fase 2: C/A/D1/D2/E, ADR-0043): ArcaFS come `/`
+          (UUID in cmdline, terzo drive sempre attaccato; ramfs solo `/tmp`).
+          C: seed build-time 32MiB/90 voci fail-loud + derivate MBR/GPT
+          adeguate (la GPT copiava solo 14 settori: tutti i dati fuori —
+          fix). A: mount root catch-all con skip `/dev`, motore legato al
+          volume root (niente doppia open), statvfs `/` su Arca; bug trovati:
+          open appiattiva IsDir→NotFound, mkdir idempotente vs Exists (t54),
+          readdir/stat `/dev` inglobati dalla root. Un flake `bind fallito`
+          al restart (mai riprodotto in 4 gate; log distintivi aggiunti ai
+          rami di `bind`). D1: servizi per object_id (`vela` driver per
+          `io_ranges`, `sys`, `usr` reserved; tree `/bin`, `/bin/posix`,
+          `/usr/bin`; PATH `/usr/bin:/bin`), fallback FAT rimosso; tool host
+          `arca seed` generalizzato a bucket arbitrari. D2: suite via oggetti
+          `tst`, helper via path `/test` (dogfood VFS). E: harness col drive
+          root + overlay arca per `--jobs`, script su path Arca (FAT solo per
+          copertura dedicata), testsarca 50/50 pieni (drive GPT per 12-13,
+          22-32 su `sdc` root in bucket isolati — v25/v28 adeguati a freelist
+          popolata e bucket `vela` — 41-50 su mount root esplicito; parser MBR
+          fuori dal gate: PC ha solo 4 IDE). Chiusura E2: `run_source`
+          sincronizzato sul prompt rientrato (sleep fisso troncava gli slice
+          con `--jobs 5`: 2 FAIL sistematici, zero in sequenziale). Domanda
+          aperta (mai ostativa, 4-8 verdi identici su MBR e GPT): readdir su
+          mount Arca con uuid mismatch (sdd1 vs motore root) passa — i rami
+          `arca_with`/stub dicono NOTFOUND, il meccanismo reale e' da
+          chiarire. Flake: v38 (seal monotonici) fallito 1× su timing,
+          verde al rerun senza tocchi (stessa famiglia del flake v29
+          documentato). Gate: 5/5 + 7/7 + 50/50 + 4/4 +
+          54/54 + shell 10/10 (seq e `--jobs 5`), zero FAIL/PANIC/FAULT.

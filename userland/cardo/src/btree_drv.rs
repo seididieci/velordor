@@ -57,6 +57,13 @@ impl VolumeStore {
     pub fn vol(&self) -> &crate::volume::ArcaVolume {
         &self.vol
     }
+
+    /// Generation dal superblock (Fase A: diagnostica per lo stub del mount
+    /// root, prima di legare il motore).
+    #[inline(never)]
+    pub fn generation(&self) -> Option<u64> {
+        self.vol.generation()
+    }
 }
 
 impl BlockStore for VolumeStore {
@@ -100,9 +107,16 @@ impl BlockStore for VolumeStore {
 pub fn bind(mut store: VolumeStore) -> Option<DiskEngine> {
     let mut sec0 = [0u8; 512];
     if !store.vol().read_raw_sector(0, &mut sec0) {
+        println!("[cardo] arca-disk: bind fallito (read superblock)");
         return None;
     }
-    let (generation, _uuid, primary, secondary_sb, refcount) = format::superblock_roots(&sec0)?;
+    let (generation, _uuid, primary, secondary_sb, refcount) = match format::superblock_roots(&sec0) {
+        Some(r) => r,
+        None => {
+            println!("[cardo] arca-disk: bind fallito (superblock invalido)");
+            return None;
+        }
+    };
     if store.vol().xh_flags() & ARCA_XH_DIRTY != 0 {
         println!("[cardo] arca-disk: DIRTY acceso, orphan-GC rimandata (56.2c)");
     }
@@ -166,30 +180,51 @@ pub fn bind(mut store: VolumeStore) -> Option<DiskEngine> {
     } else {
         // Load: valida tipo + tag delle tre radici PERSISTITE prima di
         // fidarsi (la secondary si e' spostata a ogni split: il blocco 2 e'
-        // solo il valore iniziale, mai quello corrente).
+        // solo il valore iniziale, mai quello corrente). Ogni ramo di
+        // fallimento logga distinto (fail-loud: il bind e' sul percorso
+        // di boot e i None silenti non sono diagnosticabili).
         if secondary_sb == 0 {
+            println!("[cardo] arca-disk: bind load fallito (secondary 0)");
             return None;
         }
         for (blk, want) in
             [(primary, TREE_PRIMARY), (secondary_sb, TREE_SECONDARY), (refcount, TREE_REFCOUNT)]
         {
             let mut p = format::boxed_node();
-            let (ty, _) = store.read_node(blk, &mut p)?;
+            let (ty, _) = match store.read_node(blk, &mut p) {
+                Some(v) => v,
+                None => {
+                    println!("[cardo] arca-disk: bind load fallito (read radice {})", blk);
+                    return None;
+                }
+            };
             if ty != ARCA_NODE_TYPE_LEAF && ty != ARCA_NODE_TYPE_INTERNAL {
+                println!("[cardo] arca-disk: bind load fallito (tipo radice {} = {})", blk, ty);
                 return None;
             }
             if p[0] != want {
+                println!("[cardo] arca-disk: bind load fallito (tag radice {})", blk);
                 return None;
             }
         }
-        let mut eng = BTree::new_with_roots(store, generation, primary, secondary_sb, refcount)?;
+        let mut eng = match BTree::new_with_roots(store, generation, primary, secondary_sb, refcount) {
+            Some(e) => e,
+            None => {
+                println!("[cardo] arca-disk: bind load fallito (new_with_roots)");
+                return None;
+            }
+        };
         let (nid, nsn) = eng.store.vol().ids();
         if nid == 0 || nsn == 0 {
+            println!("[cardo] arca-disk: bind load fallito (id header-ext degeneri)");
             return None; // header-ext corrotta: mai id degeneri (F2)
         }
         eng.next_id = nid;
         eng.next_snap = nsn;
-        eng.rebuild_by_id()?;
+        if eng.rebuild_by_id().is_none() {
+            println!("[cardo] arca-disk: bind load fallito (rebuild_by_id)");
+            return None;
+        }
         // Tabella snapshot: meta assente (0) o illeggibile = tabella vuota,
         // loud ma mount avanti (disponibilita' prima di retention). Poi
         // next_snap oltre il max persistito (mai riuso sid, F2).
@@ -213,8 +248,15 @@ pub fn bind(mut store: VolumeStore) -> Option<DiskEngine> {
         // Orphan-GC SEMPRE al load-bind (anche pulito: superset della spec,
         // deterministico senza dipendere dal timing del kill), poi commit
         // (chiude DIRTY e fissa la generazione di recovery).
-        let n_orph = gc_run(&mut eng)?;
+        let n_orph = match gc_run(&mut eng) {
+            Some(n) => n,
+            None => {
+                println!("[cardo] arca-disk: bind load fallito (orphan-GC)");
+                return None;
+            }
+        };
         if !commit(&mut eng) {
+            println!("[cardo] arca-disk: bind load fallito (commit recovery)");
             return None;
         }
         if n_orph > 0 {

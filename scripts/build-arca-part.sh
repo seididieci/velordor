@@ -22,8 +22,8 @@ fi
 OUT_DIR="$(dirname "$OUT")"
 mkdir -p "$OUT_DIR"
 
-# 1. Crea immagine vuota 32 MiB
-dd if=/dev/zero of="$OUT" bs=1M count=32 2>/dev/null
+# 1. Crea immagine 33 MiB (offset 63 settori + volume ArcaFS da 32 MiB).
+dd if=/dev/zero of="$OUT" bs=1M count=33 2>/dev/null
 
 # 2. Scrivi MBR manualmente (512 byte esatti).
 #    Struttura MBR:
@@ -37,7 +37,7 @@ dd if=/dev/zero of="$OUT" bs=1M count=32 2>/dev/null
 #      [4] tipo (0x83 = Linux)
 #      [5-7] CHS end (stesso)
 #      [8-11] LBA start LE u32 (63)
-#      [12-15] settori LE u32 (65473 = 32MiB/512 - 63)
+#      [12-15] settori LE u32 (67521 = 33MiB/512 - 63: copre tutto il volume)
 #
 #    BUG STORICO (Fase 55): la tabella partiva a offset 440 invece di 0x1BE
 #    e il file MBR era di 506 byte (short write su dd bs=512): la signature
@@ -52,7 +52,7 @@ dd if=/dev/zero of="$OUT" bs=1M count=32 2>/dev/null
     # Tabella partizioni: prima voce + padding fino a offset 510
     printf '\x80\x01\x01\x00\x83\x01\x01\x00'   # boot, CHS start, tipo=Linux, CHS end
     printf '\x3f\x00\x00\x00'                   # LBA start = 63 (LE u32)
-    printf '\xc1\xff\x00\x00'                   # settori = 65473 (LE u32)
+    printf '\xc1\x07\x01\x00'                   # settori = 67521 (LE u32)
     dd if=/dev/zero bs=1 count=48 2>/dev/null   # padding: 48 byte a zero (fino a offset 510)
 
     # Signature MBR (2 byte a offset 0x1FE)
@@ -70,8 +70,15 @@ dd if=/tmp/mbr.bin of="$OUT" bs=512 count=1 conv=notrunc 2>/dev/null
 rm -f /tmp/mbr.bin
 
 # 3. Copia l'intero volume ArcaFS all'inizio della partizione (LBA63):
-#    il volume e' di ~1 MiB, la partizione e' 32 MiB: spazio sufficiente.
+#    il volume e' di 32 MiB, la partizione e' 33MiB-63 settori: spazio sufficiente.
 dd if="$ARCA_IMG_FILE" of="$OUT" bs=512 seek=63 conv=notrunc 2>/dev/null
+# Fail-loud se il volume sborda dalla partizione (dd estenderebbe il file oltre
+# i 33 MiB: layout non piu' quello dichiarato sopra).
+OUT_SIZE="$(wc -c < "$OUT")"
+if [ "$OUT_SIZE" != "34603008" ]; then
+    echo "[arca-part] errore: size $OUT_SIZE (attesi 34603008: volume oltre la partizione?), abort"
+    exit 1
+fi
 
 # 4. Verifiche fail-loud (mai un'immagine muta in QEMU).
 SIG="$(dd if="$OUT" bs=1 skip=510 count=2 2>/dev/null | od -An -tx1 | tr -d ' \n')"

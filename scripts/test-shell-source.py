@@ -5,13 +5,13 @@ permanente, anticipa Fase 43). Avvia il proprio QEMU (seriale + monitor
 dedicati), verifica sul log seriale. Autonomo: prepara le immagini
 (salvo --no-prep), boota, testa, pulisce. Vedi scripts/shell_harness.py.
 
-Gli script vivono in /fat/test/sh (iniettati da scripts/inject-bins.sh).
+Gli script vivono in /test/sh (iniettati da scripts/inject-bins.sh).
 """
 import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__))))
 from shell_harness import Shell, Checker, prep_images, parse_shell_args
 
-SH = "/fat/test/sh"
+SH = "/test/sh"
 
 
 def main():
@@ -19,7 +19,8 @@ def main():
     if not args.no_prep:
         prep_images()
     sh = Shell(mon=args.mon, serial=args.serial, fat=args.fat, fat2=args.fat2,
-               kernel=args.kernel, fat_format=args.fat_format)
+               kernel=args.kernel, fat_format=args.fat_format,
+               arca_img=args.arca, arca_format=args.arca_format)
     c = Checker()
     try:
         sh.boot()

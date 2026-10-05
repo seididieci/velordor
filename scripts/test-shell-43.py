@@ -9,7 +9,7 @@ import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__))))
 from shell_harness import Shell, Checker, prep_images, parse_shell_args, has_line
 
-SH = "/fat/test/sh"
+SH = "/test/sh"
 
 
 def main():
@@ -17,7 +17,8 @@ def main():
     if not args.no_prep:
         prep_images()
     sh = Shell(mon=args.mon, serial=args.serial, fat=args.fat, fat2=args.fat2,
-               kernel=args.kernel, fat_format=args.fat_format)
+               kernel=args.kernel, fat_format=args.fat_format,
+               arca_img=args.arca, arca_format=args.arca_format)
     c = Checker()
     try:
         sh.boot()
@@ -29,7 +30,7 @@ def main():
         c.check("43 export ereditato", found)
         found = b"runhello: env:PWD=/" in out
         c.check("43 PWD automatico (/)", found)
-        found = b"runhello: env:PWD=/fat" in out
+        found = b"runhello: env:PWD=/usr" in out
         c.check("43 PWD segue cd", found)
 
         # VAR=v mono-comando (esterni e builtin): E43 resta base.
@@ -54,7 +55,7 @@ def main():
 
         # Shebang (kernel mai coinvolto: solo shell+civis).
         out = sh.run_source(SH + "/p43d.txt")
-        found = b"runhello: /fat/test/sh/h43.sh" in out and b"runhello: HI" in out
+        found = b"runhello: /test/sh/h43.sh" in out and b"runhello: HI" in out
         c.check("43 shebang argv", found)
         found = b"runhello: EXTRA" in out
         c.check("43 shebang con arg", found)

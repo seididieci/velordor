@@ -23,19 +23,20 @@ def main():
     if not args.no_prep:
         prep_images()
     sh = Shell(mon=args.mon, serial=args.serial, fat=args.fat, fat2=args.fat2,
-               kernel=args.kernel, fat_format=args.fat_format)
+               kernel=args.kernel, fat_format=args.fat_format,
+               arca_img=args.arca, arca_format=args.arca_format)
     c = Checker()
     try:
         sh.boot()
         # bg longevo (A) + fg longevo (B, non cooperante: uptime non legge
         # mai il canale, il cancel resta in coda e scatta l'escalation).
-        out = sh.run_until("run /fat/bin/uptime.bin &", b"[bg pid")
+        out = sh.run_until("run /bin/uptime.bin &", b"[bg pid")
         m = re.search(rb"\[bg pid (\d+)\]", out)
         found = m is not None
         c.check("44b bg annuncia pid", found)
         pa = m.group(1).decode() if m else "0"
         sh.wait_prompt()
-        sh.type_text("run /fat/bin/uptime.bin")
+        sh.type_text("run /bin/uptime.bin")
         sh.send_mon("sendkey ret")
         time.sleep(1.5)  # fg partito (wait_fg), prompt non tornato
         sh.press("ctrl-c")

@@ -11,7 +11,7 @@ use super::*;
 /// Bound 500 tick per fase, mai hang.
 pub fn t_detach() -> bool {
     helpers::drain_stray();
-    let (mid_chan, _mid_pid) = match helpers::spawn_cfg("/fat/test/testcli.bin", "utcli", 16, helpers::M_NEST, 0) {
+    let (mid_chan, _mid_pid) = match helpers::spawn_cfg("/test/testcli.bin", "utcli", 16, helpers::M_NEST, 0) {
         Some(x) => x,
         None => {
             println!("[usertests] t40: spawn NEST FAILED");
@@ -307,14 +307,14 @@ pub fn t_disk() -> bool {
     }
     // Barriera Group riuscita sopra (primo disk_sync): i FLUSH sono
     // atterrati senza Err. Sensore spazio: FAT con blocchi/libéri coerenti,
-    // ramfs illimitata (MAX) con bsize 512.
+    // root ArcaFS (Fase A: bsize 3584, illimitata MAX come la ramfs prima).
     let mut vfs = civis::StatVfs { bsize: 0, blocks: 0, bfree: 0, bavail: 0 };
     if civis::statvfs("/fat", &mut vfs).is_err() || vfs.bsize == 0 || vfs.blocks == 0 || vfs.bfree > vfs.blocks {
         println!("[usertests] t32: statvfs /fat assurdo ({}/{}/{})", vfs.bsize, vfs.blocks, vfs.bfree);
         return false;
     }
     println!("[usertests] t32: statvfs /fat bsize={} blocks={} bfree={}", vfs.bsize, vfs.blocks, vfs.bfree);
-    if civis::statvfs("/", &mut vfs).is_err() || vfs.bsize != 512 || vfs.bfree != u64::MAX {
+    if civis::statvfs("/", &mut vfs).is_err() || vfs.bsize != 3584 || vfs.bfree != u64::MAX {
         println!("[usertests] t32: statvfs / assurdo ({}/{}/{})", vfs.bsize, vfs.blocks, vfs.bfree);
         return false;
     }
@@ -337,7 +337,7 @@ pub fn t_hardening() -> bool {
     // Vittima: un KILLME parcheggiato, figlio di usertests (fratello
     // dell'helper HARDEN, quindi NON suo figlio).
     let (b_chan, b_pid) = match helpers::spawn_cfg(
-        "/fat/test/testcli.bin", "utcli", 16, helpers::M_KILLME, 0,
+        "/test/testcli.bin", "utcli", 16, helpers::M_KILLME, 0,
     ) {
         Some(x) => x,
         None => {
@@ -346,7 +346,7 @@ pub fn t_hardening() -> bool {
         }
     };
     let (h_chan, _) = match helpers::spawn_cfg(
-        "/fat/test/testcli.bin", "utcli", 16, helpers::M_HARDEN, b_pid,
+        "/test/testcli.bin", "utcli", 16, helpers::M_HARDEN, b_pid,
     ) {
         Some(x) => x,
         None => {
@@ -433,7 +433,7 @@ pub fn t_identity() -> bool {
     }
     // (B) due istanze dello stesso helper: stesso hash, entrambe vive.
     let (k1_chan, k1_pid) = match helpers::spawn_cfg(
-        "/fat/test/testcli.bin", "utcli", 16, helpers::M_KILLME, 0,
+        "/test/testcli.bin", "utcli", 16, helpers::M_KILLME, 0,
     ) {
         Some(x) => x,
         None => {
@@ -442,7 +442,7 @@ pub fn t_identity() -> bool {
         }
     };
     let (k2_chan, k2_pid) = match helpers::spawn_cfg(
-        "/fat/test/testcli.bin", "utcli", 16, helpers::M_KILLME, 0,
+        "/test/testcli.bin", "utcli", 16, helpers::M_KILLME, 0,
     ) {
         Some(x) => x,
         None => {
@@ -470,7 +470,7 @@ pub fn t_identity() -> bool {
     // (C) same-image: X1 registra /dev/t51, X2 (stesso binario, non init-child)
     // lo rimpiazza da vivo. Kill X1 → il mount deve sopravvivere (driver X2).
     let (x1_chan, _) = match helpers::spawn_cfg(
-        "/fat/test/testcli.bin", "utcli", 16, helpers::M_REG51, 0,
+        "/test/testcli.bin", "utcli", 16, helpers::M_REG51, 0,
     ) {
         Some(x) => x,
         None => {
@@ -483,7 +483,7 @@ pub fn t_identity() -> bool {
         return false;
     }
     let (x2_chan, _) = match helpers::spawn_cfg(
-        "/fat/test/testcli.bin", "utcli", 16, helpers::M_REG51, 0,
+        "/test/testcli.bin", "utcli", 16, helpers::M_REG51, 0,
     ) {
         Some(x) => x,
         None => {
@@ -521,7 +521,7 @@ pub fn t_identity() -> bool {
     // replace → rifiutato. Kill X2 → mount purgato → open deve FALLIRE (se il
     // replace fosse passato, Y servirebbe e l'open riuscirebbe).
     let (y_chan, _) = match helpers::spawn_cfg(
-        "/fat/test/testspin.bin", "utspin", 16, helpers::SPIN_SQUAT_MAGIC, 0,
+        "/test/testspin.bin", "utspin", 16, helpers::SPIN_SQUAT_MAGIC, 0,
     ) {
         Some(x) => x,
         None => {
@@ -558,14 +558,15 @@ pub fn t_identity() -> bool {
     true
 }
 
-/// t58 — bucket `sys` nativo + content-hash BLAKE2s (Fase 55, N0; 56.2b su
-/// blocchi). Il test lega il motore in proprio (open + USEDISK: load o init
-/// + seed `sys` server-side), cosi' sopravvive a qualunque restart di cardo
-/// precedente (es. t28): senza volume (ARCA_IMG=0) skip adattivo, mai FAIL.
+/// t58 — bucket oggetti nativi + content-hash BLAKE2s (Fase 55, N0; 56.2b su
+/// blocchi; D1: driver in `vela`). Il test lega il motore in proprio (open +
+/// USEDISK: load o init + seed server-side), cosi' sopravvive a qualunque
+/// restart di cardo precedente (es. t28): senza volume skip adattivo, mai FAIL.
 /// Prova: (1) l'oggetto nativo e' byte-identico al file FAT; (2) il suo
 /// blake2s e' il manifest BLAKE (stesso predicato di `verify_image` in
 /// init); (3) un byte flippato cambia il digest (init lo rifiuterebbe);
-/// (4) la chiave assente da' errore (mai dati inventati).
+/// (4) la chiave assente da' errore (mai dati inventati); (5) gpu vive in
+/// `vela`, non piu' in `sys`.
 pub fn t_sys_native() -> bool {
     let fat = match civis::load_file("/fat/bin/gpu.bin") {
         Some(b) if !b.is_empty() => b,
@@ -593,19 +594,24 @@ pub fn t_sys_native() -> bool {
         println!("[usertests] t58: nessun volume ArcaFS (ARCA_IMG=0?): salto");
         return true;
     }
-    let obj = match civis::obj_get(b"sys", b"bin/gpu.bin") {
+    let obj = match civis::obj_get(b"vela", b"bin/gpu.bin") {
         Ok(v) => v,
         Err(_) => {
-            println!("[usertests] t58: obj sys/bin/gpu.bin assente");
+            println!("[usertests] t58: obj vela/bin/gpu.bin assente");
             return false;
         }
     };
     if obj != fat {
-        println!("[usertests] t58: sys != FAT ({} vs {} B)", obj.len(), fat.len());
+        println!("[usertests] t58: vela != FAT ({} vs {} B)", obj.len(), fat.len());
         return false;
     }
     if blake2s::blake2s(&obj) != crate::BLAKE_GPU {
-        println!("[usertests] t58: blake sys != manifest");
+        println!("[usertests] t58: blake vela != manifest");
+        return false;
+    }
+    // D1: i driver hanno traslocato in `vela` — in `sys` non resta nulla.
+    if civis::obj_get(b"sys", b"bin/gpu.bin").is_ok() {
+        println!("[usertests] t58: gpu ancora in sys?!");
         return false;
     }
     let mut bad = obj.clone();

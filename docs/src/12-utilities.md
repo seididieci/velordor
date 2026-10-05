@@ -44,7 +44,7 @@ la mostra (`/prova$ `, `$ ` a root).
 | `ps` | Tabella processi stile Linux: PID NAME PRIO STATE TIME PARENT (syscall 37, Fase 19.1) |
 | `export [NAME=val]` | Variabili shell (Fase 41): set persistente o lista; `NAME=valore` nudo equivale; TUTTE passano ai figli via envp (43a, niente flag export) |
 | `VAR=v cmd` | Ambiente mono-comando (43a): builtin con save/set/restore, esterni via envp, stadi pipe scoped; `$VAR` nella stessa riga vede il vecchio (espansione al parse, come bash) |
-| `run <prog> [args...] [&]` | Lancia un programma via fork+exec (37.2, PATH in 43a: senza `/` cerca in `$PATH`, default `/fat/bin`, fallback `.bin`; `argv[0]` = path risolto); `&` = background (prompt subito), senza = foreground (attende; `[exit N]` se N != 0) |
+| `run <prog> [args...] [&]` | Lancia un programma via fork+exec (37.2, PATH in 43a: senza `/` cerca in `$PATH`, default D1 `/usr/bin:/bin`, fallback `.bin`; `argv[0]` = path risolto); `&` = background (prompt subito), senza = foreground (attende; `[exit N]` se N != 0) |
 | `prog args...` | Bare word (43a): non-builtin cercato in PATH ed eseguito come `run` (ignoto = 127); con `/` è path diretto |
 | `source <file>` | Esegue uno script riga-per-riga (stesso parser della tastiera: `; && \|\|`, pipe, redirect, heredoc, `$VAR/$?`, glob, `run`). `$?` iniziale = esterno, exit dello script = ultimo comando; `exit` termina lo script (mai la shell); esecuzione silenziosa (niente eco). Anticipa la Fase 43 (script `.sh`); nato per velocizzare i test (1 riga digitata invece di N) |
 | `jobs` | Tabella job (`[id] pid P run\|stopped\|done C cmd`; i finiti restano finche' `wait`) |
@@ -154,7 +154,7 @@ env_from_stack}` (`runhello` dumpa l'env con `runhello: env:K=v`).
 |----------|---------|
 | `export FOO=bar` / `FOO=bar` | Persistente + ereditato dai figli |
 | `A=1 cmd` | Solo per quel comando (anche `run` e stadi pipe) |
-| `runhello` / `run prog` | Ricerca in `$PATH` (default `/fat/bin`) |
+| `runhello` / `run prog` | Ricerca in `$PATH` (default D1 `/usr/bin:/bin`) |
 | `run ./x.sh` | Shebang `#!interp [arg]` → `argv=[interp, script, args...]` (bound 4) |
 
 Limiti onesti: `argv[0]` delle bare word = path risolto (non digitato);
@@ -231,8 +231,9 @@ tramite il device `/dev/input/keyboard`, servito dal terminal server
 
 Processo radice (PID 1). Spawna i servizi in ordine e poi esegue i test
 in sequenza prima di lanciare la shell (i PID sono indicativi: i peer si
-raggiungono per nome/canale, non per PID). Dalla Fase 21 solo disk/fs sono
-embedded; gli altri partono da `/fat/bin` via `spawn_image`:
+raggiungono per nome/canale, non per PID). Solo disk/fs/vestigia sono
+embedded; i servizi partono per `object_id` dal volume ArcaFS via
+`spawn_image` (D1, bucket `vela`/`sys`, niente fallback FAT):
 
 1. `vestigia` (log) + `block` (disk) — embedded, in parallelo (Fase 57/R1-R9)
 2. `cardo` — file system server embedded (ramfs + FAT32 via block, servizio `Cardo`)

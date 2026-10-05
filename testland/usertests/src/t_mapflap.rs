@@ -31,7 +31,7 @@ pub fn t_mapflap() -> bool {
         }
     }
     // Fase B: con helper concorrente (stessa VA, pagine diverse).
-    let (h_chan, _) = match helpers::spawn_cfg("/fat/test/testcli.bin", "utcli", 16, helpers::M_MAPHAMMER, N as u64) {
+    let (h_chan, _) = match helpers::spawn_cfg("/test/testcli.bin", "utcli", 16, helpers::M_MAPHAMMER, N as u64) {
         Some(x) => x,
         None => {
             println!("[usertests] t29: spawn MAPHAMMER FAILED");
@@ -100,7 +100,7 @@ pub fn t_neighbor() -> bool {
     };
     let _ = civis::close(fb);
     // Helper "cattivo vicino" (nessun T_DONE atteso prima di T_STOP).
-    let (fchan, _) = match helpers::spawn_cfg("/fat/test/testcli.bin", "utcli", 16, helpers::M_FLOOD, 0) {
+    let (fchan, _) = match helpers::spawn_cfg("/test/testcli.bin", "utcli", 16, helpers::M_FLOOD, 0) {
         Some(x) => x,
         None => {
             println!("[usertests] t30: spawn flooder FAILED");

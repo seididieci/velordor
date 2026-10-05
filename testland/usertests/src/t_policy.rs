@@ -36,7 +36,7 @@ pub fn t_policy() -> bool {
     helpers::drain_stray();
     // 1. Helper noto: riga test-policy ALL + dinieghi post-drop.
     let (g_chan, g_pid) = match helpers::spawn_cfg(
-        "/fat/test/testcli.bin", "utcli", 16, helpers::M_GRANTDENY, 0,
+        "/test/testcli.bin", "utcli", 16, helpers::M_GRANTDENY, 0,
     ) {
         Some(x) => x,
         None => {
@@ -60,7 +60,7 @@ pub fn t_policy() -> bool {
     }
     let _ = helpers::wait_exit(g_chan);
     // 2. Attore ignoto: default restrittivo (esiti attesi = tutti i bit).
-    let img = match civis::load_file("/fat/test/foreign.bin") {
+    let img = match civis::load_file("/test/foreign.bin") {
         Some(i) => i,
         None => {
             println!("[usertests] t57: load foreign.bin FAILED");

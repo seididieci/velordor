@@ -315,13 +315,17 @@ impl ArcaFs {
     }
 
     /// Mkdir con motore esplicito: SOLO RAM (mai disco, mai commit).
-    /// Idempotente; file in `rel` = EXISTS, antenato file = NOTDIR.
+    /// Esistente = EXISTS (parita' ramfs, t54); antenato file = NOTDIR.
     #[inline(never)]
     pub fn ns_mkdir(&mut self, eng: &DiskEngine, rel: &str) -> Result<(), u64> {
         if rel.is_empty() {
             return Err(crate::ERR_INVALID);
         }
-        if crate::btree_drv::ns_stat(eng, rel.as_bytes()).is_some() {
+        // Parita' ramfs/POSIX (t54): path esistente (file, dir RAM o
+        // emergente) = EXISTS; solo i mai-esistiti si creano. "Idempotente"
+        // (ADR-0042) = antenati auto-creati senza errore e mai effetti su
+        // disco — il risultato per path esistente resta EXISTS.
+        if !matches!(self.classify(eng, rel), NsKind::Missing) {
             return Err(crate::ERR_EXISTS);
         }
         for a in Self::ancestors(rel) {

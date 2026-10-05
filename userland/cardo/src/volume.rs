@@ -41,6 +41,17 @@ impl ArcaVolume {
         self.uuid
     }
 
+    /// Generation dal superblock (diagnostica per lo stub del mount root,
+    /// Fase A): una lettura settore 0, una tantum al boot.
+    #[inline(never)]
+    pub fn generation(&self) -> Option<u64> {
+        let mut sec = [0u8; 512];
+        if !self.disk.read_sector(0, &mut sec) {
+            return None;
+        }
+        format::superblock_roots(&sec).map(|(generation, _, _, _, _)| generation)
+    }
+
     /// Legge un blocco intero. None su errore IO/overflow.
     #[inline(never)]
     fn read_block(&self, n: u64, out: &mut [u8; BLOCK_BYTES]) -> bool {

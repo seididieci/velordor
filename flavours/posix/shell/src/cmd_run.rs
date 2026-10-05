@@ -323,11 +323,12 @@ fn wait_all(chans: &[u64]) -> Vec<Option<i64>> {
     }
     done
 }
-/// PATH di default (Fase 43a): i binari da disco stanno in `/fat/bin`.
-const DEFAULT_PATH: &str = "/fat/bin";
+/// PATH di default (D1: root su ArcaFS): prima i programmi utente, poi i
+/// servizi — su volume (`/usr/bin`, `/bin`), mai su FAT.
+const DEFAULT_PATH: &str = "/usr/bin:/bin";
 
 /// Risolve un nome programma (43a): con `/` e' path diretto (`cwd::resolve`),
-/// senza e' cercato nelle dir di `$PATH` (`:`-separate, default `/fat/bin`).
+/// senza e' cercato nelle dir di `$PATH` (`:`-separate, default D1 sopra).
 /// Per dir si prova il nome esatto e poi con suffisso `.bin` (gli eseguibili
 /// su FAT 8.3 sono `.bin`: `runhello` trova `/fat/bin/runhello.bin`).
 /// La sonda e' via `stat` (1 round trip, niente dati); il load resta al

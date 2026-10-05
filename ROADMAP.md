@@ -13,8 +13,8 @@ nulla da solo.
 
 ## Stato (completate 1-55)
 
-Gate: `[testfs] PASS 5/5` + `[testfat] PASS 7/7` + `[testsarca] PASS 40/40` +
-`[posixtests] PASS 4/4` + `[usertests] PASS 54/54` + shell, zero FAIL/PANIC/FAULT.
+Gate: `[testfs] PASS 5/5` + `[testfat] PASS 7/7` + `[testsarca] PASS 50/50` +
+`[posixtests] PASS 4/4` + `[usertests] PASS 54/54` + shell (10/10 fasi), zero FAIL/PANIC/FAULT.
 
 | Fase | Descrizione | Stato |
 |------|-------------|-------|
@@ -128,8 +128,24 @@ Voci con scope e vittoria dichiarati (non date).
       `flavours/posix/{server,shell,cli}`, output in `flavours/posix/build`),
       58.5 (suite `userposixtests` in `flavours/posix/tests`, gate
       `[posixtests] 4/4`, usertests 54/54) e 58.6 (chiusura docs) chiusi.
-      Vittoria: `rg "posix::" libs/civis/src` = zero; una seconda personalità
-      riusa `civis` invariato.
+       Vittoria: `rg "posix::" libs/civis/src` = zero; una seconda personalità
+       riusa `civis` invariato.
+- [x] **Root su volume (Fase 2: C/A/D1/D2/E)** (chiusa, ADR-0043): ArcaFS
+      come `/` scelto per UUID (`root=UUID=`, terzo drive sempre attaccato),
+      ramfs solo su `/tmp`, `/fat` montato per dati (niente fallback).
+      C: seed build-time (volume 32MiB, 90 voci, fail-loud; derivate MBR/GPT
+      adeguate). A: mount root catch-all (`target ""`, `/dev` escluso),
+      motore legato al volume root, parità errori IsDir/Exists su Arca.
+      D1: init carica i servizi per object_id (bucket `vela` = driver per
+      `io_ranges`, `sys` = servizi, `usr` reserved; tree `/bin`, `/bin/posix`,
+      `/usr/bin`; PATH `/usr/bin:/bin`), fallback FAT rimosso. D2: suite via
+      oggetti `tst`, helper via path `/test` (dogfood VFS). E: shell suite
+      verde (harness col drive root + overlay arca per `--jobs`), testsarca
+      50/50 pieni (drive GPT per 12-13, 22-32 su `sdc` root in bucket isolati,
+      41-50 su mount root esplicito; parser MBR fuori dal gate, vedi
+      `11-testing.md`).
+      Vittoria conseguita: gate 5/5+7/7+50/50+4/4+54/54 + shell 10/10, zero
+      fallback FAT in init e nella shell.
 - [ ] **59+ (A3–A8, V1, B1)** (dopo 56, come da `arcafs.md` §13): quota,
       ABAC engine, device-awareness, RAID, tool completo, rete; servizio
       vettoriale e backend VM/block fuori dal FS, mai dentro.

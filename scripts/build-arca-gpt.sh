@@ -1,18 +1,19 @@
 #!/usr/bin/env python3
-"""Crea un'immagine GPT 32MB con superblock ArcaFS in partizione (Fase 55).
+"""Crea un'immagine GPT con superblock ArcaFS in partizione (Fase 55).
 
 Uso: scripts/build-arca-gpt.sh [out_img]   (default userland/disk/arca-gpt.img)
 
-Layout (65536 settori da 512B):
-  LBA0      protective MBR (entry0 tipo 0xEE start=1 size=65535 + sig AA55)
-  LBA1      GPT header (magic "EFI PART", current=1, backup=65535,
-            usable 34..65502, entries a LBA2, 128 entry da 128B; CRC zero:
+Layout (65664 settori da 512B = 33 MiB + 63 settori):
+  LBA0      protective MBR (entry0 tipo 0xEE start=1 size=SECTORS-1 + sig AA55)
+  LBA1      GPT header (magic "EFI PART", current=1, backup=SECTORS-1,
+            usable 34..SECTORS-34, entries a LBA2, 128 entry da 128B; CRC zero:
             il parser A1 li salta, solo diagnostica futura)
-  LBA2..33  array entry (entry0 = partizione ArcaFS start=64 last=65502,
+  LBA2..33  array entry (entry0 = partizione ArcaFS start=64 last=65599,
             type GUID = ARCAFS_TYPE_GUID placeholder da registrare)
-  LBA64/65  superblock + shadow ArcaFS (partition-relative LBA0/LBA1,
-            copiati da arca.img, arcafs.md §16.4)
-  LBA65503..65534 backup array entry, LBA65535 backup header (il parser A1
+  LBA64..   intero volume ArcaFS da arca.img (32 MiB, partition-relative
+            LBA0/LBA1..., arcafs.md §16.4 — Fase C: copia TUTTA, non solo i
+            primi 14 settori, o i dati seedati restano fuori)
+  backup array entry a SECTORS-33, backup header a SECTORS-1 (il parser A1
   li ignora; scritti per correttezza verso tool esterni).
 
 Richiede arca.img esistente (scripts/arca-tool.sh). Fail-loud: qualunque
@@ -26,9 +27,9 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT = sys.argv[1] if len(sys.argv) > 1 else os.path.join(ROOT, "userland/disk/arca-gpt.img")
 ARCA_IMG = os.path.join(ROOT, "userland/disk/arca.img")
 
-SECTORS = 65536  # 32 MiB
+SECTORS = 65664  # 64 (offset) + 65536 (volume 32 MiB) + 64 (backup)
 PART_START = 64
-PART_LAST = 65502  # prima dell'area backup (65503..65535)
+PART_LAST = PART_START + 65536 - 1  # 65599: la partizione copre tutto il volume
 
 # Type GUID ArcaFS = ARCAFS_TYPE_GUID in userland/disk/src/part.rs
 # (placeholder, da registrare con UUID alias prima del rilascio).
@@ -47,11 +48,12 @@ def die(msg):
 
 if not os.path.isfile(ARCA_IMG):
     die("%s non trovato (creare prima con scripts/arca-tool.sh)" % ARCA_IMG)
-# Blocchi 0-1 interi (superblock + shadow + header-ext + root vuota).
+# Intero volume (Fase C: 32 MiB — i dati seedati vivono nei blocchi >= 2,
+# oltre i primi 14 settori; copiarne solo la testa lascia un volume vuoto).
 with open(ARCA_IMG, "rb") as f:
-    volhead = f.read(14 * 512)
-if len(volhead) != 14 * 512 or volhead[0:4] != b"ACFS":
-    die("testa volume invalida in %s" % ARCA_IMG)
+    vol = f.read()
+if len(vol) != 65536 * 512 or vol[0:4] != b"ACFS":
+    die("volume invalido in %s (attesi 33554432 B + magic ACFS)" % ARCA_IMG)
 
 img = bytearray(SECTORS * 512)
 
@@ -73,7 +75,7 @@ struct.pack_into("<I", hdr, 12, 92)          # header size
 struct.pack_into("<Q", hdr, 24, 1)           # current LBA
 struct.pack_into("<Q", hdr, 32, SECTORS - 1)  # backup LBA
 struct.pack_into("<Q", hdr, 40, 34)          # first usable
-struct.pack_into("<Q", hdr, 48, PART_LAST)   # last usable
+struct.pack_into("<Q", hdr, 48, SECTORS - 34)  # last usable
 hdr[56:72] = DISK_GUID
 struct.pack_into("<Q", hdr, 72, 2)           # entries LBA
 struct.pack_into("<I", hdr, 80, 128)         # num entries
@@ -91,15 +93,16 @@ struct.pack_into("<Q", e0, 40, PART_LAST)
 arr[0:128] = e0
 img[2 * 512:2 * 512 + len(arr)] = arr
 
-# Partizione: blocchi 0-1 (superblock + shadow + header-ext + root).
-img[PART_START * 512:PART_START * 512 + len(volhead)] = volhead
+# Partizione: intero volume arca.img a PART_START (il volume da 32 MiB ci
+# sta: PART_LAST - PART_START + 1 == 65536 settori).
+img[PART_START * 512:PART_START * 512 + len(vol)] = vol
 
-# Backup: array a 65503, header a 65535 (current/backup scambiati)
-img[65503 * 512:65503 * 512 + len(arr)] = arr
+# Backup: array a SECTORS-33, header a SECTORS-1 (current/backup scambiati)
+img[(SECTORS - 33) * 512:(SECTORS - 33) * 512 + len(arr)] = arr
 bhdr = bytearray(hdr)
 struct.pack_into("<Q", bhdr, 24, SECTORS - 1)
 struct.pack_into("<Q", bhdr, 32, 1)
-img[65535 * 512:65535 * 512 + 512] = bhdr
+img[(SECTORS - 1) * 512:(SECTORS - 1) * 512 + 512] = bhdr
 
 os.makedirs(os.path.dirname(OUT), exist_ok=True)
 with open(OUT, "wb") as f:
@@ -119,4 +122,5 @@ assert struct.unpack_from("<Q", d, base + 32)[0] == PART_START, "entry start"
 assert struct.unpack_from("<Q", d, base + 40)[0] == PART_LAST, "entry last"
 assert d[PART_START * 512:PART_START * 512 + 4] == b"ACFS", "superblock"
 assert d[(PART_START + 1) * 512:(PART_START + 1) * 512 + 4] == b"ACFS", "shadow"
+assert struct.unpack_from("<Q", d, (SECTORS - 1) * 512 + 24)[0] == SECTORS - 1, "backup header"
 print("[arca-gpt] creata %s (GPT + ArcaFS start=%d last=%d, verificata)" % (OUT, PART_START, PART_LAST))

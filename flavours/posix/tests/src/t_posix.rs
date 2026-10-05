@@ -68,7 +68,7 @@ pub fn t_posix_foundation() -> bool {
     // (c) Gate sul nuovo slot: helper non-figlio-di-init prova kill ostile +
     // register Init + register Posix — tutti e tre rifiutati (ok=true).
     let (b_chan, b_pid) = match helpers::spawn_cfg(
-        "/fat/test/testcli.bin", "utcli", 16, helpers::M_KILLME, 0,
+        "/test/testcli.bin", "utcli", 16, helpers::M_KILLME, 0,
     ) {
         Some(x) => x,
         None => {
@@ -77,7 +77,7 @@ pub fn t_posix_foundation() -> bool {
         }
     };
     let (h_chan, _) = match helpers::spawn_cfg(
-        "/fat/test/testcli.bin", "utcli", 16, helpers::M_HARDEN, b_pid,
+        "/test/testcli.bin", "utcli", 16, helpers::M_HARDEN, b_pid,
     ) {
         Some(x) => x,
         None => {

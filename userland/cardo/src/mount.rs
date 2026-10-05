@@ -342,6 +342,21 @@ pub fn reactivate_mount_by_id(mounts: &mut Vec<FsMount>, id: u64, fgen: &mut u64
 }
 
 impl FsMount {
+    /// Mount root su volume ArcaFS (Fase A): target `""` catch-all — tutto
+    /// cio' che non matcha un target specifico cade qui. `normalize_target`
+    /// rifiuta `""` apposta: la root si crea solo qui a boot (mai via
+    /// R_MOUNT) e non si smonta (umount cerca per target normalizzato).
+    pub fn root_arca(generation: u64, uuid: u64, id: u64) -> Self {
+        Self {
+            id,
+            target: String::new(),
+            source: String::from("arca-root"),
+            opts: String::new(),
+            fstype: "arcafs",
+            fs: MountedFs::Arca(crate::arca::ArcaFs::stub(generation, uuid, 0)),
+        }
+    }
+
     /// Istanza FAT se montata e attiva (None se altra variante o inattiva).
     /// Le future varianti aggiungono i loro accessor qui; gli handler che
     /// servono FAT-specifico (create gia' assorbito in `open` dalla Fase 49;
@@ -438,9 +453,21 @@ impl FsMount {
 /// oltre `umount`/`remove` altrui (Fase 49, F2), mai un indice.
 pub fn resolve_fsmount<'a>(mounts: &mut Vec<FsMount>, path: &'a str, fgen: &mut u64) -> Option<(u64, &'a str)> {
     let t = path.trim_start_matches('/');
+    // Fase A: la root catch-all non copre mai `/dev` (namespace dei driver
+    // nella tabella legacy: resolve_mount/synth hanno precedenza come prima
+    // del catch-all). Un mount specifico sotto /dev resta raggiungibile.
+    let dev_tree = t == "dev" || t.starts_with("dev/");
     let mut best: Option<(usize, &str)> = None;
     for (i, m) in mounts.iter().enumerate() {
-        let rel = if t == m.target {
+        let rel = if m.target.is_empty() {
+            // Mount root (Fase A): catch-all — tutto cio' che non matcha un
+            // target specifico cade qui con rel = path trimmato (`/` → "").
+            // Il longest-prefix sotto preferisce sempre i mount specifici.
+            if dev_tree {
+                continue;
+            }
+            t
+        } else if t == m.target {
             ""
         } else if t.len() > m.target.len()
             && t.as_bytes().get(m.target.len()) == Some(&b'/')

@@ -50,8 +50,10 @@ da ciascuno prima dello spawn successivo: i binari condividono la ramfs di
 cardo (path e file di lavoro) e la sequenza rende output e PID deterministici
 (con i ring SPSC per-processo, Fase 10.2, nessuna race da buffer condivisi).
 La shell e' spawnata per ultima. `run-tests.sh` esporta `ARCA_IMG=1`: il gate
-ha terzo e quarto drive ArcaFS (MBR + GPT in partizione), quindi `testsarca`
-gira 50/50 (senza drive il core resta PASS, n/n adattivo).
+ha terzo drive ArcaFS root (sdc) + quarto (partizione GPT su arca-gpt.img,
+sdd/sdd1), quindi `testsarca` gira 50/50 (E2: 22-40 sul root vivo in bucket
+isolati, 41-50 su mount root esplicito; senza quarto drive salta 12-13,
+resta PASS adattivo).
 
 Ordine di suite: testfs, testfat, testsarca, **posixtests**, usertests
 (posixtests PRIMA di usertests cosi' t54 precede i drop di diritti di t34).
@@ -70,7 +72,8 @@ Righe di gate:
 
 Un boot QEMU per file di test: seriale su file + monitor su unix socket,
 comandi in script via `source` (1 riga digitata per gruppo, script in
-`/test/sh` su `/fat` da `scripts/sh/` via `inject-bins.sh`; sendkey solo per
+`/test/sh` sul volume root da `scripts/sh/` via `arca-tool.sh` seed (E1;
+`/fat` resta montato per i dati e la copertura FAT dedicata); sendkey solo per
 la riga `source`, backspace/clear VGA e i pid di kill/wait — KEYMAP
 verificata su QEMU 10.2.2), assert sul log seriale (la shell specchia
 l'output; `source` e' silenzioso: niente eco, gli assert di assenza restano
@@ -167,9 +170,9 @@ diritti sono irrevocabili sul canale della suite)
 | t51 | identita' misurata (Fase 36, ADR-0027): `peer_info` su Console/Devfs == manifest generato; stabilita' hash tra istanze; same-image positivo (X2 rimpiazza X1 vivo non-init-child, il mount sopravvive al kill); squat con hash diverso rifiutato (mount purgato, open fallisce); `peer_info` a canale morto → Err (helper REG51 + ramo SQUAT di spin) |
 | t52 | exec in-place (Fase 37.0 nucleo + 37.1 argv, env in 43a): helper EXECDEMO diventa testspin su T_GO — stesso PID (T_ACK pre/post), hash rimisurato (diverso da prima, uguale a spin fresco), nuova immagine operativa (T_DONE); gamba argv+env (w1=1, exec ["ARGPROBE","hello","world"] + `T52E=envok`) con report T_DONE(argc,fnv) dal fresh `_start` (env verificato dalla sonda: assente = T_DONE(0,0)); reap via `poll_gone` (i `recv_done` consumano le EXIT_NOTIFY: `wait_exit` dopo sarebbe hang) |
 | t57 | policy su identita' (Fase 45, ADR-0037): helper noto (riga test-policy ALL) — GET default ALL, drop GRANT→grant negato, drop PIPE→pipe_create negata, op valida dopo; attore ignoto `foreign.bin` fuori tabella policy — mount/grant/pipe_create negati dal default fail-closed (0x19F), open+read+write+seek lecite; read valida dopo i rifiuti (anti-wedge ring) |
-| t58 | bucket `sys` nativo + BLAKE2s (Fase 55, N0; 56.2c: bind tollerante all'auto-bind, skip adattivo senza volume): oggetto sys/bin/gpu.bin byte-identico a /fat/bin/gpu.bin, blake2s == manifest `BLAKE_*` (stesso predicato di `verify_image` in init), byte flippato → digest diverso (rifiuto), chiave assente → errore, bound nomi oltre 16/255B rifiutati (hygiene, mai troncamento) |
+| t58 | bucket oggetti nativi + BLAKE2s (Fase 55, N0; D1: driver in `vela`): oggetto vela/bin/gpu.bin byte-identico a /fat/bin/gpu.bin, blake2s == manifest `BLAKE_*` (stesso predicato di `verify_image` in init), byte flippato → digest diverso (rifiuto), chiave assente → errore, sys/bin/gpu.bin assente (trasloco provato), bound nomi oltre 16/255B rifiutati (hygiene, mai troncamento) |
 | t34 | diritti per-canale lato server (Fase 17, per ultimo: drop irrevocabili): GET default ALL+root, drop WRITE (write -1/read ok), drop MOUNT+subtree /fat (mount/open-fuori -1, open-dentro+read+readdir-dentro ok, readdir-fuori -1), widen rifiutato + GET conferma |
-| testsarca | ArcaFS P5+A1+56.1+56.2b+56.2c (Fase 54/55/56, binario separato `usertestsarca`, 40 check): vettori BLAKE2s (empty/abc/lungo), `R_GET_HASH` ramfs == ricalcolo, tamper→hash diverso, round-trip `R_OBJ_PUT/GET` piccolo, chunking 10000B, chiave assente→errore, scan per magic ACFS (whole-disk + sda1..sda4), mount `/arca` + open/readdir rifiutati + umount, protective-MBR GPT (byte 450) + ACFS in partizione GPT + mount/umount, versioni (catena + latest), snap create, rollback come nuova head, snap delete, retention 8, delete oggetto, clone bucket, stat/get_id, open volume + alloc distinti + write/read nodi + stat volume + free/realloc LIFO + rifiuti allocatore, bind motore + seed `sys` (USEDISK, commit per-op), semantica 56.1 identica su blocchi (round-trip, chunking 10000B, catena, snap, rollback, retention 8, delete, clone, stat/get_id), split multi-livello 120 chiavi, overflow 3000B + chiavi lunghe + bound, refcount pin oltre delete, crash kill-cardo + remount LOAD (dati committati intatti, gen monotona, R/W riparte), logging L1 Fase 57 (Vestigia registrato, append + read latest own-bucket, msg 1024B, rifiuti + giorno ignoto, seal + delete, stats con flush-proof, bounce + rewarm). Con `ARCA_IMG=0` (run manuale) salta 22-33 e resta PASS sul core |
+| testsarca | ArcaFS P5+A1+56.1+56.2b+56.2c (Fase 54/55/56, binario separato `usertestsarca`, 50 check; E2: volume root + GPT): vettori BLAKE2s (empty/abc/lungo), `R_GET_HASH` ramfs == ricalcolo, tamper→hash diverso, round-trip `R_OBJ_PUT/GET` piccolo, chunking 10000B, chiave assente→errore, scan per magic ACFS + mount `/arca` + open/readdir rifiutati + umount, protective-MBR GPT (byte 450) + ACFS in partizione GPT + mount/umount, versioni (catena + latest), snap create, rollback come nuova head, snap delete, retention 8, delete oggetto, clone bucket, stat/get_id, open volume + alloc distinti + write/read nodi + stat volume (freelist popolata tollerata) + free/realloc LIFO + rifiuti allocatore, bind motore + seed classi (USEDISK tollerato, commit per-op), semantica 56.1 identica su blocchi, split multi-livello 120 chiavi, overflow 3000B + chiavi lunghe + bound, refcount pin oltre delete, crash kill-cardo + remount LOAD (dati committati intatti, gen monotona, R/W riparte), logging L1 Fase 57, vista POSIX 41-50 su mount root esplicito (v28 legge `vela` per gpu). 22-40 girano sul root vivo in bucket isolati (`test`/`v56`/`d56`/`dpin`/`dcrash`/`dgc`); parser MBR fuori dal gate (PC: 4 IDE, quarto drive = GPT). Senza quarto drive salta 12-13, resta PASS adattivo |
 
 ## Cosa copre `posixtests` (4 test; personalita' POSIX, ADR-0041)
 

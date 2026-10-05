@@ -74,7 +74,7 @@ pub fn t_ipc_async() -> bool {
     // Helper server echo (modalita' 3): risponde a ogni T_REQ con 2*w0.
     // (srv_pid serve a distinguere la morte DEL server dalle EXIT_NOTIFY
     // tardive di helper precedenti: il parent le riceve tutte.)
-    let (chan, srv_pid) = match helpers::spawn_cfg("/fat/test/testcli.bin", "utcli", 16, 3, 0) {
+    let (chan, srv_pid) = match helpers::spawn_cfg("/test/testcli.bin", "utcli", 16, 3, 0) {
         Some(x) => x,
         None => {
             println!("[usertests] t_ipc_async: spawn MODE_SRV FAILED");
@@ -214,7 +214,7 @@ pub fn t_ipc_async() -> bool {
 /// `wait_reply_chan` — mai Died spurio; la morte del NOSTRO server e' FAIL.
 pub fn t_task_block_on() -> bool {
     helpers::drain_stray();
-    let (chan, _srv_pid) = match helpers::spawn_cfg("/fat/test/testcli.bin", "utcli", 16, 3, 0) {
+    let (chan, _srv_pid) = match helpers::spawn_cfg("/test/testcli.bin", "utcli", 16, 3, 0) {
         Some(x) => x,
         None => {
             println!("[usertests] t41: spawn MODE_SRV FAILED");
@@ -259,14 +259,14 @@ pub fn t_task_block_on() -> bool {
 pub fn t_task_run() -> bool {
     helpers::drain_stray();
     // ── Parte A: due server, due attese, un run.
-    let (chan_a, _) = match helpers::spawn_cfg("/fat/test/testcli.bin", "utcli", 16, 3, 0) {
+    let (chan_a, _) = match helpers::spawn_cfg("/test/testcli.bin", "utcli", 16, 3, 0) {
         Some(x) => x,
         None => {
             println!("[usertests] t42: spawn MODE_SRV(A) FAILED");
             return false;
         }
     };
-    let (chan_b, _) = match helpers::spawn_cfg("/fat/test/testcli.bin", "utcli", 16, 3, 0) {
+    let (chan_b, _) = match helpers::spawn_cfg("/test/testcli.bin", "utcli", 16, 3, 0) {
         Some(x) => x,
         None => {
             println!("[usertests] t42: spawn MODE_SRV(B) FAILED");
@@ -304,7 +304,7 @@ pub fn t_task_run() -> bool {
         return false;
     }
     // ── Parte B: morte durante l'attesa (pattern t24, via router).
-    let (chan_c, pid_c) = match helpers::spawn_cfg("/fat/test/testcli.bin", "utcli", 16, helpers::M_SRVDIE, 0) {
+    let (chan_c, pid_c) = match helpers::spawn_cfg("/test/testcli.bin", "utcli", 16, helpers::M_SRVDIE, 0) {
         Some(x) => x,
         None => {
             println!("[usertests] t42: spawn SRVDIE FAILED");
@@ -346,21 +346,21 @@ pub fn t_task_run() -> bool {
 /// altrui). Teardown T_STOP+T_DONE per tutti e tre.
 pub fn t_task_join_nested() -> bool {
     helpers::drain_stray();
-    let (chan_a, _) = match helpers::spawn_cfg("/fat/test/testcli.bin", "utcli", 16, 3, 0) {
+    let (chan_a, _) = match helpers::spawn_cfg("/test/testcli.bin", "utcli", 16, 3, 0) {
         Some(x) => x,
         None => {
             println!("[usertests] t43: spawn MODE_SRV(A) FAILED");
             return false;
         }
     };
-    let (chan_b, _) = match helpers::spawn_cfg("/fat/test/testcli.bin", "utcli", 16, 3, 0) {
+    let (chan_b, _) = match helpers::spawn_cfg("/test/testcli.bin", "utcli", 16, 3, 0) {
         Some(x) => x,
         None => {
             println!("[usertests] t43: spawn MODE_SRV(B) FAILED");
             return false;
         }
     };
-    let (chan_c, _) = match helpers::spawn_cfg("/fat/test/testcli.bin", "utcli", 16, 3, 0) {
+    let (chan_c, _) = match helpers::spawn_cfg("/test/testcli.bin", "utcli", 16, 3, 0) {
         Some(x) => x,
         None => {
             println!("[usertests] t43: spawn MODE_SRV(C) FAILED");

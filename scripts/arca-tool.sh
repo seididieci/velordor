@@ -28,26 +28,72 @@ cp "$ROOT/tools/arca/target/release/arca" "$TOOL_BIN"
 # Crea il volume con uuid fisso (Fase 2: la root si sceglie per UUID, mai
 # prima voce trovata). Derivate (arca-part.img / arca-gpt.img) usano `arca
 # uuid` per ottenere UUID distinti senza resettare il volume.
-$TOOL_BIN create "$OUT" --uuid 4152434100000001
+$TOOL_BIN create "$OUT" --uuid 4152434100000001 --size-mib 32
 echo "[arca] tool in $TOOL_BIN, immagine $OUT"
 
-# Seed del volume con i file di boot (Fase 2): `/bin` + `/test` + fixture.
-# Il seed e' un build-time: il disco host legge i binari gia' compilati e li
-# scrive nel bucket `ns` (percorso) e `sys` (nome oggetto) del volume ArcaFS.
-# Solo volumi freschi (secondary root = 0): le derivate MBR/GPT copiano blocchi
-# dal volume originale (seedato), quindi non vanno seedate a loro volta.
+# Seed del volume con i file di boot (Fase 2 + D1): `/bin` + `/bin/posix` +
+# `/usr/bin` + `/test` + fixture. Il seed e' un build-time: il disco host legge
+# i binari gia' compilati e li scrive nel bucket `ns` (percorso, vista POSIX
+# `/`) e — per i servizi che init carica per object_id — nel bucket di classe
+# (stessi byte, doppia chiave): `vela` = driver (toccano HW), `sys` = servizi,
+# `usr` = programmi utente (reserved D1: nessun reader via obj ancora).
+# Regola mirror: la chiave oggetto rispecchia il path VFS. Solo ArcaFS ha il
+# layout nuovo (FAT resta piatta fino a E); solo volumi freschi (secondary
+# root = 0): le derivate MBR/GPT copiano blocchi dal volume originale.
+# Fail-loud: file mancante o seed fallito = exit 1, mai `|| true`.
 SEED_NS=()
-for f in userland/build/cardo.bin userland/build/rector.bin \
-         userland/build/block.bin userland/build/vestigia.bin; do
-    [ -f "$ROOT/$f" ] || continue
-    base="${f//\//_}"
-    SEED_NS+=("ns:${base}=${ROOT}/$f")
+# seed_bin <host-rel> <ns-key> [obj-bucket obj-key]: ns sempre, obj per classi.
+seed_bin() {
+    if [ ! -f "$ROOT/$1" ]; then
+        echo "[arca] errore: $1 mancante (build-userland.sh/build-tests.sh prima)" >&2
+        exit 1
+    fi
+    SEED_NS+=( "ns:$2=$ROOT/$1" )
+    if [ -n "${3:-}" ] && [ -n "${4:-}" ]; then
+        SEED_NS+=( "$3:$4=$ROOT/$1" )
+    fi
+}
+# Servizi /bin: driver in `vela`, resto in `sys` (D1).
+seed_bin userland/build/gpu.bin bin/gpu.bin vela bin/gpu.bin
+seed_bin userland/build/useruptime.bin bin/uptime.bin sys bin/uptime.bin
+seed_bin userland/build/vela.bin bin/vela.bin sys bin/vela.bin
+seed_bin userland/build/kbd.bin bin/kbd.bin vela bin/kbd.bin
+seed_bin userland/build/porta.bin bin/porta.bin sys bin/porta.bin
+seed_bin userland/build/usertime.bin bin/time.bin vela bin/time.bin
+seed_bin userland/build/vestigia.bin bin/vestigia.bin sys bin/vestigia.bin
+# Personalita' POSIX in `/bin/posix` (D1: MOVE da /bin, solo ArcaFS).
+seed_bin flavours/posix/build/usershell.bin bin/posix/shell.bin sys bin/posix/shell.bin
+seed_bin flavours/posix/build/userposix.bin bin/posix/posix.bin sys bin/posix/posix.bin
+# Programmi utente in `/usr/bin` (D1: MOVE da /bin, solo ArcaFS; obj reserved).
+seed_bin flavours/posix/build/userrunhello.bin usr/bin/runhello.bin usr usr/bin/runhello.bin
+seed_bin userland/build/userarca.bin usr/bin/arca.bin usr usr/bin/arca.bin
+# Test suite /test (stessi dest 8.3 di inject-bins.sh). D2: le 6 suite che
+# init carica per object_id hanno anche l'oggetto in `tst`; gli helper
+# (testcli, testspin, …) vivono solo come path (dogfood VFS, D2.4).
+seed_bin testland/build/usertestfs.bin test/testfs.bin tst test/testfs.bin
+seed_bin testland/build/usertestfat.bin test/testfat.bin tst test/testfat.bin
+seed_bin testland/build/usertestsarca.bin test/testarca.bin tst test/testarca.bin
+seed_bin testland/build/usertests.bin test/tests.bin tst test/tests.bin
+seed_bin testland/build/usertestcli.bin test/testcli.bin
+seed_bin testland/build/usertestspin.bin test/testspin.bin
+seed_bin testland/build/utcbstest.bin test/cbstest.bin
+seed_bin testland/build/userhogheap.bin test/hogheap.bin
+seed_bin testland/build/userdevreader.bin test/devreadr.bin
+seed_bin testland/build/userdemo.bin test/demo.bin
+seed_bin testland/build/userbench.bin test/bench.bin tst test/bench.bin
+seed_bin testland/build/userforeign.bin test/foreign.bin
+seed_bin flavours/posix/tests/build/userposixtests.bin test/posixtst.bin tst test/posixtst.bin
+# Script shell /test/sh (stessi di inject-bins.sh: *.txt + *.sh).
+for s in scripts/sh/*.txt scripts/sh/*.sh; do
+    if [ ! -f "$ROOT/$s" ]; then
+        echo "[arca] errore: glob $s senza match ($ROOT/$s assente)" >&2
+        exit 1
+    fi
+    b="$(basename "$s")"
+    SEED_NS+=( "ns:test/sh/$b=$ROOT/$s" )
 done
-SEED_NS+=( "sys:bin/cardo.bin=userland/build/cardo.bin" )
-SEED_NS+=( "sys:bin/rector.bin=userland/build/rector.bin" )
-SEED_NS+=( "sys:bin/block.bin=userland/build/block.bin" )
-SEED_NS+=( "sys:bin/vestigia.bin=userland/build/vestigia.bin" )
-# Fixture di test (ramfs fresh, ricreate al boot da init): hello.txt + test.txt.
-SEED_NS+=( "ns:hello.txt=${ROOT}/userland/disk/hello.txt" )
-$TOOL_BIN seed "$OUT" "${SEED_NS[@]}" 2>/dev/null || true
+# Fixture ex-ramfs (cardo/src/server.rs populate): hello.txt + test.txt.
+seed_bin userland/disk/hello.txt hello.txt
+seed_bin userland/disk/test.txt test.txt
+$TOOL_BIN seed "$OUT" "${SEED_NS[@]}"
 echo "[arca] seed completato su $OUT"

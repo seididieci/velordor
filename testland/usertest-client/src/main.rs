@@ -356,7 +356,7 @@ fn real_main(sp: u64) -> ! {
                 }
             }
             if rounds == 1 {
-                let img = match civis::load_file("/fat/test/testcli.bin") {
+                let img = match civis::load_file("/test/testcli.bin") {
                     Some(b) if !b.is_empty() => b,
                     _ => {
                         let _ = civis::send(parent, T_DONE, 0, 30);
@@ -385,7 +385,7 @@ fn real_main(sp: u64) -> ! {
                     }
                 }
             }
-            let img = match civis::load_file("/fat/test/testspin.bin") {
+            let img = match civis::load_file("/test/testspin.bin") {
                 Some(b) if !b.is_empty() => b,
                 _ => {
                     let _ = civis::send(parent, T_DONE, 0, 20);
@@ -844,7 +844,7 @@ fn run_fault(mode: u64) -> ! {
 /// = modalita' della foglia (KILLME/ORPHAN). Ritorna il pid della foglia
 /// (dall'ACK) o None.
 fn spawn_killme(detached: bool, mode: u64) -> Option<u64> {
-    let img = civis::load_file("/fat/test/testcli.bin")?;
+    let img = civis::load_file("/test/testcli.bin")?;
     let base = civis::SpawnMeta::new("utcli", 16, &[])?;
     let meta = if detached { base.detached() } else { base };
     let chan = civis::spawn_image(&img, &meta).ok()? as u64;

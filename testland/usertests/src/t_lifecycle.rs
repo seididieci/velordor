@@ -18,7 +18,7 @@ pub fn t_lifecycle_churn() -> bool {
     let mut pids = Vec::new();
     for i in 0..N {
         // Spawn + CFG (modo CHURN): l'ACK porta il pid del figlio.
-        let (chan, pid) = match helpers::spawn_cfg("/fat/test/testcli.bin", "utcli", 16, helpers::M_CHURN, KIB) {
+        let (chan, pid) = match helpers::spawn_cfg("/test/testcli.bin", "utcli", 16, helpers::M_CHURN, KIB) {
             Some(x) => x,
             None => {
                 println!("[usertests] t22: spawn #{} FAILED (pool esaurito?)", i);
@@ -59,7 +59,7 @@ pub fn t_lifecycle_churn() -> bool {
 /// esaurito (spawn + exit di un altro helper riescono ancora).
 pub fn t_kill() -> bool {
     helpers::drain_stray();
-    let (chan, pid) = match helpers::spawn_cfg("/fat/test/testcli.bin", "utcli", 16, helpers::M_KILLME, 0) {
+    let (chan, pid) = match helpers::spawn_cfg("/test/testcli.bin", "utcli", 16, helpers::M_KILLME, 0) {
         Some(x) => x,
         None => return false,
     };
@@ -79,7 +79,7 @@ pub fn t_kill() -> bool {
         }
     }
     // Dopo la kill il pool deve accettare ancora spawn/exit (riuso sicuro).
-    let (chan2, _pid2) = match helpers::spawn_cfg("/fat/test/testcli.bin", "utcli", 16, helpers::M_CHURN, 256) {
+    let (chan2, _pid2) = match helpers::spawn_cfg("/test/testcli.bin", "utcli", 16, helpers::M_CHURN, 256) {
         Some(x) => x,
         None => {
             println!("[usertests] t23: spawn post-kill FAILED");
@@ -107,14 +107,14 @@ pub fn t_kill() -> bool {
 /// niente `wait_exit` per lui qui (il path parent e' gia' coperto da t23).
 pub fn t_server_death_notify() -> bool {
     helpers::drain_stray();
-    let (s_chan, s_pid) = match helpers::spawn_cfg("/fat/test/testcli.bin", "utcli", 16, helpers::M_SRVDIE, 0) {
+    let (s_chan, s_pid) = match helpers::spawn_cfg("/test/testcli.bin", "utcli", 16, helpers::M_SRVDIE, 0) {
         Some(x) => x,
         None => {
             println!("[usertests] t24: spawn SRVDIE FAILED");
             return false;
         }
     };
-    let (h_chan, _h_pid) = match helpers::spawn_cfg("/fat/test/testcli.bin", "utcli", 16, helpers::M_SYNCWAIT, 0) {
+    let (h_chan, _h_pid) = match helpers::spawn_cfg("/test/testcli.bin", "utcli", 16, helpers::M_SYNCWAIT, 0) {
         Some(x) => x,
         None => {
             println!("[usertests] t24: spawn SYNCWAIT FAILED");
@@ -185,7 +185,7 @@ pub fn t_server_death_notify() -> bool {
         return false;
     }
     // Pool sano: spawn/exit post-mortem.
-    let (chan2, _) = match helpers::spawn_cfg("/fat/test/testcli.bin", "utcli", 16, helpers::M_CHURN, 64) {
+    let (chan2, _) = match helpers::spawn_cfg("/test/testcli.bin", "utcli", 16, helpers::M_CHURN, 64) {
         Some(x) => x,
         None => {
             println!("[usertests] t24: spawn post-kill FAILED");
@@ -206,7 +206,7 @@ pub fn t_server_death_notify() -> bool {
 /// Con purge: serve il nuovo driver. Deterministico, nessun timing.
 pub fn t_driver_death_mount() -> bool {
     helpers::drain_stray();
-    let (d1_chan, d1_pid) = match helpers::spawn_cfg("/fat/test/testcli.bin", "utcli", 16, helpers::M_MNTDIE, 0) {
+    let (d1_chan, d1_pid) = match helpers::spawn_cfg("/test/testcli.bin", "utcli", 16, helpers::M_MNTDIE, 0) {
         Some(x) => x,
         None => {
             println!("[usertests] t25: spawn MNTDIE#1 FAILED");
@@ -234,7 +234,7 @@ pub fn t_driver_death_mount() -> bool {
         }
     }
     // Re-registrazione stesso prefix: deve servire il NUOVO driver.
-    let (d2_chan, d2_pid) = match helpers::spawn_cfg("/fat/test/testcli.bin", "utcli", 16, helpers::M_MNTDIE, 0) {
+    let (d2_chan, d2_pid) = match helpers::spawn_cfg("/test/testcli.bin", "utcli", 16, helpers::M_MNTDIE, 0) {
         Some(x) => x,
         None => {
             println!("[usertests] t25: spawn MNTDIE#2 FAILED");
@@ -283,7 +283,7 @@ pub fn t_client_death_purge() -> bool {
     helpers::drain_stray();
     const N: usize = 10;
     for i in 0..N {
-        let (chan, pid) = match helpers::spawn_cfg("/fat/test/testcli.bin", "utcli", 16, helpers::M_OPENDIE, 0) {
+        let (chan, pid) = match helpers::spawn_cfg("/test/testcli.bin", "utcli", 16, helpers::M_OPENDIE, 0) {
             Some(x) => x,
             None => {
                 println!("[usertests] t26: spawn OPENDIE#{} FAILED", i);
@@ -596,7 +596,7 @@ pub fn t_cardo_restart() -> bool {
 pub fn t_fork() -> bool {
     helpers::drain_stray();
     let (chan, _pid) = match helpers::spawn_cfg(
-        "/fat/test/testcli.bin", "utcli", 16, helpers::M_FORKDEMO, 0,
+        "/test/testcli.bin", "utcli", 16, helpers::M_FORKDEMO, 0,
     ) {
         Some(x) => x,
         None => {
@@ -623,7 +623,7 @@ pub fn t_fork() -> bool {
 pub fn t_exec_core() -> bool {
     helpers::drain_stray();
     let (h_chan, h_pid) = match helpers::spawn_cfg(
-        "/fat/test/testcli.bin", "utcli", 16, helpers::M_EXECDEMO, 0,
+        "/test/testcli.bin", "utcli", 16, helpers::M_EXECDEMO, 0,
     ) {
         Some(x) => x,
         None => {
@@ -680,7 +680,7 @@ pub fn t_exec_core() -> bool {
     // Spin di riferimento (stesso binario, budget corto): hash atteso.
     // Come sopra, ack.w0 = pid (spin risponde T_ACK con getpid).
     let (r_chan, r_pid) = match helpers::spawn_cfg(
-        "/fat/test/testspin.bin", "utspin", 16, 100, 0,
+        "/test/testspin.bin", "utspin", 16, 100, 0,
     ) {
         Some(x) => x,
         None => {
@@ -717,7 +717,7 @@ pub fn t_exec_core() -> bool {
     // Stesso binario: hash coerente (uguale al pre-exec); la PROVA dell'exec
     // e' il report argv (la vecchia immagine non poteva produrlo).
     let (a_chan, a_pid) = match helpers::spawn_cfg(
-        "/fat/test/testcli.bin", "utcli", 16, helpers::M_EXECDEMO, 1,
+        "/test/testcli.bin", "utcli", 16, helpers::M_EXECDEMO, 1,
     ) {
         Some(x) => x,
         None => {

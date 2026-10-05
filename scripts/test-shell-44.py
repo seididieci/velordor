@@ -35,12 +35,13 @@ def main():
     if not args.no_prep:
         prep_images()
     sh = Shell(mon=args.mon, serial=args.serial, fat=args.fat, fat2=args.fat2,
-               kernel=args.kernel, fat_format=args.fat_format)
+               kernel=args.kernel, fat_format=args.fat_format,
+               arca_img=args.arca, arca_format=args.arca_format)
     c = Checker()
     try:
         sh.boot()
         # 1. bg veloce + fg su Done (report + remove, deterministico).
-        out = sh.run_until("run /fat/bin/runhello.bin hello &", b"[bg pid")
+        out = sh.run_until("run /usr/bin/runhello.bin hello &", b"[bg pid")
         m = re.search(rb"\[bg pid (\d+)\]", out)
         found = m is not None
         c.check("44 bg annuncia pid", found)
@@ -54,9 +55,9 @@ def main():
         c.check("44 jobs vuota dopo fg", found)
 
         # 2. Due bg longevi (uptime): jobs li mostra run.
-        out = sh.run_until("run /fat/bin/uptime.bin &", b"[bg pid")
+        out = sh.run_until("run /bin/uptime.bin &", b"[bg pid")
         m0 = re.search(rb"\[bg pid (\d+)\]", out)
-        out = sh.run_until("run /fat/bin/uptime.bin &", b"[bg pid")
+        out = sh.run_until("run /bin/uptime.bin &", b"[bg pid")
         m1 = re.search(rb"\[bg pid (\d+)\]", out)
         found = m0 is not None and m1 is not None
         c.check("44 due bg annunciati", found)
