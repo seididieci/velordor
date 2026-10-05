@@ -285,15 +285,19 @@ fn real_main(_sp: u64) -> ! {
             if mounted {
                 // Vista POSIX 56.3: la root esiste (potrebbe essere non vuota se il
                 // volume e' seeded con i binari di boot — Fase 2). Conto i nomi:
-                // 0 = vuoto, >=1 = seedato (accetto entrambi i casi), Err(NotReady) =
-                // filesystem non pronto (skip perche' volume partizione MBR/GPT).
+                // 0 = vuoto, >=1 = seedato. NotFound = mount con uuid diverso
+                // dal motore (stub presente-ma-illeggibile per disegno, test-6:
+                // prima arrivava NotReady perche' gli op self-written non
+                // recapitavano gli errori — ora il codice tipizzato arriva).
+                // NotReady resta solo per timeout genuini.
                 let mut buf = [0u8; 64];
                 let rd = civis::readdir("/arca", &mut buf, 64);
                 let empty_or_seeded = match rd {
                     Ok(0) => true,                       // Vuoto come originariamente atteso.
                     Ok(n) if n > 0 => true,              // Seedato (Fase 2): ok.
-                    Err(civis::Error::NotReady) => true, // Non pronto: skip (partizione).
-                    _ => false,                           // Errore: FAIL.
+                    Err(civis::Error::NotFound) => true, // Stub uuid-mismatch.
+                    Err(civis::Error::NotReady) => true, // Timeout genuino.
+                    _ => false,                           // Altro errore: FAIL.
                 };
                 c.ok("readdir root vuota ok", empty_or_seeded);
                 // Poi prova open su file inesistente.

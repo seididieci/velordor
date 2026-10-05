@@ -265,11 +265,9 @@ fn handle_pipe_read(
         Some(v) => v,
         None => return Err(ERR), // id ignoto: inconsistenza interna
     };
+    // Pipe vuota con lettori vivi: il deny-frame lo scrive il dispatch
+    // (contratto "un solo frame per op", test-6).
     if got == 0 && !eof {
-        if rings.get(&chan).is_some() {
-            rings::map_client_resp_ring(rings, chan);
-            rings::resp_ring_write(ERR_EMPTY, 0, &[]);
-        }
         return Err(ERR_EMPTY);
     }
     if let Some(&(_, _)) = rings.get(&chan) {

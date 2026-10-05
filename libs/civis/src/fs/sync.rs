@@ -272,12 +272,20 @@ pub fn stat(path: &str, out: &mut Stat) -> Result<(), Error> {
         ring::req_ring_write(R_STAT, path.len() as u64, 0, path.as_bytes())
     }) {
         // Risposta self-written `[size:8][kind:8][mtime:8]` (Fase 50):
-        // result=size, w1=kind, payload=mtime (LE64). `None` = nessun frame
-        // (path di errore server-side, come prima: mai consumare).
+        // result=size, w1=kind, payload=mtime (LE64). Disciplina obj_get
+        // (test-6): prima si interpreta il result, il payload si legge solo
+        // a successo; a errore si consuma il deny-frame da 16 e si ritorna
+        // il codice tipizzato (mai overshoot nel frame dopo).
         Some((result, w1, _)) => {
+            let size = match session::fs_reply_check(result) {
+                Ok(v) => v,
+                Err(e) => {
+                    ring::resp_ring_consume(16);
+                    return Err(e);
+                }
+            };
             let mut mt = [0u8; 8];
             ring::resp_ring_read_payload(&mut mt, 8);
-            let size = session::fs_reply_check(result)?;
             out.size = size;
             out.kind = w1 & 0x3;
             out.readonly = w1 & STAT_READONLY != 0;
@@ -354,8 +362,15 @@ pub fn disk_list() -> Result<alloc::vec::Vec<(u64, u64)>, Error> {
         ring::req_ring_write(R_DISK_LIST, 0, 0, &[])
     }) {
         // Risposta `[count:8][0:8][entry...]`: result=count, payload N×16 B.
+        // Disciplina obj_get (test-6): a errore si consuma il deny-frame.
         Some((result, _, _)) => {
-            let n = (session::fs_reply_check(result)? as usize).min(16);
+            let n = match session::fs_reply_check(result) {
+                Ok(v) => (v as usize).min(16),
+                Err(e) => {
+                    ring::resp_ring_consume(16);
+                    return Err(e);
+                }
+            };
             let mut buf = [0u8; 16 * 16];
             ring::resp_ring_read_payload(&mut buf, n * 16);
             let mut out = alloc::vec::Vec::new();
@@ -383,9 +398,15 @@ pub fn disk_info(idx: u32) -> Result<DiskDesc, Error> {
         ring::req_ring_write(R_DISK_INFO, idx as u64, 0, &[])
     }) {
         Some((result, w1, _)) => {
+            let sectors = match session::fs_reply_check(result) {
+                Ok(v) => v,
+                Err(e) => {
+                    ring::resp_ring_consume(16);
+                    return Err(e);
+                }
+            };
             let mut buf = [0u8; 76];
             ring::resp_ring_read_payload(&mut buf, 76);
-            let sectors = session::fs_reply_check(result)?;
             let ml = u64::from_le_bytes(buf[..8].try_into().unwrap_or([0xFF; 8])) as usize;
             let sl = u64::from_le_bytes(buf[48..56].try_into().unwrap_or([0xFF; 8])) as usize;
             if ml > 40 || sl > 20 {
@@ -450,9 +471,13 @@ pub fn statvfs(path: &str, out: &mut StatVfs) -> Result<(), Error> {
         ring::req_ring_write(R_STATVFS, path.len() as u64, 0, path.as_bytes())
     }) {
         Some((result, _, _)) => {
+            // Disciplina obj_get (test-6): check-first, payload solo a Ok.
+            session::fs_reply_check(result).map_err(|e| {
+                ring::resp_ring_consume(16);
+                e
+            })?;
             let mut buf = [0u8; 32];
             ring::resp_ring_read_payload(&mut buf, 32);
-            session::fs_reply_check(result)?;
             out.bsize = u64::from_le_bytes(buf[..8].try_into().unwrap_or([0; 8]));
             out.blocks = u64::from_le_bytes(buf[8..16].try_into().unwrap_or([0; 8]));
             out.bfree = u64::from_le_bytes(buf[16..24].try_into().unwrap_or([0; 8]));
@@ -476,8 +501,12 @@ pub fn get_hash(path: &str, out: &mut [u8; 32]) -> Result<(), Error> {
         ring::req_ring_write(R_GET_HASH, path.len() as u64, 0, path.as_bytes())
     }) {
         Some((result, _, _)) => {
+            // Disciplina obj_get (test-6): check-first, payload solo a Ok.
+            session::fs_reply_check(result).map_err(|e| {
+                ring::resp_ring_consume(16);
+                e
+            })?;
             ring::resp_ring_read_payload(out, 32);
-            session::fs_reply_check(result)?;
             Ok(())
         }
         None => Err(Error::NotReady),

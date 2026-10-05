@@ -2064,13 +2064,21 @@
           copertura dedicata), testsarca 50/50 pieni (drive GPT per 12-13,
           22-32 su `sdc` root in bucket isolati — v25/v28 adeguati a freelist
           popolata e bucket `vela` — 41-50 su mount root esplicito; parser MBR
-          fuori dal gate: PC ha solo 4 IDE). Chiusura E2: `run_source`
+          fuori dal gate: PC ha solo 4 IDE).           Chiusura E2: `run_source`
           sincronizzato sul prompt rientrato (sleep fisso troncava gli slice
-          con `--jobs 5`: 2 FAIL sistematici, zero in sequenziale). Domanda
-          aperta (mai ostativa, 4-8 verdi identici su MBR e GPT): readdir su
-          mount Arca con uuid mismatch (sdd1 vs motore root) passa — i rami
-          `arca_with`/stub dicono NOTFOUND, il meccanismo reale e' da
-          chiarire. Flake: v38 (seal monotonici) fallito 1× su timing,
-          verde al rerun senza tocchi (stessa famiglia del flake v29
-          documentato). Gate: 5/5 + 7/7 + 50/50 + 4/4 +
-          54/54 + shell 10/10 (seq e `--jobs 5`), zero FAIL/PANIC/FAULT.
+          con `--jobs 5`: 2 FAIL sistematici, zero in sequenziale). Flake: v38
+          (seal monotonici) fallito 1× su timing, verde al rerun senza tocchi
+          (stessa famiglia del flake v29 documentato). Post-chiusura
+          (sistemazione test-6): il readdir-stub che passava NON era un
+          mistero di resolve ma un buco di protocollo — gli op self-written
+          (read/readdir/stat/statvfs/hash/...) non recapitavano mai gli
+          errori handler (frame solo a successo + skip del dispatch generico
+          = ring vuota = NotReady; il test lo scambiava per "non pronto").
+          Fix: deny-frame centralizzato nel dispatch su Err + disciplina
+          check-first/consume-16 nei 5 consumer vecchi (stat, statvfs,
+          get_hash, disk_list, disk_info; read/readdir/obj/async ce
+          l'avevano gia'). Lezione: un edit di bisect non ripristinato ha
+          mascherato il fix per ore (pipe EMPTY senza frame → NotReady
+          invece di retry: fase 42 rossa deterministica). Gate: 5/5 + 7/7 +
+          50/50 + 4/4 + 54/54 + shell 10/10 (seq e `--jobs 5`), zero
+          FAIL/PANIC/FAULT.

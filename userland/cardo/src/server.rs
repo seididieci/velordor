@@ -1030,15 +1030,21 @@ fn real_main(_sp: u64) -> ! {
         // Gli handler locali (read, readdir) scrivono direttamente nella response
         // ring; qui scriviamo solo il result frame per conferma.
         // NOTA: handle_read, handle_readdir, handle_rights_get, handle_stat,
-        // handle_disk_list/info e handle_statvfs scrivono payload+result,
-        // quindi qui NON dobbiamo scrivere di nuovo.
-        // Per gli altri handler, scriviamo solo il result.
+        // Contratto "un solo frame per op" (test-6): gli handler self-written
+        // scrivono il frame SOLO a successo (mai sui rami Err); a errore il
+        // client troverebbe la ring vuota e leggerebbe NotReady invece
+        // dell'errore tipizzato (es. EMPTY per le pipe: senza frame niente
+        // retry throttled). Qui la заявку: un solo frame per op, mai doppio
+        // (gli handler non scrivono mai sui rami Err).
         match op_tag {
             R_READ | R_READDIR | R_RIGHTS_GET | R_STAT | R_DISK_LIST | R_DISK_INFO | R_STATVFS
             | R_GET_HASH | R_OBJ_GET | R_OBJ_GET_ID => {
-                // Gli handler locali hanno gia' scritto nella response ring.
-                // Per i remote, il driver ha gia' scritto nella response ring.
-                // Non fare nulla — il result e' gia' nel frame.
+                if let Err(e) = result {
+                    if rings.get(&chan).is_some() {
+                        rings::map_client_resp_ring(&rings, chan);
+                        rings::resp_ring_write(e, 0, &[]);
+                    }
+                }
             }
             _ => {
                 rings::resp_ring_write(mount::to_reply_res(result), 0, &[]);

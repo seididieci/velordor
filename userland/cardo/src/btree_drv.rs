@@ -425,8 +425,11 @@ pub fn disk_put(eng: &mut DiskEngine, payload: &[u8], offset: usize) -> Result<u
     commit_or(eng, n as u64)
 }
 
-/// GET stateless con chunking (stessa disciplina anti-desync del mem: frame
-/// SEMPRE scritto, dati a successo, sentinella a errore).
+/// GET stateless con chunking (stessa disciplina anti-desync del mem).
+/// Scrive il frame SOLO a successo; a errore ritorna la sentinella senza
+/// scrivere — il deny-frame lo scrive il dispatch (contratto "un solo frame
+/// per op", test-6: prima lo scriveva qui e il dispatch non doveva
+/// duplicarlo).
 #[inline(never)]
 pub fn disk_get(
     eng: &mut DiskEngine,
@@ -436,7 +439,6 @@ pub fn disk_get(
 ) -> Result<u64, u64> {
     let (bucket, key, _) = arcafs::wire::parse_obj_prefix(payload).ok_or(ERR_INVALID)?;
     if bounds_invalid(bucket, key) {
-        rings::resp_ring_write(ERR_INVALID, 0, &[]);
         return Err(ERR_INVALID);
     }
     match eng.get(bucket, key) {
@@ -450,10 +452,7 @@ pub fn disk_get(
             rings::resp_ring_write(len as u64, 0, &blob[offset..offset + take]);
             Ok(len as u64)
         }
-        None => {
-            rings::resp_ring_write(ERR_NOTFOUND, 0, &[]);
-            Err(ERR_NOTFOUND)
-        }
+        None => Err(ERR_NOTFOUND),
     }
 }
 
@@ -477,10 +476,7 @@ pub fn disk_get_id(
             rings::resp_ring_write(len as u64, 0, &blob[offset..offset + take]);
             Ok(len as u64)
         }
-        None => {
-            rings::resp_ring_write(ERR_NOTFOUND, 0, &[]);
-            Err(ERR_NOTFOUND)
-        }
+        None => Err(ERR_NOTFOUND),
     }
 }
 
