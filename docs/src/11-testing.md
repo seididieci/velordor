@@ -2,7 +2,7 @@
 
 > I conteggi di suite citati negli ADR e nelle sotto-fasi del libro sono
 > **snapshot all'epoca** di ciascuna fase (es. 17/17, 21/21, 32/32). Il gate
-> corrente e' quello qui sotto (5/5 + 7/7 + 54/54 + 4/4 + 54/54 + shell) e in
+> corrente e' quello qui sotto (5/5 + 7/7 + 54/54 + 4/4 + 54/54 + 11/11 + shell) e in
 > `AGENTS.md`.
 
 La regressione automatica del sistema gira **dentro QEMU** a ogni boot: i
@@ -24,6 +24,7 @@ testland/   test suite meccanismo + repro + demo storiche
   testfat       usertestfat  — FAT32 scrivibile (Fase 20) + /dev/null, /dev/zero → PASS 7/7
   testsarca     usertestsarca — ArcaFS P5+A1+56.1+56.2a+56.2b+56.2c (B+tree COW + commit, recovery/GC + sys-dal-volume) + logging L1 Fase 57 (gateway `Log` RAM-first, bucket per identita', seal, stats, bounce) + namespace POSIX 56.3 (dir emergenti + set RAM, ADR-0042) + quota per bucket A3 (budget, ERR_NOSPC, persistenza, ADR-0044) → PASS 54/54
   usertests     usertests    — suite meccanismo (54 test)        → PASS 54/54
+  threadtest    userthreadtest — thread 1:1 (S-T, ADR-0046: create/stack/TLS/futex/IPC/fd/stress-32) → PASS 11/11
   usertest-client usertestcli  — helper a modalita' (ECHO/ZEROREAD/NULLW/SRV/CHURN/KILLME/SRVDIE/SYNCWAIT/MNTDIE/OPENDIE/MAPHAMMER/FLOOD/NEST/FAULT_*/SHMDEMO/COWDEMO/FORKDEMO/ORPHAN/HARDEN/REG51/EXECDEMO/DUPCLAIM/DUPGRANT/DUPSIBCLAIM/SEEKDENY/SUSPENDENY/SIGCATCH/GRANTDENY)
   usertest-spin  usertestspin  — busy-loop a budget di tick (batch 512 spin puri, priorita' via SpawnMeta) + ramo SQUAT (sonda di squat FS_REGISTER, t51)
   utcbstest     utcbstest    — helper CBS: crea server e si attacha (Fase 11.5)
@@ -55,8 +56,10 @@ sdd/sdd1), quindi `testsarca` gira 54/54 (E2: 22-40 sul root vivo in bucket
 isolati, 41-50 su mount root esplicito, 51-54 quota A3 in bucket `q5*`;
 senza quarto drive salta 12-13, resta PASS adattivo).
 
-Ordine di suite: testfs, testfat, testsarca, **posixtests**, usertests
-(posixtests PRIMA di usertests cosi' t54 precede i drop di diritti di t34).
+Ordine di suite: testfs, testfat, testsarca, **posixtests**, usertests,
+threadtest (posixtests PRIMA di usertests cosi' t54 precede i drop di diritti
+di t34; threadtest ultimo: non dipende dai diritti e stressa lo scheduler a
+servizi caldi).
 
 Righe di gate:
 
@@ -66,6 +69,7 @@ Righe di gate:
 [testsarca] PASS 54/54
 [Posixtests] PASS 4/4
 [usertests] PASS 54/54
+[threadtest] PASS 11/11
 ```
 
 ## Test shell interattivi (QEMU + sendkey, fuori dal gate kernel)

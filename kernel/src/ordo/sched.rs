@@ -1,12 +1,13 @@
 //! Scheduler unico di Velordo: RT a 32 priorita' + CBS (Fase 11).
 //!
 //! 32 livelli di priorita' (0 = idle, 31 = massima) con run queue per-priorita'
-//! O(1) tramite bitmask `u32` + `leading_zeros()`, piu' Constant Bandwidth
+//! O(1) tramite bitmask `u128` + `leading_zeros()`, piu' Constant Bandwidth
 //! Server (`ordo::aegis`) per la bandwidth reservation. Esposto come
 //! `crate::ordo::sched` (vedi `ordo.rs`): i chiamanti usano quel path senza
 //! conoscere i dettagli RT.
 
 mod queue;
+mod futex;
 mod spawn;
 mod tick;
 mod ipc;
@@ -16,7 +17,8 @@ mod ctx;
 mod fork;
 mod exec;
 
-pub use spawn::{init, spawn, create_user};
+pub use spawn::{init, spawn, create_user, spawn_thread};
+pub use futex::{futex_wait, futex_wake};
 pub use fork::fork_current;
 pub use exec::exec_current;
 pub use tick::{on_tick, notify_irq};
@@ -24,17 +26,19 @@ pub use ipc::{IpcResult, ipc_send, ipc_send_async, ipc_recv, ipc_recv_nonblock, 
 // Compat: PsSnap era `pub` prima dello split (nessun uso interno attuale).
 #[allow(unused_imports)]
 pub use ps::PsSnap;
-pub use ps::{process_state, process_ps, set_owned_name, set_parent_chan, parent_channel, process_of, process_name, process_cr3, process_image_hash};
+pub use ps::{process_state, process_ps, set_owned_name, set_parent_chan, parent_channel, process_of, process_name, process_cr3, process_image_hash, set_thread_fs, group_leader};
 pub use lifecycle::{exit_current, kill, suspend, resume};
 
 /// Quanto dura il timeslice in tick di PIT (100 Hz) → 2 tick = 20 ms.
 const QUANTUM_TICKS: u64 = 2;
 
-/// Massimo numero di PID / processi CONCORRENTI: `ready_by_prio` usa `u32`
-/// (bit i = PID i pronto) → 32 PID totali. Dal Fase 14 (ADR-0010) i PID dei
+/// Massimo numero di PID / entita' schedulabili CONCORRENTI (S-T: processi +
+/// thread 1:1 condividono lo stesso pool). `ready_by_prio` usa `u128` (bit i
+/// = entity i pronta) → 128 totali, come le tabelle mm (`MAX_PROCS` in
+/// `layout.rs`, VMA, rings: gia' a 128). Dal Fase 14 (ADR-0010) i PID dei
 /// processi reclamati vengono RIUSATI: il limite e' di concorrenza, non piu'
 /// il numero totale di processi creati dal boot.
-const MAX_PIDS: usize = 32;
+const MAX_PIDS: usize = 128;
 
 /// Priorita' a 32 livelli (0 = idle, 31 = massima). Newtype struct con
 /// costanti alias (`Priority::High`/`Normal`/`Low`) per leggibilita'.

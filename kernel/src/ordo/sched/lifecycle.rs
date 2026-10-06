@@ -47,8 +47,16 @@ pub fn exit_current(code: i64) -> ! {
     }
 }
 
+/// Leader del gruppo di `pid` (S-T): se' stesso per processi e leader.
+/// Chiamare a lock tenuto.
+fn group_of(sched: &Scheduler, pid: usize) -> usize {
+    sched.processes[pid].thread_group.unwrap_or(pid)
+}
+
 /// `kill(pid, code)`: termina un processo user per la stessa via di `exit`
 /// (cleanup differito + cascata sulla discendenza + notifica al parent).
+/// S-T: il target e' sempre il GRUPPO (un tid risolve al leader: POSIX kill
+/// non conosce i thread, `terminate(leader)` uccide anche i thread).
 /// Killabile: qualunque processo user tranne init (pid 1), i processi kernel
 /// (cr3 = kernel_cr3) e se stesso (per se' usare `exit`). Ritorna `true` se
 /// il processo e' stato terminato.
@@ -61,6 +69,13 @@ pub fn kill(pid: usize, code: i64) -> bool {
 
     if pid >= sched.processes.len() || pid == 1 || sched.current == Some(pid) {
         return false;
+    }
+    // S-T: kill di un tid = kill del gruppo (il gate parent/init a monte
+    // vede solo il leader: i thread hanno parent None, mai killabili
+    // direttamente se non da init).
+    let pid = group_of(sched, pid);
+    if sched.current == Some(pid) {
+        return false; // il gruppo del chiamante: per se' usare `exit`
     }
     let p = &sched.processes[pid];
     if p.state == State::Terminated {
@@ -76,7 +91,9 @@ pub fn kill(pid: usize, code: i64) -> bool {
 }
 
 /// `suspend(pid)` (Fase 44a, job control): congela un processo user (non piu'
-/// schedulato) finche' `resume`. Meccanismo neutro (ADR-0025): niente segnali
+/// schedulato) finche' `resume`. S-T: congela TUTTO il gruppo (leader +
+/// thread: un thread che gira mentre il leader e' stoppato violerebbe lo
+/// stop di job control). Meccanismo neutro (ADR-0025): niente segnali
 /// numerati, solo fuori/dentro le ready queue. Gate come `kill`: qualunque
 /// processo user tranne init (pid 1), i processi kernel e se stesso.
 /// Idempotente (doppio suspend = ok). Ritorna `true` se il processo e'
@@ -91,33 +108,38 @@ pub fn suspend(pid: usize) -> bool {
     if pid >= sched.processes.len() || pid == 1 || sched.current == Some(pid) {
         return false;
     }
-    let p = &sched.processes[pid];
-    if p.state == State::Terminated {
+    // S-T: il target e' il gruppo (come kill).
+    let leader = group_of(sched, pid);
+    if sched.current == Some(leader)
+        || sched.processes[leader].state == State::Terminated
+        || sched.processes[leader].cr3 == crate::arc::vmm_user::kernel_cr3()
+    {
         return false;
     }
-    if p.cr3 == crate::arc::vmm_user::kernel_cr3() {
-        return false; // processo kernel (solo idle oltre init)
-    }
-    let name = name_buf(p);
-    {
-        let p = &mut sched.processes[pid];
-        p.suspended = true;
-        if p.state == State::Ready {
+    let name = name_buf(&sched.processes[leader]);
+    for i in 0..sched.processes.len() {
+        let member = i == leader || sched.processes[i].thread_group == Some(leader);
+        if !member || sched.processes[i].state == State::Terminated {
+            continue;
+        }
+        sched.processes[i].suspended = true;
+        if sched.processes[i].state == State::Ready {
             // Fuori dalle ready queue; se Blocked non c'e' da togliere nulla
             // (i wake via `set_ready` lo saltano, i messaggi restano in coda).
-            sched.clear_ready(pid);
+            sched.clear_ready(i);
         }
     }
-    crate::serial_println!("[job  ] pid {} '{}' sospeso", pid, name_str_of(&name));
+    crate::serial_println!("[job  ] pid {} '{}' sospeso (gruppo)", leader, name_str_of(&name));
     true
 }
 
 /// `resume(pid)` (Fase 44a, job control): rimette in schedulazione un processo
-/// sospeso. Stessi gate di `suspend` (parent/init a monte, qui i controlli di
-/// esistenza/vitalita'). Idempotente (resume di un running = ok, no-op).
-/// Un bloccato in `recv` con messaggi in coda si sveglia subito; un bloccato
-/// con coda vuota (o in attesa di reply) resta bloccato e i waker futuri lo
-/// riaggiungono (ora `set_ready` funziona di nuovo).
+/// sospeso. S-T: tutto il gruppo (speculare a `suspend`). Stessi gate di
+/// `suspend` (parent/init a monte, qui i controlli di esistenza/vitalita').
+/// Idempotente (resume di un running = ok, no-op). Un bloccato in `recv`
+/// con messaggi in coda si sveglia subito; un bloccato con coda vuota (o in
+/// attesa di reply/futex) resta bloccato e i waker futuri lo riaggiungono
+/// (ora `set_ready` funziona di nuovo).
 pub fn resume(pid: usize) -> bool {
     if !INITIALIZED.load(Ordering::Acquire) {
         return false;
@@ -128,32 +150,43 @@ pub fn resume(pid: usize) -> bool {
     if pid >= sched.processes.len() || pid == 1 || sched.current == Some(pid) {
         return false;
     }
-    let p = &sched.processes[pid];
-    if p.state == State::Terminated {
+    // S-T: il target e' il gruppo (come kill/suspend).
+    let leader = group_of(sched, pid);
+    if sched.current == Some(leader)
+        || sched.processes[leader].state == State::Terminated
+        || sched.processes[leader].cr3 == crate::arc::vmm_user::kernel_cr3()
+    {
         return false;
     }
-    if p.cr3 == crate::arc::vmm_user::kernel_cr3() {
-        return false; // processo kernel (solo idle oltre init)
-    }
-    if !sched.processes[pid].suspended {
-        return true;
-    }
-    let name = name_buf(&sched.processes[pid]);
-    {
-        let p = &mut sched.processes[pid];
-        p.suspended = false;
-        if p.ipc_state == crate::ordo::process::IpcState::BlockedOnRecv && !p.msg_queue.is_empty() {
-            // Messaggi arrivati da sospeso: sveglia ora (`ipc_recv`, che al
-            // ritorno dallo switch ricontrolla la coda, li trovera').
-            p.ipc_state = crate::ordo::process::IpcState::None;
-            p.state = State::Ready;
-            sched.set_ready(pid);
-        } else if p.state == State::Ready {
-            sched.set_ready(pid);
+    let name = name_buf(&sched.processes[leader]);
+    // Resume di gruppo: ogni membro torna alla sua disciplina (Ready in
+    // coda, Blocked resta ai waker — stessa logica del singolo, per membro).
+    let mut any = false;
+    for i in 0..sched.processes.len() {
+        let member = i == leader || sched.processes[i].thread_group == Some(leader);
+        if !member
+            || sched.processes[i].state == State::Terminated
+            || !sched.processes[i].suspended
+        {
+            continue;
         }
-        // Blocked (coda vuota o attesa reply): resta; i waker lo riprendono.
+        any = true;
+        sched.processes[i].suspended = false;
+        if sched.processes[i].ipc_state == crate::ordo::process::IpcState::BlockedOnRecv
+            && !sched.processes[i].msg_queue.is_empty()
+        {
+            sched.processes[i].ipc_state = crate::ordo::process::IpcState::None;
+            sched.processes[i].state = State::Ready;
+            sched.set_ready(i);
+        } else if sched.processes[i].state == State::Ready {
+            sched.set_ready(i);
+        }
+        // Blocked (coda vuota o attesa reply/futex): resta; i waker futuri
+        // lo riprendono (set_ready funziona di nuovo).
     }
-    crate::serial_println!("[job  ] pid {} '{}' ripreso", pid, name_str_of(&name));
+    crate::serial_println!("[job  ] pid {} '{}' ripreso (gruppo)", leader, name_str_of(&name));
+    // Idempotente: gruppo gia' running = ok (come il singolo).
+    let _ = any;
     true
 }
 
@@ -166,6 +199,20 @@ impl Scheduler {
     /// e accoda il processo al reclaim. Il teardown fisico (stack/TSS/address
     /// space) e la notifica EXIT ai peer sono differiti a `drain_reclaim`. Se `pid` e' il processo corrente, il chiamante deve
     /// poi fare lo switch (vedi `exit_current`).
+    /// Il gruppo ha thread vivi oltre `pid`? (S-T: scansione O(n) sul cold
+    /// path del reclaim; niente contatori da mantenere coerenti.)
+    fn group_has_live(&self, leader: usize, except: usize) -> bool {
+        for (i, p) in self.processes.iter().enumerate() {
+            if i != except
+                && p.state != State::Terminated
+                && (i == leader || p.thread_group == Some(leader))
+            {
+                return true;
+            }
+        }
+        false
+    }
+
     pub(super) fn terminate(&mut self, pid: usize, code: i64) {
         if pid >= self.processes.len() || self.processes[pid].state == State::Terminated {
             return;
@@ -173,6 +220,46 @@ impl Scheduler {
         // init e' la radice della process tree: non deve mai morire.
         if pid == 1 {
             panic!("init terminato (pid 1)");
+        }
+
+        // S-T: morte di UN thread (non l'ultimo per costruzione: la morte
+        // del leader uccide prima tutti i thread, vedi sotto). Via breve:
+        // niente cascata (parent None), niente canali/CBS/peer del leader
+        // (restano al gruppo finche' vive), solo wake dei mittenti su `pid`.
+        if let Some(leader) = self.processes[pid].thread_group {
+            let name = name_buf(&self.processes[leader]);
+            {
+                let p = &mut self.processes[pid];
+                p.state = State::Terminated;
+                p.suspended = false;
+                p.exit_code = code;
+                p.ipc_state = crate::ordo::process::IpcState::None;
+                p.reply_chan = None;
+                p.reply_req = 0;
+                p.reply_slot = None;
+                p.waiting_pid = None;
+                p.waiting_req = 0;
+                p.pending_wake = false;
+            }
+            self.clear_ready(pid);
+            self.wake_senders(pid);
+            super::futex::purge_tid(self, pid);
+            self.push_reclaim(pid);
+            crate::serial_println!(
+                "[proc ] thread pid {} del gruppo '{}' terminato (code {})",
+                pid, name_str_of(&name), code
+            );
+            return;
+        }
+        // S-T: morte del leader = morte del gruppo: prima tutti i thread
+        // vivi (via breve sopra, niente ricorsione oltre un livello), poi
+        // la via completa (canali/CBS/peer/cascata del processo).
+        for tid in 0..self.processes.len() {
+            let t = self.processes[tid].thread_group == Some(pid)
+                && self.processes[tid].state != State::Terminated;
+            if t {
+                self.terminate(tid, code);
+            }
         }
 
         let name = name_buf(&self.processes[pid]);
@@ -189,6 +276,7 @@ impl Scheduler {
             p.reply_req = 0;
             p.reply_slot = None;
             p.waiting_pid = None;
+                p.waiting_req = 0;
             p.pending_wake = false;
         }
         self.clear_ready(pid);
@@ -263,6 +351,7 @@ impl Scheduler {
                 let p = &mut self.processes[i];
                 p.ipc_state = crate::ordo::process::IpcState::None;
                 p.waiting_pid = None;
+                p.waiting_req = 0;
                 p.reply_slot = None;
                 p.state = State::Ready;
                 self.set_ready(i);
@@ -276,8 +365,23 @@ impl Scheduler {
     /// Gira da `on_tick`: `current` e' sempre un processo vivo, quindi non si
     /// libera mai lo stack del processo su cui si sta eseguendo.
     pub(super) fn drain_reclaim(&mut self) {
-        while self.reclaim_len > 0 {
+        // Passata limitata (S-T): ogni item al piu' una volta per drain. Il
+        // leader con thread vivi ruota in coda (riprova al prossimo tick):
+        // mai spin sul posto, reclaim eventuale alla morte dei thread (un
+        // gruppo con thread vivi E' vivo per definizione).
+        let mut n = self.reclaim_len;
+        while n > 0 {
+            n -= 1;
             let pid = self.reclaim_q[self.reclaim_head];
+            let leader_wait = pid < self.processes.len()
+                && self.processes[pid].thread_group.is_none()
+                && self.processes[pid].state == State::Terminated
+                && self.group_has_live(pid, pid);
+            if leader_wait {
+                self.reclaim_head = (self.reclaim_head + 1) % MAX_PIDS;
+                self.reclaim_q[(self.reclaim_head + self.reclaim_len - 1) % MAX_PIDS] = pid;
+                continue;
+            }
             self.reclaim_head = (self.reclaim_head + 1) % MAX_PIDS;
             self.reclaim_len -= 1;
             self.reclaim_one(pid);
@@ -293,6 +397,24 @@ impl Scheduler {
             return; // mai liberare il processo in esecuzione
         }
         if self.processes[pid].state != State::Terminated {
+            return;
+        }
+
+        // S-T: teardown di UN thread — solo stack+TSS+PID. Niente mm (cr3
+        // condiviso: lo chiude il gruppo), niente text (condivisa), niente
+        // notify (solo morte di gruppo), niente canali/CBS (del leader).
+        if self.processes[pid].thread_group.is_some() {
+            let (stack_base, tss_slot, exit_code) = {
+                let p = &self.processes[pid];
+                (p.stack_base, p.tss_slot, p.exit_code)
+            };
+            crate::arc::phys_mem::free_contiguous(stack_base, crate::ordo::process::STACK_FRAMES);
+            crate::gdt::free_tss_slot(tss_slot);
+            self.free_pids |= 1u128 << pid;
+            crate::serial_println!(
+                "[reap ] thread pid {} reclamato (code {})",
+                pid, exit_code
+            );
             return;
         }
 
@@ -352,7 +474,7 @@ impl Scheduler {
 
         // Il PID torna disponibile SOLO ora: canali/servizi/CBS del morto sono
         // gia' stati rilasciati da `terminate`.
-        self.free_pids |= 1u32 << pid;
+        self.free_pids |= 1u128 << pid;
 
         crate::serial_println!(
             "[reap ] '{}' pid {} reclamato{}: frame liberi = {}",

@@ -103,7 +103,8 @@ extern "x86-interrupt" fn page_fault_handler(
     // `heap_brk` del processo non ancora materializzata viene mappata lazy con
     // un frame zero (vale anche per fault supervisor).
     if !prot && fault_addr >= crate::arc::vmm_user::USER_HEAP_BASE {
-        let brk = crate::arc::vmm_user::heap_brk(pid);
+        // S-T: l'heap e' del gruppo (tabelle indicizzate al leader).
+        let brk = crate::arc::vmm_user::heap_brk(crate::syscall::current_mm());
         if fault_addr < brk {
             let page = fault_addr & !0xfff;
             if let Some(frame) = crate::arc::phys_mem::alloc() {
@@ -125,7 +126,8 @@ extern "x86-interrupt" fn page_fault_handler(
     if !prot && fault_addr >= crate::arc::vmm_user::MMAP_BASE
         && fault_addr < crate::arc::vmm_user::MMAP_END
     {
-        if let Some((vb, vl, vprot, vshm)) = crate::arc::vmm_user::vma_lookup(pid, fault_addr) {
+        // S-T: le VMA sono del gruppo (registrate al leader).
+        if let Some((vb, vl, vprot, vshm)) = crate::arc::vmm_user::vma_lookup(crate::syscall::current_mm(), fault_addr) {
             use syscall_numbers::{PROT_NONE, PROT_WRITE};
             // VMA condivisa (30): le pagine sono pre-materializzate a
             // `shm_map`; un fault qui e' un edge (PTE staccata) → hole-fill

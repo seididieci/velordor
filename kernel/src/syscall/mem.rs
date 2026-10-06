@@ -1,6 +1,6 @@
 // Split from syscall.rs (byte-identical move; see facade).
 use core::ptr::addr_of;
-use super::entry::{current_id, PERCPU};
+use super::entry::{current_id, current_mm, PERCPU};
 use super::dispatch::apply_ipc;
 
 /// mmap(hint, len, prot, flags): mappa anonima privata nel basso canonico
@@ -20,7 +20,7 @@ pub(super) fn sys_mmap(hint: u64, len: usize, prot: u64, flags: u64) -> i64 {
     if fixed && hint == 0 {
         return -1; // FIXED senza hint non ha senso
     }
-    let cur = current_id() as usize;
+    let cur = current_mm();
     match crate::arc::vmm_user::vma_map(cur, hint, len as u64, fixed, prot as u8, 0) {
         Some(base) => base as i64,
         None => -1,
@@ -76,7 +76,7 @@ pub(super) fn sys_shm_map(id: u64, hint: u64, prot: u64, flags: u64) -> i64 {
     if cr3 == 0 {
         return -1;
     }
-    let cur = current_id() as usize;
+    let cur = current_mm();
     // Two-phase: se un frame e' saturo (ref 255, irraggiungibile con 32
     // processi ma mai wrappare in silenzio) si fallisce PRIMA di registrare
     // la VMA o mappare: nessun cambio di stato, nessun rollback.
@@ -126,7 +126,7 @@ pub(super) fn sys_mprotect(addr: u64, len: usize, prot: u64) -> i64 {
     if cr3 == 0 {
         return -1; // cr3 non impostata
     }
-    let cur = current_id() as usize;
+    let cur = current_mm();
     if crate::arc::vmm_user::vma_protect(cur, cr3, addr, len as u64, prot as u8) {
         0
     } else {
@@ -140,7 +140,7 @@ pub(super) fn sys_munmap(addr: u64, len: usize) -> i64 {
     if cr3 == 0 {
         return -1; // cr3 non impostata
     }
-    let cur = current_id() as usize;
+    let cur = current_mm();
     if crate::arc::vmm_user::vma_unmap(cur, cr3, addr, len as u64) {
         0
     } else {
@@ -221,7 +221,7 @@ pub(super) fn sys_map_physical(phys_addr: u64, virt_addr: u64, count: usize) -> 
 /// l'estensione non e' possibile (overflow / oltre il tetto soft).
 pub(super) fn sys_sbrk(inc: u64) -> i64 {
     const PAGE: u64 = 0x1000;
-    let cur = current_id() as usize;
+    let cur = current_mm();
     let old = crate::arc::vmm_user::heap_brk(cur);
     if inc == 0 {
         return old as i64;
@@ -256,7 +256,7 @@ pub(super) fn sys_sbrk(inc: u64) -> i64 {
 /// coppie, es. block FS+DISK). Il mapping e' NON-owned: il free avviene via
 /// record a teardown (`free_ring_pages`), mai double-free col walk owned.
 pub(super) fn sys_ring_alloc() -> i64 {
-    let cur = current_id() as usize;
+    let cur = current_mm();
     let (req_phys, resp_phys) = match crate::arc::vmm_user::alloc_ring_pages(cur) {
         Some(p) => p,
         None => {
@@ -289,7 +289,7 @@ pub(super) fn sys_ring_alloc() -> i64 {
 /// fisico base in rax (VA fissa e nota, niente da ritornare) e `pages` in
 /// rdi. Single-slot: seconda alloc = -1. -1 anche su OOM/range invalido.
 pub(super) fn sys_dma_alloc(pages: usize) -> i64 {
-    let cur = current_id() as usize;
+    let cur = current_mm();
     let cr3 = unsafe { (*(addr_of!(PERCPU))).current_cr3 };
     if cr3 == 0 {
         return -1; // cr3 non impostata (prima di allocare: mai record orfani)

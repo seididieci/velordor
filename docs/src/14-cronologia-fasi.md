@@ -2111,3 +2111,20 @@
           vittoria. Linker: rust-lld spedito nella distribuzione (pattern
           Xous), tcc come `cc` di bootstrap. Gap PAL in tabella con strato
           (POSIX puro = flavour). Nessun codice, nessun gate toccato.
+          S-T (thread kernel 1:1 + TLS + futex, ADR-0046). T0: pool 32→128
+          (bitmask u128; tabelle mm gia' a 128; TSS pool; gate verde). T1:
+          create/exit con cr3 condiviso + TSS propri + `current_mm` in PERCPU
+          (heap/VMA/ring/DMA indicizzati al leader); bug trovati: validazione
+          stack TOP past-the-end, lookup VMA del fault sotto il tid. T2: TLS
+          (MSR allo switch + FSGSBASE da CPUID, `+fsgsbase` in run.sh per
+          qemu64) + isolamento provato via rdfsbase. T3: futex WAIT/WAKE +
+          deadline (walk presenza con bit U — `entry_at` maschera i flag,
+          walk raw dedicato; word va inizializzata prima del WAIT). T4:
+          lifecycle di gruppo (kill/suspend/exec/fork; exec da non-leader
+          rifiutata loud). T5: IPC di gruppo (sender leader, wake preciso
+          per waiting_req — senza, reply all'endpoint e thread appeso). T6:
+          VMA 16→64 (32 stack) + stress-32. Suite `threadtest` 11/11. Flake
+          singoli mai riprodotti: v29 (documentato) 1×, bind orphan-GC 1×
+          con reboot pulito sullo stesso volume (sotto monitoraggio). Gate:
+          5/5 + 7/7 + 54/54 + 4/4 + 54/54 + 11/11 + shell 10/10, zero
+          FAIL/PANIC/FAULT.

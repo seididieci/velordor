@@ -87,6 +87,37 @@ pub fn set_parent_chan(pid: usize, chan: Option<usize>) {
     }
 }
 
+/// Imposta la base TLS (FS) di `pid` (S-T): il chiamante programma anche
+/// l'MSR subito (vedi `sys_thread_set_fs`); qui resta per gli switch futuri.
+/// Ritorna `false` a pid ignoto/terminato (il chiamante ha gia' scritto
+/// l'MSR: fail-stop loud a monte, mai stato mezzo aggiornato in pratica —
+/// il check bounds vive nel chiamante prima di qualunque scrittura).
+pub fn set_thread_fs(pid: usize, base: u64) -> i64 {
+    let mut guard = SCHED.lock();
+    if let Some(sched) = guard.as_mut() {
+        if pid < sched.processes.len()
+            && sched.processes[pid].state != crate::ordo::process::State::Terminated
+        {
+            sched.processes[pid].fs_base = base;
+            return 0;
+        }
+    }
+    -1
+}
+
+/// Leader del gruppo di `pid` (S-T T5): se' stesso per processi e leader.
+/// Usato dai path che operano sull'identita' di gruppo (lookup servizi,
+/// parent di spawn): i thread ereditano le sessioni del leader.
+pub fn group_leader(pid: usize) -> usize {
+    let guard = SCHED.lock();
+    match guard.as_ref() {
+        Some(sched) if pid < sched.processes.len() => {
+            sched.processes[pid].thread_group.unwrap_or(pid)
+        }
+        _ => pid,
+    }
+}
+
 /// Canale di nascita del processo `pid` (ADR-0008). `None` se non esiste.
 pub fn parent_channel(pid: usize) -> Option<usize> {
     let guard = SCHED.lock();

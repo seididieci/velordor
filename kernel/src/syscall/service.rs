@@ -44,7 +44,9 @@ pub(super) fn sys_service_lookup(service_disc: u64) -> i64 {
         Some(s) => s,
         None => return -1,
     };
-    let me = current_id() as usize;
+    // S-T (T5): i thread riusano il canale del leader (stessa sessione
+    // FS/fd per il gruppo: `alloc` trova l'esistente via `find`, mai duplicati).
+    let me = crate::ordo::sched::group_leader(current_id() as usize);
     match crate::relay::channels::lookup(service) {
         Some(owner) => match crate::relay::channels::alloc(me, owner) {
             Some(chan) => chan as i64,

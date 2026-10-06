@@ -34,6 +34,64 @@ pub fn spawn(name: &'static str, priority: Priority, entry: crate::ordo::process
     Some(id)
 }
 
+/// Crea un thread 1:1 nel gruppo del chiamante (S-T, ADR-0046): `entry` =
+/// RIP user iniziale, `stack` = RSP iniziale (mappato dal chiamante, di
+/// solito mmap), `fs` = base TLS (0 = nessuna). Il gruppo e' quello del
+/// chiamante (un thread puo' spawnare fratelli). Solo chiamanti user (i
+/// processi kernel non hanno address space condivisibile). Ritorna il tid.
+pub fn spawn_thread(entry: u64, stack: u64, fs: u64) -> Option<usize> {
+    if entry == 0 || stack == 0 {
+        return None;
+    }
+    // Lo stack e' il TOP (un past-the-end: il primo push scrive [top-8]):
+    // valida l'ultima qword mappabile. La mappatura effettiva faulta loud
+    // al primo uso se invalida — mai UB nel kernel.
+    if !crate::arc::vmm_user::is_user_range(stack.wrapping_sub(8), 8) {
+        return None;
+    }
+    // FS nulla o user-range (canonica: niente basi kernel come TLS).
+    if fs != 0 && !crate::arc::vmm_user::is_user_range(fs, 1) {
+        return None;
+    }
+    let mut guard = SCHED.lock();
+    let sched = guard.as_mut().expect("scheduler non inizializzato");
+    let caller = sched.current?;
+    if sched.processes[caller].cr3 == crate::arc::vmm_user::kernel_cr3() {
+        return None; // chiamante kernel: niente thread user
+    }
+    if sched.processes[caller].state == crate::ordo::process::State::Terminated {
+        return None;
+    }
+    let group = sched.processes[caller].thread_group.unwrap_or(caller);
+    if sched.processes[group].state == crate::ordo::process::State::Terminated {
+        return None; // gruppo morente: niente nuovi thread
+    }
+    let (name, name_owned, name_len, priority, cr3, tss_slot, cbs, text_id, img) = {
+        let l = &sched.processes[group];
+        (l.name, l.name_owned, l.name_len, l.priority, l.cr3, l.tss_slot, l.cbs_server, l.text_id, l.image_hash)
+    };
+    let id = sched.alloc_pid()?;
+    let thread = match unsafe {
+        Process::create_thread(
+            name, name_owned, name_len, priority, group, cr3, tss_slot,
+            cbs, text_id, img, entry, stack, fs,
+        )
+    } {
+        Some(t) => t,
+        None => {
+            sched.release_pid(id);
+            return None;
+        }
+    };
+    sched.place_process(id, thread);
+    sched.set_ready(id);
+    crate::serial_println!(
+        "[ordo] thread '{}' (tid {}), gruppo {} | entry={:#x} stack={:#x} fs={:#x}",
+        sched.processes[group].name_str(), id, group, entry, stack, fs
+    );
+    Some(id)
+}
+
 pub unsafe fn create_user(
     name: &'static str,
     priority: Priority,

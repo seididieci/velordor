@@ -23,8 +23,10 @@ use x86_64::structures::tss::TaskStateSegment;
 /// Slot IST usato dal double fault handler.
 pub const DOUBLE_FAULT_IST_INDEX: u16 = 0;
 
-/// Numero di TSS per-processo nel pool. Slot 0 riservato al TSS di boot/kernel.
-pub const MAX_TSS_SLOTS: usize = 32;
+/// Numero di TSS nel pool (S-T: uno per entita' schedulabile, processi +
+/// thread 1:1 — ogni thread ha kernel stack e RSP0 propri). Slot 0 riservato
+/// al TSS di boot/kernel. Allineato al pool PID (MAX_PIDS=128).
+pub const MAX_TSS_SLOTS: usize = 128;
 
 /// Capacita' della GDT: null + 4 selettori base + MAX_TSS_SLOTS descriptor TSS
 /// (ogni system segment occupa 2 entry nel crate).
@@ -182,6 +184,31 @@ pub fn configure_tss(slot: usize, rsp0: VirtAddr, io_ranges: &[(u16, u16)]) {
     // Reset bitmap (idempotente) poi abilita le porte richieste.
     tss.iomap.fill(0xFF);
     allow_ports(slot, io_ranges);
+}
+
+/// Clona la I/O bitmap dal TSS `src` al TSS `dst` (S-T: i thread ereditano
+/// lo stesso dominio di protezione del leader — a differenza del fork, che
+/// parte senza porte per least privilege). `None` a slot invalidi (il
+/// chiamante rilascia cio' che ha allocato). Solo bitmap: RSP0/IST restano
+/// quelli di `configure_tss` sul dst.
+pub fn clone_tss_iomap(dst: usize, src: usize) -> Option<()> {
+    if dst < 1 || dst >= MAX_TSS_SLOTS || src >= MAX_TSS_SLOTS {
+        return None;
+    }
+    if dst == src {
+        return Some(()); // stesso slot: niente da fare
+    }
+    // Copia a chunk (niente temp da 8 KiB sullo stack kernel da 16 KiB).
+    let pool = pool_mut() as *mut [TssWithIomap; MAX_TSS_SLOTS];
+    let mut off = 0usize;
+    while off < IO_BITMAP_LEN {
+        let n = (IO_BITMAP_LEN - off).min(512);
+        let src_p = unsafe { (*pool)[src].iomap.as_ptr().add(off) };
+        let dst_p = unsafe { (*pool)[dst].iomap.as_mut_ptr().add(off) };
+        unsafe { core::ptr::copy_nonoverlapping(src_p, dst_p, n) };
+        off += n;
+    }
+    Some(())
 }
 
 /// Carica nel task register il TSS del processo `sel`. Chiamato a ogni

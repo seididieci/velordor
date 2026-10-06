@@ -29,6 +29,11 @@ pub(super) struct PerCpu {
     pub(super) user_r12_save: u64, // 0x70 staging transitorio dell'r12 user nell'entry
                         //     (copiato subito sullo stack kernel, mai letto
                         //     dopo un context switch)
+    /// 0x78 PID owner delle tabelle mm (S-T): leader del gruppo per i thread,
+    /// se' stesso per i processi. Scritto a ogni switch (lock gia' tenuto),
+    /// letto lock-free da sbrk/mmap/fault: heap/VMA/ring/DMA indicizzati al
+    /// leader per i thread (stesso address space, niente doppie tabelle).
+    pub(super) current_mm: u64,
 }
 
 /// Unica area per-core (single core). Vi si accede solo tramite puntatori
@@ -49,6 +54,7 @@ pub(super) static mut PERCPU: PerCpu = PerCpu {
     ret_rdx: 0,
     ret_r10: 0,
     user_r12_save: 0,
+    current_mm: 0,
 };
 /// Offset (da `rsp0`, in byte) dei registri user salvati sullo stack kernel
 /// dall'entry (Fase 34, fork): il figlio riceve una copia di queste 15 word +
@@ -242,13 +248,20 @@ pub fn init() {
 
 /// Aggiorna lo stato del processo corrente su `PERCPU`. Chiamato dal context
 /// switch: cosi' l'entry syscall trova id/rsp0/cr3 del processo in esecuzione.
-pub fn set_current(id: usize, rsp0: u64, cr3: u64) {
+pub fn set_current(id: usize, rsp0: u64, cr3: u64, mm: u64) {
     unsafe {
         let p = addr_of_mut!(PERCPU);
         (*p).current_id = id as u64;
         (*p).rsp0 = rsp0;
         (*p).current_cr3 = cr3;
+        (*p).current_mm = mm;
     }
+}
+
+/// PID owner delle tabelle mm (S-T): leader del gruppo se il corrente e' un
+/// thread, il corrente stesso altrimenti. Lock-free (scritto allo switch).
+pub fn current_mm() -> usize {
+    unsafe { (*(addr_of!(PERCPU))).current_mm as usize }
 }
 
 /// Id del processo corrente (per `getpid`).

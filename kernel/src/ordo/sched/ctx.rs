@@ -36,13 +36,13 @@ pub(super) fn switch_to(
         (cur, next)
     };
 
-    let (next_cr3, next_kstack_top, next_tss_sel) = unsafe {
+    let (next_cr3, next_kstack_top, next_tss_sel, next_mm, next_fs) = unsafe {
         let sched = guard.as_mut().expect("scheduler non inizializzato");
         let n = &*sched.processes.as_ptr().add(next);
-        (n.cr3, n.kernel_stack_top, n.tss_sel)
+        (n.cr3, n.kernel_stack_top, n.tss_sel, n.thread_group.unwrap_or(next), n.fs_base)
     };
 
-    crate::syscall::set_current(next, next_kstack_top, next_cr3);
+    crate::syscall::set_current(next, next_kstack_top, next_cr3, next_mm as u64);
 
     drop(guard);
 
@@ -50,6 +50,10 @@ pub(super) fn switch_to(
     unsafe {
         core::arch::asm!("mov cr3, {}", in(reg) next_cr3, options(nostack, preserves_flags));
     }
+    // S-T (T2): base TLS del prossimo thread (MSR FS_BASE; FS user libero —
+    // il kernel usa solo GS per PERCPU). Sempre scritta (correttezza prima:
+    // il costo ~100 cicli e' frazione dello switch con ltr+cr3).
+    crate::syscall::thread::write_fs_base(next_fs);
 
     unsafe { crate::ordo::context::switch_to(cur_ptr, next_ptr) };
 }

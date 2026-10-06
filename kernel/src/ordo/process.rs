@@ -200,6 +200,12 @@ pub struct Process {
     /// sincroni quando il destinatario muore, evitando il deadlock client-su-
     /// servizio-morto.
     pub waiting_pid: Option<usize>,
+    /// Request-id dell'invio su cui siamo bloccati (S-T T5): la reply del
+    /// server sveglia il thread GIUSTO del gruppo (stesso canale, req
+    /// diverse: senza, la reply andrebbe all'endpoint-leader e il thread
+    /// resterebbe appeso). Assegnato dal contatore del leader (unico nel
+    /// gruppo), matchato alla reply.
+    pub waiting_req: i64,
     /// Coppie `(peer, channel)` da notificare con `EXIT_NOTIFY` al reclaim
     /// (notifica unificata, Fase 14): enumerate in `terminate` prima di
     /// `release_pid`, consumate in `reclaim_one` dopo il teardown. Solo i
@@ -220,6 +226,21 @@ pub struct Process {
     /// byte). Meccanismo neutro: il kernel misura ed espone (36.2), la policy
     /// vive fuori (init manifest, `FS_REGISTER` in cardo).
     pub image_hash: u64,
+    /// Gruppo thread (S-T, ADR-0046): `Some(leader)` se questo PCB e' un
+    /// thread 1:1 (condivide cr3/canali/fd/heap/VMA del leader, `None`
+    /// per processi e leader. Il teardown mm/canali/notifiche avviene solo
+    /// all'uscita dell'ULTIMO del gruppo (conteggio per scansione in
+    /// `reclaim_one`: il reclaim e' cold path, niente contatori da
+    /// mantenere).
+    pub thread_group: Option<usize>,
+    /// Base TLS (FS) del thread (S-T): programmata a ogni switch (MSR
+    /// FS_BASE). 0 = nessuna (processi storici e thread senza TLS).
+    pub fs_base: u64,
+    /// Esito dell'ultimo FUTEX_WAIT (S-T T3): `None` = mai dormito/spuria,
+    /// `Some(true)` = svegliato da WAKE, `Some(false)` = deadline. Scritto
+    /// dallo svegliante (wake/deadline sweep) sotto lock, letto dal waiter
+    /// al risveglio. Resettato a ogni WAIT.
+    pub futex_woken: Option<bool>,
 }
 
 impl Process {
@@ -296,8 +317,12 @@ impl Process {
             cbs_server: None,
             text_id: 0,
             image_hash: 0,
+            thread_group: None,
+            fs_base: 0,
+            futex_woken: None,
             exit_code: 0,
             waiting_pid: None,
+            waiting_req: 0,
             die_peers: [(0, 0); MAX_NOTIFY_PEERS],
             die_peer_count: 0,
             ticks_used: 0,
@@ -378,8 +403,12 @@ impl Process {
             cbs_server: None,
             text_id,
             image_hash,
+            thread_group: None,
+            fs_base: 0,
+            futex_woken: None,
             exit_code: 0,
             waiting_pid: None,
+            waiting_req: 0,
             die_peers: [(0, 0); MAX_NOTIFY_PEERS],
             die_peer_count: 0,
             ticks_used: 0,
@@ -440,12 +469,95 @@ impl Process {
             cbs_server: None,
             text_id,
             image_hash,
+            thread_group: None,
+            fs_base: 0,
+            futex_woken: None,
             exit_code: 0,
             waiting_pid: None,
+            waiting_req: 0,
             die_peers: [(0, 0); MAX_NOTIFY_PEERS],
             die_peer_count: 0,
             ticks_used: 0,
         }
+    }
+
+    /// Crea un **thread 1:1** nel gruppo del leader (S-T, ADR-0046): condivide
+    /// `cr3` (stesso address space, MAI teardown finche' il gruppo vive),
+    /// canali/fd/heap/VMA/cwd del leader (tabelle indicizzate al leader),
+    /// CBS/priorita'/nome/identita' del leader. Propri: kernel stack, TSS
+    /// (bitmap I/O clonata dal leader: stesso dominio di protezione),
+    /// user stack (fornito dal chiamante, tipicamente mmap), FS base (TLS),
+    /// coda IPC. `entry` = RIP user iniziale, `user_stack` = RSP iniziale.
+    /// Entry/stack nulli = rifiuto loud (mai thread senza dove partire).
+    ///
+    /// # Safety
+    /// `leader_cr3` deve essere il cr3 vivo del leader; lo stack user deve
+    /// essere mappato e valido nel gruppo.
+    pub unsafe fn create_thread(
+        name: &'static str,
+        name_owned: [u8; 16],
+        name_len: u8,
+        priority: crate::ordo::sched::Priority,
+        leader: usize,
+        leader_cr3: u64,
+        leader_tss_slot: usize,
+        cbs_server: Option<usize>,
+        text_id: u32,
+        image_hash: u64,
+        entry: u64,
+        user_stack: u64,
+        fs_base: u64,
+    ) -> Option<Process> {
+        if entry == 0 || user_stack == 0 {
+            return None;
+        }
+        let stack_base = crate::arc::phys_mem::alloc_contiguous(STACK_FRAMES)?;
+        let stack_top = crate::addr::phys_to_virt(stack_base + (STACK_FRAMES as u64 * crate::arc::phys_mem::FRAME_SIZE));
+        let saved =
+            unsafe { crate::ordo::context::new_context_user(stack_top, entry, user_stack) };
+        let tss_slot = Self::alloc_tss(stack_top, &[])?;
+        if crate::gdt::clone_tss_iomap(tss_slot, leader_tss_slot).is_none() {
+            crate::gdt::free_tss_slot(tss_slot);
+            crate::arc::phys_mem::free_contiguous(stack_base, STACK_FRAMES);
+            return None;
+        }
+        let tss_sel = crate::gdt::selectors().tss_selector(tss_slot);
+        Some(Process {
+            name,
+            name_owned,
+            name_len,
+            priority,
+            state: State::Ready,
+            suspended: false,
+            parent: None,
+            detached: false,
+            stack_base,
+            cr3: leader_cr3,
+            kernel_stack_top: stack_top,
+            saved,
+            tss_sel,
+            tss_slot,
+            ipc_state: IpcState::None,
+            msg_queue: MsgQueue::new(),
+            parent_chan: None,
+            reply_chan: None,
+            reply_req: 0,
+            req_next: 1,
+            reply_slot: None,
+            pending_wake: false,
+            cbs_server,
+            text_id,
+            image_hash,
+            thread_group: Some(leader),
+            fs_base,
+            futex_woken: None,
+            exit_code: 0,
+            waiting_pid: None,
+            waiting_req: 0,
+            die_peers: [(0, 0); MAX_NOTIFY_PEERS],
+            die_peer_count: 0,
+            ticks_used: 0,
+        })
     }
 
     /// Alloca uno slot TSS dal pool, lo configura (RSP0 + IST + bitmap I/O) e

@@ -30,6 +30,13 @@ fn resolve_chan(cur: usize, chan: usize, sched: &Scheduler) -> Option<usize> {
     }
 }
 
+/// Identita' mittente sul wire (S-T T5): i thread operano sui canali del
+/// leader (stessa sessione FS/fd per tutto il gruppo). Il blocco/sveglia
+/// resta sul `cur` reale (il thread dorme, non il leader).
+fn sender_of(sched: &Scheduler, cur: usize) -> usize {
+    sched.processes[cur].thread_group.unwrap_or(cur)
+}
+
 /// Assegna il prossimo request-id del processo `pid` (Fase 13).
 fn next_req_id(sched: &mut Scheduler, pid: usize) -> i64 {
     let p = &mut sched.processes[pid];
@@ -54,12 +61,13 @@ pub fn ipc_send(channel: usize, tag: u64, w0: u64, w1: u64) -> IpcResult {
             Some(c) => c,
             None => return err_result(),
         };
-        let dest = match crate::relay::channels::peer(chan, cur) {
+        let snd = sender_of(sched, cur);
+        let dest = match crate::relay::channels::peer(chan, snd) {
             Some(p) => p,
             None => return err_result(),
         };
 
-        let req_id = next_req_id(sched, cur);
+        let req_id = next_req_id(sched, snd);
 
         {
             let d = &mut sched.processes[dest];
@@ -77,6 +85,9 @@ pub fn ipc_send(channel: usize, tag: u64, w0: u64, w1: u64) -> IpcResult {
             // Fase 14: ricorda su chi siamo bloccati, cosi' la morte del
             // destinatario ci sblocca con un errore (niente deadlock).
             c.waiting_pid = Some(dest);
+            // S-T (T5): ricorda anche il req_id: la reply sveglia il thread
+            // giusto del gruppo (stesso canale, req diverse).
+            c.waiting_req = req_id;
             c.state = State::Blocked;
             sched.clear_ready(cur);
         }
@@ -88,6 +99,7 @@ pub fn ipc_send(channel: usize, tag: u64, w0: u64, w1: u64) -> IpcResult {
                 sched.set_ready(cur);
                 sched.processes[cur].ipc_state = crate::ordo::process::IpcState::None;
                 sched.processes[cur].waiting_pid = None;
+                sched.processes[cur].waiting_req = 0;
                 return err_result();
             }
         };
@@ -104,6 +116,7 @@ pub fn ipc_send(channel: usize, tag: u64, w0: u64, w1: u64) -> IpcResult {
             let mut sched = SCHED.lock();
             let s = sched.as_mut().expect("scheduler non inizializzato");
             s.processes[cur].waiting_pid = None;
+            s.processes[cur].waiting_req = 0;
         }
         return match reply {
             Some(r) => IpcResult { rax: 0, rdi: 0, rsi: r.tag, rdx: r.w0, r10: r.w1 },
@@ -127,12 +140,13 @@ pub fn ipc_send_async(channel: usize, tag: u64, w0: u64, w1: u64) -> IpcResult {
         Some(c) => c,
         None => return err_result(),
     };
-    let dest = match crate::relay::channels::peer(chan, cur) {
+    let snd = sender_of(sched, cur);
+    let dest = match crate::relay::channels::peer(chan, snd) {
         Some(p) => p,
         None => return err_result(),
     };
 
-    let req_id = next_req_id(sched, cur);
+    let req_id = next_req_id(sched, snd);
 
     let ok = {
         let d = &mut sched.processes[dest];
@@ -254,6 +268,26 @@ pub fn ipc_reply(tag: u64, w0: u64, w1: u64) -> IpcResult {
 
     sched.processes[cur].reply_chan = None;
     sched.processes[cur].reply_req = 0;
+
+    // S-T (T5): il destinatario sync puo' essere un THREAD del gruppo
+    // dell'endpoint (stesso canale, req_id del leader unica nel gruppo):
+    // cerca il membro bloccato su (server, req) e sveglia LUI, non il leader.
+    // Senza match: via esistente (async all'endpoint).
+    let mut target = target;
+    if sched.processes[target].ipc_state != crate::ordo::process::IpcState::BlockedOnReply {
+        for i in 0..sched.processes.len() {
+            let p = &sched.processes[i];
+            let hit = p.state == State::Blocked
+                && p.ipc_state == crate::ordo::process::IpcState::BlockedOnReply
+                && p.waiting_pid == Some(cur)
+                && p.waiting_req == reply_req
+                && (i == target || p.thread_group == Some(target));
+            if hit {
+                target = i;
+                break;
+            }
+        }
+    }
 
     let sync = sched.processes[target].ipc_state == crate::ordo::process::IpcState::BlockedOnReply;
 

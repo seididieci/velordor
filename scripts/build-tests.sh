@@ -37,6 +37,8 @@ build_one testland/testsarca testland/testsarca/src/testsarca.ld usertestsarca.b
 build_one testland/hogheap testland/hogheap/src/hogheap.ld   userhogheap.bin   userhogheap
 build_one testland/devreader testland/devreader/src/devreader.ld userdevreader.bin userdevreader
 build_one testland/usertests testland/usertests/src/usertests.ld usertests.bin usertests
+# Thread 1:1 (S-T, ADR-0046): suite dedicata (create/exit/stack/TLS/futex).
+build_one testland/threadtest testland/threadtest/src/threadtest.ld threadtest.bin userthreadtest
 build_one testland/usertest-client testland/usertest-client/src/client.ld usertestcli.bin usertestcli
 build_one testland/usertest-spin testland/usertest-spin/src/spin.ld usertestspin.bin usertestspin
 build_one testland/utcbstest testland/utcbstest/src/utcbstest.ld utcbstest.bin utcbstest

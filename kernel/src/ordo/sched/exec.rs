@@ -142,6 +142,16 @@ pub fn exec_current(bytes: &[u8], args_block: Option<&[u8]>) -> Result<(), ()> {
     let sched = guard.as_mut().expect("scheduler non inizializzato");
     let me = sched.current.expect("exec senza processo corrente");
 
+    // S-T: exec solo dal leader (o da single-thread: stesso caso). Da un
+    // thread non-leader = rifiuto loud: il morph di leadership (canali del
+    // leader + mm condiviso da svuotare sotto i piedi dei fratelli) non ha
+    // semantica sicura senza trasferimento di ownership dei canali — la PAL
+    // fa exec solo da leader (fork+exec intatto: il figlio e' single).
+    if sched.processes[me].thread_group.is_some() {
+        crate::serial_println!("[exec ] pid={} thread non-leader: exec rifiutata", me);
+        return Err(());
+    }
+
     // Snapshot scalari (il borrow finisce qui).
     let (cr3, top, slot, old_text) = {
         let p = &sched.processes[me];
@@ -151,6 +161,17 @@ pub fn exec_current(bytes: &[u8], args_block: Option<&[u8]>) -> Result<(), ()> {
         }
         (p.cr3, p.kernel_stack_top, p.tss_slot, p.text_id)
     };
+
+    // S-T: il leader con thread vivi li termina PRIMA di svuotare lo spazio
+    // condiviso (via breve thread: niente canali/CBS/peer — restano al
+    // gruppo che l'exec preserva come persona).
+    for tid in 0..sched.processes.len() {
+        let t = sched.processes[tid].thread_group == Some(me)
+            && sched.processes[tid].state != crate::ordo::process::State::Terminated;
+        if t {
+            sched.terminate(tid, 0);
+        }
+    }
 
     // 2. Svuota la meta' user TENENDO il PML4 (stesso CR3, meta' kernel
     // intatta), poi TLB flush (entry vecchie stale sullo stesso CR3).

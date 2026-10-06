@@ -6,8 +6,10 @@ use super::heap_brk::heap_brk;
 use super::shm;
 
 /// VMA massime per processo (record statici, mai heap: anche il fault
-/// handler fa lookup qui, stesso stile di `HEAP_BRK`/`RING_PHYS`).
-const VMA_MAX: usize = 16;
+/// handler fa lookup qui, stesso stile di `HEAP_BRK`/`RING_PHYS`). S-T: 64
+/// (16 non bastano ai programmi multithread: N stack + TLS + heap VMA —
+/// 32 thread ne vogliono gia' 32 solo di stack).
+const VMA_MAX: usize = 64;
 /// Record VMA per pid: (base, len, prot, shm) a pagine; len == 0 = libero.
 /// `prot` = PROT_* di `syscall-numbers` (29: NONE/R/RW; W solo rifiutato a
 /// `mmap`). `shm` = 0 per anonima, altrimenti id+1 di `SHM_TABLE` (30: la VMA

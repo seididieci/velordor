@@ -562,6 +562,9 @@ const TEST_ARCA: SvcMeta = SvcMeta { bin: b"usertestsarca", path: Some("/fat/tes
 // usertests (t54 deve precedere i drop di diritti di t34 in usertests).
 const TEST_POSIX: SvcMeta = SvcMeta { bin: b"userposixtests", path: Some("/fat/test/posixtst.bin"), obj: Some((b"tst", b"test/posixtst.bin")), prio: 16, io: &[] };
 const TESTS: SvcMeta = SvcMeta { bin: b"usertests", path: Some("/fat/test/tests.bin"), obj: Some((b"tst", b"test/tests.bin")), prio: 16, io: &[] };
+// Thread 1:1 (S-T, ADR-0046): dopo usertests (nessuna dipendenza dai diritti),
+// prima della shell interattiva.
+const TEST_THREADS: SvcMeta = SvcMeta { bin: b"userthreadtest", path: Some("/fat/test/thread.bin"), obj: Some((b"tst", b"test/thread.bin")), prio: 16, io: &[] };
 #[cfg(feature = "bench")]
 const TEST_BENCH: SvcMeta = SvcMeta { bin: b"userbench", path: Some("/fat/test/bench.bin"), obj: Some((b"tst", b"test/bench.bin")), prio: 16, io: &[] };
 
@@ -711,6 +714,7 @@ fn real_main(_sp: u64) -> ! {
         run_test(&TEST_ARCA, &mut supervised);
         run_test(&TEST_POSIX, &mut supervised);
         run_test(&TESTS, &mut supervised);
+        run_test(&TEST_THREADS, &mut supervised);
     }
 
     // Bench throughput (Fase 23, feature `bench`): dopo l'eventuale suite,

@@ -28,15 +28,25 @@ pub fn fork_current() -> Option<(usize, usize)> {
     let parent_pid = sched.current.expect("fork senza processo corrente");
 
     let child_pid = sched.alloc_pid()?;
+    // S-T: il canale di nascita e' leader↔figlio (il thread chiama ma opera
+    // come leader sul wire: `sender_of` risolve, gli endpoint combaciano).
+    let group = sched.processes[parent_pid].thread_group.unwrap_or(parent_pid);
     // Canale di nascita PER PRIMO: fallisce → solo release pid, nessuno stato.
-    let chan = match crate::relay::channels::alloc(parent_pid, child_pid) {
+    let chan = match crate::relay::channels::alloc(group, child_pid) {
         Some(c) => c,
         None => {
             sched.release_pid(child_pid);
             return None;
         }
     };
-    // Snapshot scalari del padre (il borrow finisce qui).
+    // Snapshot scalari del padre (il borrow finisce qui). S-T: heap e VMA
+    // sono indicizzati al leader del gruppo (il chiamante puo' essere un
+    // thread: il figlio eredita lo spazio CONDIVISO del gruppo, non tabelle
+    // vuote del tid).
+    // S-T: gruppo e mm del chiamante (il figlio e' single-threaded del
+    // GRUPPO: parent = leader, mai un tid riusabile come orfano).
+    let p_mm = sched.processes[parent_pid].thread_group.unwrap_or(parent_pid);
+    let p_parent = p_mm;
     let (p_cr3, p_top, p_prio, p_req, p_text, p_hash, p_name, p_owned, p_nlen, p_brk) = {
         let p = &sched.processes[parent_pid];
         (
@@ -49,7 +59,7 @@ pub fn fork_current() -> Option<(usize, usize)> {
             p.name,
             p.name_owned,
             p.name_len,
-            crate::arc::vmm_user::heap_brk(parent_pid),
+            crate::arc::vmm_user::heap_brk(p_mm),
         )
     };
     // Solo processi user forkabili (cr3 propria, mai quella kernel).
@@ -127,14 +137,15 @@ pub fn fork_current() -> Option<(usize, usize)> {
         }
     };
     // Record per-processo (infallibili da qui in poi: nessun unwind).
-    crate::arc::vmm_user::vma_clone(parent_pid, child_pid);
+    // S-T: clona le VMA del gruppo (vedi sopra).
+    crate::arc::vmm_user::vma_clone(p_mm, child_pid);
     crate::arc::vmm_user::set_heap_brk(child_pid, p_brk);
     if p_text != 0 {
         crate::text::add_ref(p_text);
     }
     let child = unsafe {
         Process::create_fork(
-            p_name, p_owned, p_nlen, p_prio, p_req, parent_pid, child_cr3,
+            p_name, p_owned, p_nlen, p_prio, p_req, p_parent, child_cr3,
             stack_base, stack_top, saved, tss_slot, tss_sel, p_text, p_hash,
         )
     };

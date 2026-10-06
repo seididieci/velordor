@@ -398,3 +398,64 @@ pub fn boot_cmdline() -> alloc::vec::Vec<u8> {
         buf
     }
 }
+
+/// S-T (ADR-0046) — `thread_create(entry, stack, fs)`: thread 1:1 nel gruppo
+/// del chiamante (stesso mm/canali/fd; kernel stack + TSS propri; user stack
+/// fornito dal chiamante, tipicamente `mmap`; `fs` = base TLS, 0 = nessuna).
+/// Ritorna il tid o `Err(NoMemory)` a pool esaurito / argomenti invalidi.
+#[inline]
+pub fn thread_create(entry: usize, stack: usize, fs: usize) -> Result<usize, Error> {
+    let r = unsafe { syscall4(SYS_THREAD_CREATE, entry as u64, stack as u64, fs as u64, 0) };
+    if r < 0 {
+        Err(Error::NoMemory)
+    } else {
+        Ok(r as usize)
+    }
+}
+
+/// S-T — `thread_exit(code)`: termina SOLO il thread corrente (l'ultimo
+/// chiude il gruppo con la via completa di exit).
+#[inline]
+pub fn thread_exit(code: i64) -> ! {
+    unsafe { syscall4(SYS_THREAD_EXIT, code as u64, 0, 0, 0) };
+    unreachable!()
+}
+
+/// S-T — `thread_set_fs(base)`: aggiorna la base TLS (FS) del thread
+/// corrente (0 = via). Programma l'MSR subito + PCB per gli switch futuri.
+#[inline]
+pub fn thread_set_fs(base: usize) -> Result<(), Error> {
+    let r = unsafe { syscall4(SYS_THREAD_SET_FS, base as u64, 0, 0, 0) };
+    if r < 0 {
+        Err(Error::Invalid)
+    } else {
+        Ok(())
+    }
+}
+
+/// S-T (T3, ADR-0046) — `futex_wait(addr, expected, deadline)`: dorme se
+/// `*addr == expected` fino a WAKE o deadline (tick assoluti di `get_ticks`,
+/// 0 = mai). Ritorna 0 = svegliato, 1 = non svegliato (mismatch immediato,
+/// timeout, spuria), Err = argomenti invalidi o tabella piena. Il loop
+/// standard ricontrolla il valore a ogni ritorno.
+#[inline]
+pub fn futex_wait(addr: usize, expected: u32, deadline: u64) -> Result<bool, Error> {
+    let r = unsafe { syscall4(SYS_FUTEX_WAIT, addr as u64, expected as u64, deadline, 0) };
+    if r < 0 {
+        Err(Error::Invalid)
+    } else {
+        Ok(r == 0)
+    }
+}
+
+/// S-T (T3) — `futex_wake(addr, n)`: sveglia fino a `n` waiter (0 = nessuno).
+/// Ritorna gli svegliati.
+#[inline]
+pub fn futex_wake(addr: usize, n: u32) -> usize {
+    let r = unsafe { syscall4(SYS_FUTEX_WAKE, addr as u64, n as u64, 0, 0) };
+    if r < 0 {
+        0
+    } else {
+        r as usize
+    }
+}

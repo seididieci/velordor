@@ -74,6 +74,7 @@ seed_bin testland/build/usertestfs.bin test/testfs.bin tst test/testfs.bin
 seed_bin testland/build/usertestfat.bin test/testfat.bin tst test/testfat.bin
 seed_bin testland/build/usertestsarca.bin test/testarca.bin tst test/testarca.bin
 seed_bin testland/build/usertests.bin test/tests.bin tst test/tests.bin
+seed_bin testland/build/threadtest.bin test/thread.bin tst test/thread.bin
 seed_bin testland/build/usertestcli.bin test/testcli.bin
 seed_bin testland/build/usertestspin.bin test/testspin.bin
 seed_bin testland/build/utcbstest.bin test/cbstest.bin

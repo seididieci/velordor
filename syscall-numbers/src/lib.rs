@@ -161,6 +161,22 @@ pub const SYS_MEMINFO: u64 = 52;
 /// Meccanismo neutro (ADR-0025): byte opachi, il parse `root=UUID=` vive in
 /// cardo (Fase 2 root su volume, mai first-found).
 pub const SYS_BOOT_CMDLINE: u64 = 53;
+// ── Thread 1:1 + futex (S-T, ADR-0046) ──────────────────────────────
+// THREAD_CREATE(entry, stack, fs_base, flags): crea un thread nel gruppo del
+// chiamante (stesso address space, canali/fd condivisi col leader; kernel
+// stack + TSS propri, user stack fornito dal chiamante via mmap). Ritorna il
+// tid o -1. THREAD_EXIT(code): termina SOLO il thread corrente (l'ultimo
+// chiude il gruppo con la via completa di exit). THREAD_SET_FS(base):
+// aggiorna la base TLS (FS) del thread corrente. FUTEX_WAIT(addr,
+// expected, deadline_tick): dorme se *addr == expected fino a WAKE o
+// deadline (0 = mai); FUTEX_WAKE(addr, n): sveglia fino a n waiter.
+// Ritorni: create = tid / -1; wait = 0 svegliato / 1 deadline / -1 errore;
+// wake = svegliati.
+pub const SYS_THREAD_CREATE: u64 = 54;
+pub const SYS_THREAD_EXIT: u64 = 55;
+pub const SYS_FUTEX_WAIT: u64 = 56;
+pub const SYS_FUTEX_WAKE: u64 = 57;
+pub const SYS_THREAD_SET_FS: u64 = 58;
 /// Bound command line salvata dal kernel (stesso del parser PVH, mai oltre).
 pub const BOOT_CMDLINE_MAX: usize = 512;
 /// Cap pagine di `SYS_DMA_ALLOC` (38.1: 1 pagina = PRD + 7 settori bastano).

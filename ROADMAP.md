@@ -169,6 +169,16 @@ Voci con scope e vittoria dichiarati (non date).
        thread/TLS/futex; DEFER: net, backtrace, dynamic-lib); sizing
        (hello ~85 MB RSS, sysroot ~200–400 MB → volumi/RAM da crescere).
        Prossimo: S1 (MUST senza thread + PAL single-thread).
+- [x] **S-T thread kernel 1:1 + TLS + futex** (chiusa, ADR-0046): thread =
+       PCB con gruppo (cr3/canali/fd/heap/VMA condivisi col leader, stack/
+       TSS/FS/coda propri); pool 32→128 (bitmask u128, TSS pool, VMA 64);
+       FSGSBASE per TLS user (`+fsgsbase` in run.sh); futex WAIT/WAKE +
+       deadline a tick (walk presenza con bit U, sweep in on_tick);
+       lifecycle di gruppo (kill/suspend/resume/exec/fork) + IPC di gruppo
+       (sender leader, wake preciso per waiting_req); suite `threadtest`
+       11/11 (create/stack/TLS/joins/timeout/wake/IPC/fd/stress-32).
+       Vittoria conseguita: programmi multithread nativi + gate invariato.
+       Prossimo: S1.
 
 ## Parcheggiate
 

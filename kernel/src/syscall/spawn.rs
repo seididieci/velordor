@@ -21,7 +21,9 @@ pub(super) fn sys_spawn(name_ptr: u64, name_len: usize) -> i64 {
         Ok(s) => s,
         Err(_) => return -1,
     };
-    let parent = current_id() as usize;
+    // S-T (T5): i figli dei thread appartengono al gruppo (parent = leader:
+    // niente orfani con parent-tid riusabile, la cascata resta sensata).
+    let parent = crate::ordo::sched::group_leader(current_id() as usize);
     match crate::user_binary::spawn_named(name, Some(parent), None) {
         Some(pid) => finish_spawn(parent, pid, name),
         None => {
@@ -103,7 +105,8 @@ pub(super) fn sys_spawn_image(img_ptr: u64, img_len: usize, meta_ptr: u64, meta_
             return -1;
         }
     }
-    let parent = current_id() as usize;
+    // S-T (T5): parent = leader del gruppo (vedi sys_spawn).
+    let parent = crate::ordo::sched::group_leader(current_id() as usize);
     let name_len = meta.name.iter().position(|&b| b == 0).unwrap_or(16);    match crate::user_binary::spawn_image(
         &meta.name[..name_len],
         prio,

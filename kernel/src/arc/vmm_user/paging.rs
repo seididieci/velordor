@@ -67,6 +67,45 @@ pub(super) unsafe fn zero_frame(phys: u64) {
 
 /// Crea un nuovo address space per un processo user.
 ///
+/// La pagina di `vaddr` e' una pagina USER presente nel `cr3` dato? Walk
+/// read-only via direct map (mai fault: legge solo page table). Gestisce
+/// pagine grandi (bit PS a PDPT/PD). Richiede il bit U/S sulla foglia: le
+/// entry kernel condivise (U=0: direct map, tabelle) non passano mai.
+/// S-T: il futex la usa per validare l'indirizzo prima di leggerlo (mai
+/// fault supervisor su memoria non-user; il basso canonico e' assente per
+/// costruzione, PML4[0] = 0).
+pub fn is_mapped_page(cr3: u64, vaddr: u64) -> bool {
+    const PRESENT: u64 = 0x1;
+    const USER: u64 = 0x4;
+    const PS: u64 = 0x80;
+    const ADDR_MASK: u64 = 0x000f_ffff_ffff_f000;
+    // Lettura RAW (con flag): `entry_at` maschera i bassi 12 bit e non va
+    // bene per i check PRESENT/USER.
+    let table = |phys: u64, idx: usize| unsafe {
+        *((crate::addr::phys_to_virt(phys) + (idx as u64) * 8) as *const u64)
+    };
+    let e1 = table(cr3 & ADDR_MASK, pml4_index(vaddr));
+    if e1 & PRESENT == 0 {
+        return false;
+    }
+    let e2 = table(e1 & ADDR_MASK, pdpt_index(vaddr));
+    if e2 & PRESENT == 0 {
+        return false;
+    }
+    if e2 & PS != 0 {
+        return e2 & USER != 0; // pagina 1G
+    }
+    let e3 = table(e2 & ADDR_MASK, pd_index(vaddr));
+    if e3 & PRESENT == 0 {
+        return false;
+    }
+    if e3 & PS != 0 {
+        return e3 & USER != 0; // pagina 2M
+    }
+    let e4 = table(e3 & ADDR_MASK, pt_index(vaddr));
+    e4 & PRESENT != 0 && e4 & USER != 0
+}
+
 /// Ritorna l'indirizzo fisico del PML4 (da caricare in CR3), oppure `None`
 /// se mancano frame. Il PML4 condivide la mappa kernel (U=0) e riserva la
 /// regione user in alta con i propri PDPT/PD/PT (U=1).

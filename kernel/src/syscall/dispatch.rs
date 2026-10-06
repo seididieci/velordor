@@ -5,6 +5,7 @@ use super::ipc::{sys_send, sys_send_async, sys_recv, sys_recv_nonblock, sys_repl
 use super::service::{sys_service_register, sys_service_lookup, sys_service_pid, sys_peer_pid, sys_peer_info};
 use super::spawn::{sys_spawn, sys_spawn_image, sys_fork};
 use super::exec::sys_exec;
+use super::thread::{sys_thread_create, sys_thread_exit, sys_thread_set_fs};
 use super::mem::{sys_mmap, sys_munmap, sys_mprotect, sys_shm_create, sys_shm_map, sys_map_physical, sys_sbrk, sys_ring_alloc, sys_map_in, sys_dma_alloc};
 use super::misc::{sys_exit, sys_write, sys_getpid, sys_kill, sys_suspend, sys_resume, sys_get_ticks, sys_cbs_create, sys_cbs_attach, sys_cbs_get_info, sys_ps_info, sys_text_stats, sys_meminfo, sys_boot_cmdline};
 
@@ -78,6 +79,21 @@ pub(super) extern "C" fn syscall_handler() -> i64 {
             syscall_numbers::SYS_MEMINFO => sys_meminfo(),
             // Fase 2 (root su volume): cmdline PVH salvata al boot.
             syscall_numbers::SYS_BOOT_CMDLINE => sys_boot_cmdline((*p).arg1, (*p).arg2 as usize),
+            // S-T (ADR-0046): thread 1:1 + TLS (futex in T3).
+            syscall_numbers::SYS_THREAD_CREATE => {
+                sys_thread_create((*p).arg1, (*p).arg2, (*p).arg3, (*p).arg4)
+            }
+            syscall_numbers::SYS_THREAD_EXIT => sys_thread_exit((*p).arg1 as i64),
+            syscall_numbers::SYS_THREAD_SET_FS => sys_thread_set_fs((*p).arg1),
+            // S-T (T3, ADR-0046): futex WAIT/WAKE con deadline a tick.
+            syscall_numbers::SYS_FUTEX_WAIT => crate::ordo::sched::futex_wait(
+                (*p).arg1,
+                (*p).arg2 as u32,
+                (*p).arg3,
+            ),
+            syscall_numbers::SYS_FUTEX_WAKE => {
+                crate::ordo::sched::futex_wake((*p).arg1, (*p).arg2 as u32)
+            }
             _ => -1,
         }
     }

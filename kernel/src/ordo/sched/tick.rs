@@ -28,6 +28,10 @@ pub fn on_tick() {
     // replenish CBS cosi' i frame vengono riusati subito.
     sched.drain_reclaim();
 
+    // S-T (T3): scadenze futex (wake con timeout). A lock tenuto, prima del
+    // resto: i waiter scaduti tornano runnable nello stesso tick.
+    super::futex::tick_deadlines(sched, crate::pit::ticks());
+
     // CBS: replenishment — se la deadline di un server e' scaduta, resetta
     // il budget e rimetti il processo in ready queue. Prima del decrement
     // cosi' un processo throttled puo' tornare schedulabile nello stesso tick.

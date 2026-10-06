@@ -91,8 +91,11 @@ else
     APPEND=""
 fi
 # shellcheck disable=SC2086
+# S-T (T2): FSGSBASE per la TLS user (rdfsbase/wrfsbase da ring 3). Solo
+# questo flag oltre qemu64: niente altro cambia per gli altri test.
 exec qemu-system-x86_64 \
     -m 256M \
+    -cpu qemu64,+fsgsbase \
     -display "$DISPLAY" \
     -serial stdio \
     -no-reboot \

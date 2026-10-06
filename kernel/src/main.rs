@@ -9,6 +9,7 @@ mod addr;
 mod arc;
 mod boot_info;
 mod boot_tables;
+mod cpu;
 mod elf;
 mod gdt;
 mod idle;
@@ -89,6 +90,7 @@ pub extern "C" fn rust_main(boot_info_phys: u64) -> ! {
     pic::init();
     pit::init();
     syscall::init();
+    cpu::init();
 
     // 27.3 (solo build `selftest`): prova del basso libero PRIMA di qualunque
     // preemption. Il thread di boot non riprende piu' dopo il primo tick

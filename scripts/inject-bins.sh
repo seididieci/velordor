@@ -32,6 +32,7 @@ mcopy -i "$IMG" testland/build/usertestfs.bin   ::/test/testfs.bin   || exit 1
 mcopy -i "$IMG" testland/build/usertestfat.bin  ::/test/testfat.bin  || exit 1
 mcopy -i "$IMG" testland/build/usertestsarca.bin ::/test/testarca.bin || exit 1
 mcopy -i "$IMG" testland/build/usertests.bin    ::/test/tests.bin    || exit 1
+mcopy -i "$IMG" testland/build/threadtest.bin   ::/test/thread.bin   || exit 1
 mcopy -i "$IMG" testland/build/usertestcli.bin  ::/test/testcli.bin  || exit 1
 mcopy -i "$IMG" testland/build/usertestspin.bin ::/test/testspin.bin || exit 1
 mcopy -i "$IMG" testland/build/utcbstest.bin    ::/test/cbstest.bin  || exit 1
