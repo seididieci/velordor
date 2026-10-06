@@ -99,6 +99,7 @@ velordo/
 │       ├── build/      # output .bin del flavour (generato)
 │       └── tests/      # suite test della personalita' (Fase 58.5)
 ├── syscall-numbers/    # Costanti syscall + costanti condivise (kernel+user)
+├── targets/            # Target spec rustc custom (S1.0: x86_64-unknown-velordo.json per PAL std S1.3)
 ├── scripts/
 │   ├── boot.asm        # MBR 16-bit (riserva, non usato dal path PVH)
 │   ├── build_common.sh # build_one() condivisa (freestanding PIC)

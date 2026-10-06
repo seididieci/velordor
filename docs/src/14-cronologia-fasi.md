@@ -2128,3 +2128,12 @@
           con reboot pulito sullo stesso volume (sotto monitoraggio). Gate:
           5/5 + 7/7 + 54/54 + 4/4 + 54/54 + 11/11 + shell 10/10, zero
           FAIL/PANIC/FAULT.
+          S1.0 (target rustc + hello no_std nativo): `targets/
+          x86_64-unknown-velordo.json` (base x86_64-unknown-none +
+          target_os=velordo per la PAL S1.3; solo delta necessario).
+          Verificato: hello no_std compilato su host con rustc+rust-lld
+          (PIC, --apply-dynamic-relocs, ET_DYN senza INTERP) gira nativo via
+          shell (`[s1hello] ciao da rustc nativo` su seriale) — loader,
+          exec ed entry raw-asm compatibili con l'output LLVM. Nota: in
+          shell il path e' `/fat/test/…` (`/test/` non e' nel namespace
+          shell). Prossimo: S1.1 (FS MUST, un commit per syscall).
