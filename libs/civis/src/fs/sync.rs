@@ -325,6 +325,27 @@ pub fn readlink(path: &str) -> Result<alloc::vec::Vec<u8>, Error> {
     }
 }
 
+/// S1.1 — `chmod(path, mode)`: projection (mode 12 bit in w1), mai
+/// enforcement fino ad A4. Accetta su esistente (i build non falliscono),
+/// NOTFOUND su mancante. FAT/remoti accettano/rifiutano come rename.
+pub fn chmod(path: &str, mode: u32) -> Result<(), Error> {
+    session::fs_gate()?;
+    let rp = cwd::resolve(path)?;
+    if !ring::req_ring_write(R_CHMOD, rp.len() as u64, mode as u64, &rp) {
+        return Err(Error::RingFull);
+    }
+    let len = rp.len();
+    match session::fs_notify_result(FS_NOTIFY, || {
+        ring::req_ring_write(R_CHMOD, len as u64, mode as u64, &rp)
+    }) {
+        Some((result, _, _)) => {
+            ring::resp_ring_consume(16);
+            session::fs_reply_check(result).map(|_| ())
+        }
+        None => Err(Error::NotReady),
+    }
+}
+
 /// Fase 19.2 — metadati di un path (zero kernel: frame R_STAT a cardo, nessun
 /// fd coinvolto). `size` = byte del file (0 per dir/device); `kind` = tipo
 /// (STAT_FILE/DIR/DEVICE); `readonly` = bit 7 (FAT sempre, ramfs mai, device

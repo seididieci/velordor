@@ -9,7 +9,7 @@
 #   [testfat] PASS 7/7
 #   [testsarca] PASS 56/56
 #   [posixtests] PASS 4/4
-#   [usertests] PASS 57/57
+#   [usertests] PASS 58/58
 #   [threadtest] PASS 11/11
 set -euo pipefail
 cd "$(dirname "$0")"

@@ -479,6 +479,27 @@ impl LocalFs for RamFs {
         }
     }
 
+    /// chmod S1.1: scrive il mode sul nodo (12 bit), qualunque tipo
+    /// (file/dir/link: la projection non distingue). Assente = NOTFOUND.
+    fn chmod(&mut self, rel: &str, mode: u32) -> Result<(), u64> {
+        // Esistenza vera prima (find_or_create creerebbe la foglia come
+        // Dir vuota: chmod non deve creare mai).
+        match self.find(rel.trim_start_matches('/')) {
+            Some(_) => {}
+            None => return Err(crate::ERR_NOTFOUND),
+        }
+        let node = self.find_or_create(rel.trim_start_matches('/')).ok_or(crate::ERR_NOTFOUND)?;
+        match node {
+            FsNode::File { mode: m, mtime, .. }
+            | FsNode::Dir { mode: m, mtime, .. }
+            | FsNode::Symlink { mode: m, mtime, .. } => {
+                *m = mode & 0o7777;
+                *mtime = crate::wall::wall_secs();
+            }
+        }
+        Ok(())
+    }
+
     /// Rename S1.1: sposta il nodo (stesso oggetto, subtree al seguito per
     /// le dir). Regole: file→dir = ISDIR, dir→file = NOTDIR, dir→non-vuota
     /// = EXISTS, assente = NOTFOUND. Niente autocreate dei parent (POSIX:
@@ -624,6 +645,10 @@ impl crate::provider::LocalFsDyn for RamFs {
 
     fn readlink_dyn(&mut self, rel: &str) -> Result<String, u64> {
         <Self as LocalFs>::readlink(self, rel)
+    }
+
+    fn chmod_dyn(&mut self, rel: &str, mode: u32) -> Result<(), u64> {
+        <Self as LocalFs>::chmod(self, rel, mode)
     }
 
     fn rename_dyn(&mut self, old: &str, new: &str) -> Result<(), u64> {

@@ -1273,6 +1273,50 @@ pub fn handle_readlink(
     }
 }
 
+/// chmod S1.1 (`R_CHMOD`): projection, mai enforcement. Stesso routing dei
+/// symlink (provider/ram; FAT accetta no-op; remoti INVALID). Ritorna Ok(0).
+#[inline(never)]
+pub fn handle_chmod(
+    fs: &mut ramfs::RamFs,
+    mounts_fat: &mut Vec<mount::FsMount>,
+    mounts: &[mount_legacy::Mount],
+    path: &str,
+    mode: u32,
+    fgen: &mut u64,
+    disk: &mut Option<btree_drv::DiskEngine>,
+) -> Result<u64, u64> {
+    if path.is_empty() || path.len() > MAX_PATH {
+        return Err(ERR_INVALID);
+    }
+    if mount_legacy::resolve_mount(path, mounts).is_some() {
+        return Err(ERR_INVALID);
+    }
+    if let Some((mid, rel)) = mount::resolve_fsmount(mounts_fat, path, fgen) {
+        let m = mount::by_id_mut(mounts_fat, mid).ok_or(ERR_NOTFOUND)?;
+        if m.is_provider() {
+            if let Some(mut w) = m.arca_with(disk.as_mut()) {
+                w.chmod_dyn(rel, mode)?;
+                return Ok(0);
+            }
+            let d = m.local_dyn().ok_or(ERR)?;
+            d.chmod_dyn(rel, mode)?;
+            return Ok(0);
+        }
+        // FAT: accetta no-op su esistente (i build non falliscono).
+        let fat = mount::by_id_mut(mounts_fat, mid).ok_or(ERR)?;
+        let fm = fat.fat_mut().ok_or(ERR)?;
+        fm.chmod_dyn(rel, mode)?;
+        return Ok(0);
+    }
+    match mount_legacy::resolve_local(mounts_fat, path).ok_or(ERR_NOTFOUND)? {
+        mount_legacy::FsKind::Ram => {
+            crate::provider::LocalFs::chmod(fs, path, mode)?;
+            Ok(0)
+        }
+        _ => Err(ERR_INVALID),
+    }
+}
+
 /// Monta una sorgente sul target (Fase 16b, payload "source\0target\0").
 /// Ritorna Ok(0) se il mount e' ATTIVO, Err tipizzato altrimenti: a resolve
 /// fallito (sorgente/target invalidi, nome ignoto, driver irraggiungibile)

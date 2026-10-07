@@ -261,3 +261,32 @@ pub(crate) fn cmd_rmdir(args: &[&str]) -> i64 {
     }
     0
 }
+
+/// chmod MODE PATH (S1.1): projection server-side, mai enforcement fino ad
+/// A4. MODE ottale (es. 755); accetta su esistente, errore su mancante.
+pub(crate) fn cmd_chmod(args: &[&str]) -> i64 {
+    if args.len() < 3 {
+        term::term_err("chmod: usage: chmod <mode-octal> <path>\n");
+        return 1;
+    }
+    let mut mode: u32 = 0;
+    for b in args[1].as_bytes() {
+        if !b.is_ascii_digit() || *b > b'7' {
+            term::term_err("chmod: mode non ottale\n");
+            return 1;
+        }
+        mode = mode * 8 + (*b - b'0') as u32;
+        if mode > 0o7777 {
+            term::term_err("chmod: mode oltre 12 bit\n");
+            return 1;
+        }
+    }
+    let path = cwd::resolve(args[2]);
+    if civis::chmod(&path, mode).is_err() {
+        term::term_err("chmod: failed: ");
+        term::term_err(args[2]);
+        term::term_err("\n");
+        return 1;
+    }
+    0
+}

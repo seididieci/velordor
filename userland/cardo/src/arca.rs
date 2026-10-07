@@ -666,6 +666,16 @@ impl<'e> ArcaWith<'e> {
             String::from_utf8(v).map_err(|_| crate::ERR_INVALID)
         })
     }
+    /// chmod S1.1 su Arca: accetta no-op (niente xattr pre-A4: la mode non
+    /// si conserva; ramfs la tiene, enforcement zero ovunque fino ad A4).
+    /// Esistente (file/dir/link/emergente) = Ok (i build non devono
+    /// fallire), mai-esistita = NOTFOUND.
+    fn chmod(&mut self, rel: &str, _mode: u32) -> Result<(), u64> {
+        match self.a.classify(self.eng, rel) {
+            NsKind::Missing => Err(crate::ERR_NOTFOUND),
+            _ => Ok(()),
+        }
+    }
     fn statvfs(&mut self) -> Result<StatVfs, u64> {
         self.a.ns_statvfs(self.eng)
     }
@@ -719,6 +729,9 @@ impl LocalFsDyn for ArcaWith<'_> {
     fn readlink_dyn(&mut self, rel: &str) -> Result<String, u64> {
         self.readlink(rel)
     }
+    fn chmod_dyn(&mut self, rel: &str, mode: u32) -> Result<(), u64> {
+        self.chmod(rel, mode)
+    }
     fn statvfs_dyn(&mut self, _rel: &str) -> Result<StatVfs, u64> {
         self.statvfs()
     }
@@ -759,6 +772,9 @@ impl LocalFs for ArcaFs {
     }
     fn readlink(&mut self, _rel: &str) -> Result<String, u64> {
         Err(crate::ERR_NOTFOUND)
+    }
+    fn chmod(&mut self, _rel: &str, _mode: u32) -> Result<(), u64> {
+        Err(crate::ERR_READONLY)
     }
     fn statvfs(&mut self, _rel: &str) -> Result<StatVfs, u64> {
         Err(crate::ERR_NOTFOUND)
@@ -813,6 +829,9 @@ impl LocalFsDyn for ArcaFs {
     }
     fn readlink_dyn(&mut self, rel: &str) -> Result<String, u64> {
         <Self as LocalFs>::readlink(self, rel)
+    }
+    fn chmod_dyn(&mut self, rel: &str, mode: u32) -> Result<(), u64> {
+        <Self as LocalFs>::chmod(self, rel, mode)
     }
     fn statvfs_dyn(&mut self, rel: &str) -> Result<StatVfs, u64> {
         <Self as LocalFs>::statvfs(self, rel)

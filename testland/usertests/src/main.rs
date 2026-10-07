@@ -102,6 +102,7 @@ fn real_main(_sp: u64) -> ! {
     helpers::report(&mut total, &mut ok, "t59 rename ramfs (move/replace/dir/errori)", t_fs::t_rename());
     helpers::report(&mut total, &mut ok, "t60 symlink ramfs (follow/loop/rename)", t_fs::t_symlink());
     helpers::report(&mut total, &mut ok, "t61 chdir/getcwd (relativi/errori)", t_fs::t_chdir());
+    helpers::report(&mut total, &mut ok, "t62 chmod projection (accept/enforce-mai)", t_fs::t_chmod());
     // t34 per ULTIMO: i drop sono irrevocabili sul canale di usertests.
     helpers::report(&mut total, &mut ok, "t34 diritti per-canale lato server", t_fs::t_rights());
 

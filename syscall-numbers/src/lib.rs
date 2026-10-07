@@ -484,6 +484,13 @@ pub const R_RENAME: u32 = 0x33;
 /// (READONLY come rename); remoti: INVALID.
 pub const R_SYMLINK: u32 = 0x34;
 pub const R_READLINK: u32 = 0x35;
+/// chmod S1.1 (projection, non enforcement): payload path (w0 = len),
+/// w1 = mode (12 bit Unix: setuid/setgid/sticky + rwx×3, gli altri bit si
+/// mascherano). Accetta SEMPRE su path esistente (i build invocano chmod:
+/// fallire hard romperebbe il porting toolchain — spec arcafs.md); la mode
+/// si conserva dove banale (ramfs), altrove no-op documentato; enforcement
+/// zero fino ad A4/login boundary. FAT/remoti: accettano anche loro (neutro).
+pub const R_CHMOD: u32 = 0x36;
 // ── ArcaFS: casa propria (Fase 56.2a) ────────────────────────────────
 // Tag R_OBJ_*/R_SNAP_*/R_ARCA_DEBUG, bound OBJ_*_MAX e formato blocchi
 // (ARCA_*) vivono nel crate `arcafs` (il kernel non li usa — verificato).

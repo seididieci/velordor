@@ -132,6 +132,15 @@ impl<B: BlockSource> crate::provider::LocalFs for Fat32<B> {
     fn readlink(&mut self, _rel: &str) -> Result<alloc::string::String, u64> {
         Err(crate::ERR_NOTFOUND)
     }
+
+    /// chmod S1.1 su FAT: accetta no-op (come Arca: i build non falliscono;
+    /// l'attributo readonly reale resta fuori scope con mkdir/remove).
+    fn chmod(&mut self, rel: &str, _mode: u32) -> Result<(), u64> {
+        match self.find(rel) {
+            Some(_) => Ok(()),
+            None => Err(crate::ERR_NOTFOUND),
+        }
+    }
 }
 
 // ── Implementazione LocalFsDyn per Fat32 (Fase 48 wiring, Fase 49 handle
@@ -196,5 +205,9 @@ impl<B: BlockSource> crate::provider::LocalFsDyn for Fat32<B> {
 
     fn readlink_dyn(&mut self, rel: &str) -> Result<alloc::string::String, u64> {
         <Self as crate::provider::LocalFs>::readlink(self, rel)
+    }
+
+    fn chmod_dyn(&mut self, rel: &str, mode: u32) -> Result<(), u64> {
+        <Self as crate::provider::LocalFs>::chmod(self, rel, mode)
     }
 }

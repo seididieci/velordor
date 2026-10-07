@@ -2172,3 +2172,10 @@
           `cd` pubblica anche nel kernel (i figli ereditano). Test t61
           (default /, relativi, errori, cleanup a /). Gate: 5/5 + 7/7 +
           56/56 + 4/4 + 57/57 + 11/11 + shell 10/10, zero FAIL/PANIC/FAULT.
+          S1.1-chmod (R_CHMOD 0x36, mode in w1): projection, mai enforcement
+          fino ad A4 — accetta su esistente (ramfs conserva nei mode, Arca/
+          FAT no-op documentato), NOTFOUND su mancante; i build che invocano
+          chmod non falliscono (spec arcafs.md). Builtin shell `chmod` con
+          parse ottale. Test t62 (mode varie incluse 000 senza enforcement).
+          Gate: 5/5 + 7/7 + 56/56 + 4/4 + 58/58 + 11/11 + shell 10/10, zero
+          FAIL/PANIC/FAULT.

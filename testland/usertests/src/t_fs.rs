@@ -786,3 +786,47 @@ pub fn t_chdir() -> bool {
     let _ = civis::remove("/t61d");
     true
 }
+
+/// t62 — chmod S1.1 (projection, mai enforcement): Ok su file/dir/link,
+/// NOTFOUND su mancante, R/W dopo chmod restrittivo (nessun enforcement
+/// fino ad A4: i build non devono fallire).
+pub fn t_chmod() -> bool {
+    if civis::open("/t62.txt", civis::O_CREAT | civis::O_TRUNC).is_err() {
+        println!("[usertests] t62: create FAILED");
+        return false;
+    }
+    // Mode varie accettate (incluse 000 e 777: niente enforcement).
+    for mode in [0o644u32, 0o755, 0o600, 0o000, 0o777] {
+        if civis::chmod("/t62.txt", mode).is_err() {
+            println!("[usertests] t62: chmod {:o} FAILED", mode);
+            return false;
+        }
+    }
+    // Dopo chmod 000 si scrive e legge comunque (Strato 0: placeholder).
+    if let Ok(fd) = civis::open("/t62.txt", civis::O_TRUNC) {
+        let w = civis::write_fs(fd, b"rw", 2);
+        let _ = civis::close(fd);
+        if w != Ok(2) {
+            println!("[usertests] t62: write dopo 000 FAILED");
+            return false;
+        }
+    }
+    // Dir + link: Ok. Mancante: NOTFOUND tipizzato.
+    if civis::mkdir("/t62d").is_err() || civis::chmod("/t62d", 0o755).is_err() {
+        println!("[usertests] t62: chmod dir FAILED");
+        return false;
+    }
+    if civis::symlink("/t62l", "/t62d").is_err() || civis::chmod("/t62l", 0o777).is_err() {
+        println!("[usertests] t62: chmod link FAILED");
+        return false;
+    }
+    if !matches!(civis::chmod("/t62mai", 0o644), Err(civis::Error::NotFound)) {
+        println!("[usertests] t62: chmod mancante non NotFound");
+        return false;
+    }
+    // Cleanup.
+    let _ = civis::remove("/t62.txt");
+    let _ = civis::remove("/t62l");
+    let _ = civis::remove("/t62d");
+    true
+}

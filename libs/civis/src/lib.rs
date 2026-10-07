@@ -63,7 +63,7 @@ pub use syscall_numbers::{
     R_CLOSE, R_DELETE, R_MKDIR, R_MOUNT, R_OPEN, R_READ, R_READDIR, R_REGISTER, R_UMOUNT,
     R_WRITE, R_RIGHTS_DROP, R_RIGHTS_GET, R_STAT, R_LSEEK, R_DUP_GRANT, R_DUP_CLAIM,
     R_DUP_CANCEL, R_PIPE_CREATE, R_SYNC, R_STATVFS, R_GET_HASH, R_RENAME,
-    R_SYMLINK, R_READLINK,
+    R_SYMLINK, R_READLINK, R_CHMOD,
 };
 /// Protocollo ArcaFS: casa `arcafs` (tag, bound, wire, formato); `civis` li
 /// riesporta cosi' i client esistenti (`civis::R_OBJ_*`, ...) non cambiano.

@@ -366,6 +366,7 @@ pub(crate) fn is_builtin(name: &str) -> bool {
             | "mv"
             | "rm"
             | "rmdir"
+            | "chmod"
             | "ps"
             | "export"
             | "source"
@@ -401,6 +402,7 @@ pub(crate) fn dispatch_builtin(args: &[&str]) -> i64 {
         "mv" => cmd_fs::cmd_mv(args),
         "rm" => cmd_fs::cmd_rm(args),
         "rmdir" => cmd_fs::cmd_rmdir(args),
+        "chmod" => cmd_fs::cmd_chmod(args),
         "ps" => cmd_info::cmd_ps(),
         "export" => cmd_info::cmd_export(args),
         "source" => cmd_source::cmd_source(args, 0),

@@ -587,8 +587,9 @@ fn real_main(_sp: u64) -> ! {
             // RENAME: payload "old\0new\0", w0 = lunghezza totale.
             R_RENAME => w0 as usize,
             // SYMLINK: payload "link\0target\0", w0 = len. READLINK:
-            // payload path, w0 = len (reply a frame dedicato).
-            R_SYMLINK | R_READLINK => w0 as usize,
+            // payload path, w0 = len (reply a frame dedicato). CHMOD:
+            // payload path (w0 = len), mode in w1.
+            R_SYMLINK | R_READLINK | R_CHMOD => w0 as usize,
             R_WRITE | R_RIGHTS_DROP => w1 as usize,
             // LSEEK: payload 1 byte = whence (fd in w0, offset in w1).
             R_LSEEK => 1,
@@ -704,8 +705,9 @@ fn real_main(_sp: u64) -> ! {
                 Err(_) => true,
             },
             // SYMLINK: check sul LINK (il target e' opaco, mai confine).
-            // READLINK: check sul path (leggere fuori subtree = bypass).
-            R_SYMLINK | R_READLINK => match core::str::from_utf8(payload) {
+            // READLINK/CHMOD: check sul path (leggere/scrivere meta fuori
+            // subtree = bypass).
+            R_SYMLINK | R_READLINK | R_CHMOD => match core::str::from_utf8(payload) {
                 Ok(p) => {
                     let link = p.split_once('\0').map(|(l, _)| l).unwrap_or(p);
                     rights::within_subtree(
@@ -822,6 +824,15 @@ fn real_main(_sp: u64) -> ! {
                         ),
                         None => Err(ERR_INVALID),
                     },
+                    Err(_) => Err(ERR_INVALID),
+                }
+            }
+
+            R_CHMOD => {
+                match core::str::from_utf8(&payload) {
+                    Ok(path) => handlers::handle_chmod(
+                        &mut fs, &mut fat_mounts, &mounts, path, w1 as u32, &mut fat_gen, &mut disk,
+                    ),
                     Err(_) => Err(ERR_INVALID),
                 }
             }

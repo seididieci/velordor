@@ -49,6 +49,9 @@ pub trait LocalFs {
     /// risolto qui). `readlink` ne legge il target.
     fn symlink(&mut self, link: &str, target: &str) -> Result<(), u64>;
     fn readlink(&mut self, rel: &str) -> Result<alloc::string::String, u64>;
+    /// chmod S1.1 (projection): registra la mode dove banale, altrove
+    /// accetta no-op. Mai enforcement (Strato 0 come i mode default).
+    fn chmod(&mut self, rel: &str, mode: u32) -> Result<(), u64>;
     /// Spazio del mount (Fase 52, P3: sensore per quota/swap futuri). Il
     /// `rel` e' ignorato (spazio del mount, non del path): la risoluzione
     /// mount resta negli handler, mai nel provider.
@@ -96,5 +99,6 @@ pub trait LocalFsDyn {
     fn rename_dyn(&mut self, old: &str, new: &str) -> Result<(), u64>;
     fn symlink_dyn(&mut self, link: &str, target: &str) -> Result<(), u64>;
     fn readlink_dyn(&mut self, rel: &str) -> Result<alloc::string::String, u64>;
+    fn chmod_dyn(&mut self, rel: &str, mode: u32) -> Result<(), u64>;
     fn statvfs_dyn(&mut self, rel: &str) -> Result<StatVfs, u64>;
 }
