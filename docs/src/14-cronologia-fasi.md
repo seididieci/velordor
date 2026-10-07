@@ -2163,3 +2163,12 @@
           marker (fix). FAT/remoti fuori scope. Test t60 + v56. Gate: 5/5 +
           7/7 + 56/56 + 4/4 + 56/56 + 11/11 + shell 10/10, zero
           FAIL/PANIC/FAULT.
+          S1.1-chdir/getcwd (SYS 59/60, CWD_MAX 256): cwd nel PCB sul leader
+          (thread condividono; sopravvive a exec; ereditata da fork/spawn;
+          byte-opaca, solo assoluti); civis SENZA cache (getcwd per resolve:
+          mai stale tra thread/fork/exec, una syscall in piu' per op);
+          chdir = join + stat-dir + syscall; tutti i wrapper con path
+          risolvono (mount source/target esclusi: restano assoluti); shell
+          `cd` pubblica anche nel kernel (i figli ereditano). Test t61
+          (default /, relativi, errori, cleanup a /). Gate: 5/5 + 7/7 +
+          56/56 + 4/4 + 57/57 + 11/11 + shell 10/10, zero FAIL/PANIC/FAULT.

@@ -118,6 +118,52 @@ pub fn group_leader(pid: usize) -> usize {
     }
 }
 
+/// Imposta la cwd del GRUPPO di `pid` (S1.1, leader per i thread). Solo
+/// assoluti entro CWD_MAX (il chiamante valida il range user). 0 / -1.
+pub fn set_cwd(pid: usize, path: &[u8]) -> i64 {
+    if path.is_empty()
+        || path.len() > syscall_numbers::CWD_MAX
+        || path.first() != Some(&b'/')
+    {
+        return -1;
+    }
+    let mut guard = SCHED.lock();
+    let sched = match guard.as_mut() {
+        Some(s) => s,
+        None => return -1,
+    };
+    if pid >= sched.processes.len() {
+        return -1;
+    }
+    let owner = sched.processes[pid].thread_group.unwrap_or(pid);
+    match sched.processes.get_mut(owner) {
+        Some(o) => {
+            o.cwd[..path.len()].copy_from_slice(path);
+            o.cwd_len = path.len() as u16;
+            0
+        }
+        None => -1,
+    }
+}
+
+/// Legge la cwd del GRUPPO di `pid` in `out`, ritorna len. `None` a pid
+/// ignoto o cwd mai inizializzata (il chiamante scrive in user).
+pub fn get_cwd(pid: usize, out: &mut [u8; syscall_numbers::CWD_MAX]) -> Option<usize> {
+    let guard = SCHED.lock();
+    let sched = guard.as_ref()?;
+    if pid >= sched.processes.len() {
+        return None;
+    }
+    let owner = sched.processes[pid].thread_group.unwrap_or(pid);
+    let o = sched.processes.get(owner)?;
+    let n = o.cwd_len as usize;
+    if n == 0 || n > syscall_numbers::CWD_MAX {
+        return None;
+    }
+    out[..n].copy_from_slice(&o.cwd[..n]);
+    Some(n)
+}
+
 /// Canale di nascita del processo `pid` (ADR-0008). `None` se non esiste.
 pub fn parent_channel(pid: usize) -> Option<usize> {
     let guard = SCHED.lock();

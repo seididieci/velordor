@@ -8,11 +8,12 @@ use crate::*;
 #[inline]
 pub fn open(path: &str, flags: u32) -> Result<i64, Error> {
     session::fs_gate()?;
-    if !ring::req_ring_write(R_OPEN, path.len() as u64, flags as u64, path.as_bytes()) {
+    let rp = cwd::resolve(path)?;
+    if !ring::req_ring_write(R_OPEN, rp.len() as u64, flags as u64, &rp) {
         return Err(Error::RingFull);
     }
     match session::fs_notify_result(FS_NOTIFY, || {
-        ring::req_ring_write(R_OPEN, path.len() as u64, flags as u64, path.as_bytes())
+        ring::req_ring_write(R_OPEN, rp.len() as u64, flags as u64, &rp)
     }) {
         Some((result, _, _)) => {
             ring::resp_ring_consume(16);
@@ -177,11 +178,12 @@ pub fn close(fd: i64) -> Result<(), Error> {
 #[inline]
 pub fn readdir(path: &str, entries_buf: &mut [u8], buf_len: usize) -> Result<usize, Error> {
     session::fs_gate()?;
-    if !ring::req_ring_write(R_READDIR, path.len() as u64, 0, path.as_bytes()) {
+    let rp = cwd::resolve(path)?;
+    if !ring::req_ring_write(R_READDIR, rp.len() as u64, 0, &rp) {
         return Err(Error::RingFull);
     }
     match session::fs_notify_result(FS_NOTIFY, || {
-        ring::req_ring_write(R_READDIR, path.len() as u64, 0, path.as_bytes())
+        ring::req_ring_write(R_READDIR, rp.len() as u64, 0, &rp)
     }) {
         Some((result, _, payload_len)) => {
             // Disciplina ring (Fase 17): il response frame si consuma SEMPRE
@@ -202,11 +204,12 @@ pub fn readdir(path: &str, entries_buf: &mut [u8], buf_len: usize) -> Result<usi
 #[inline]
 pub fn mkdir(path: &str) -> Result<(), Error> {
     session::fs_gate()?;
-    if !ring::req_ring_write(R_MKDIR, path.len() as u64, 0, path.as_bytes()) {
+    let rp = cwd::resolve(path)?;
+    if !ring::req_ring_write(R_MKDIR, rp.len() as u64, 0, &rp) {
         return Err(Error::RingFull);
     }
     match session::fs_notify_result(FS_NOTIFY, || {
-        ring::req_ring_write(R_MKDIR, path.len() as u64, 0, path.as_bytes())
+        ring::req_ring_write(R_MKDIR, rp.len() as u64, 0, &rp)
     }) {
         Some((result, _, _)) => {
             ring::resp_ring_consume(16);
@@ -221,11 +224,12 @@ pub fn mkdir(path: &str) -> Result<(), Error> {
 #[inline]
 pub fn remove(path: &str) -> Result<(), Error> {
     session::fs_gate()?;
-    if !ring::req_ring_write(R_DELETE, path.len() as u64, 0, path.as_bytes()) {
+    let rp = cwd::resolve(path)?;
+    if !ring::req_ring_write(R_DELETE, rp.len() as u64, 0, &rp) {
         return Err(Error::RingFull);
     }
     match session::fs_notify_result(FS_NOTIFY, || {
-        ring::req_ring_write(R_DELETE, path.len() as u64, 0, path.as_bytes())
+        ring::req_ring_write(R_DELETE, rp.len() as u64, 0, &rp)
     }) {
         Some((result, _, _)) => {
             ring::resp_ring_consume(16);
@@ -241,10 +245,12 @@ pub fn remove(path: &str) -> Result<(), Error> {
 /// (NotFound/IsDir/NotDir/Exists/ReadOnly/Invalid).
 pub fn rename(old: &str, new: &str) -> Result<(), Error> {
     session::fs_gate()?;
+    let old = cwd::resolve(old)?;
+    let new = cwd::resolve(new)?;
     let mut p = alloc::vec::Vec::with_capacity(old.len() + new.len() + 2);
-    p.extend_from_slice(old.as_bytes());
+    p.extend_from_slice(&old);
     p.push(0);
-    p.extend_from_slice(new.as_bytes());
+    p.extend_from_slice(&new);
     p.push(0);
     if !ring::req_ring_write(R_RENAME, p.len() as u64, 0, &p) {
         return Err(Error::RingFull);
@@ -266,8 +272,9 @@ pub fn rename(old: &str, new: &str) -> Result<(), Error> {
 /// FAT/remoti = errore. Errori tipizzati (Exists/NotFound/Invalid/ReadOnly).
 pub fn symlink(link: &str, target: &str) -> Result<(), Error> {
     session::fs_gate()?;
+    let link = cwd::resolve(link)?;
     let mut p = alloc::vec::Vec::with_capacity(link.len() + target.len() + 2);
-    p.extend_from_slice(link.as_bytes());
+    p.extend_from_slice(&link);
     p.push(0);
     p.extend_from_slice(target.as_bytes());
     p.push(0);
@@ -290,11 +297,12 @@ pub fn symlink(link: &str, target: &str) -> Result<(), Error> {
 /// frame). Non segue (come readlink POSIX); su non-link = errore.
 pub fn readlink(path: &str) -> Result<alloc::vec::Vec<u8>, Error> {
     session::fs_gate()?;
-    if !ring::req_ring_write(R_READLINK, path.len() as u64, 0, path.as_bytes()) {
+    let rp = cwd::resolve(path)?;
+    if !ring::req_ring_write(R_READLINK, rp.len() as u64, 0, &rp) {
         return Err(Error::RingFull);
     }
     match session::fs_notify_result(FS_NOTIFY, || {
-        ring::req_ring_write(R_READLINK, path.len() as u64, 0, path.as_bytes())
+        ring::req_ring_write(R_READLINK, rp.len() as u64, 0, &rp)
     }) {
         Some((result, w1, payload_len)) => {
             let total = match session::fs_reply_check(result) {
@@ -350,11 +358,12 @@ impl Stat {
 #[inline]
 pub fn stat(path: &str, out: &mut Stat) -> Result<(), Error> {
     session::fs_gate()?;
-    if !ring::req_ring_write(R_STAT, path.len() as u64, 0, path.as_bytes()) {
+    let rp = cwd::resolve(path)?;
+    if !ring::req_ring_write(R_STAT, rp.len() as u64, 0, &rp) {
         return Err(Error::RingFull);
     }
     match session::fs_notify_result(FS_NOTIFY, || {
-        ring::req_ring_write(R_STAT, path.len() as u64, 0, path.as_bytes())
+        ring::req_ring_write(R_STAT, rp.len() as u64, 0, &rp)
     }) {
         // Risposta self-written `[size:8][kind:8][mtime:8]` (Fase 50):
         // result=size, w1=kind, payload=mtime (LE64). Disciplina obj_get
@@ -549,11 +558,12 @@ pub struct StatVfs {
 #[inline]
 pub fn statvfs(path: &str, out: &mut StatVfs) -> Result<(), Error> {
     session::fs_gate()?;
-    if !ring::req_ring_write(R_STATVFS, path.len() as u64, 0, path.as_bytes()) {
+    let rp = cwd::resolve(path)?;
+    if !ring::req_ring_write(R_STATVFS, rp.len() as u64, 0, &rp) {
         return Err(Error::RingFull);
     }
     match session::fs_notify_result(FS_NOTIFY, || {
-        ring::req_ring_write(R_STATVFS, path.len() as u64, 0, path.as_bytes())
+        ring::req_ring_write(R_STATVFS, rp.len() as u64, 0, &rp)
     }) {
         Some((result, _, _)) => {
             // Disciplina obj_get (test-6): check-first, payload solo a Ok.
@@ -579,11 +589,12 @@ pub fn statvfs(path: &str, out: &mut StatVfs) -> Result<(), Error> {
 #[inline]
 pub fn get_hash(path: &str, out: &mut [u8; 32]) -> Result<(), Error> {
     session::fs_gate()?;
-    if !ring::req_ring_write(R_GET_HASH, path.len() as u64, 0, path.as_bytes()) {
+    let rp = cwd::resolve(path)?;
+    if !ring::req_ring_write(R_GET_HASH, rp.len() as u64, 0, &rp) {
         return Err(Error::RingFull);
     }
     match session::fs_notify_result(FS_NOTIFY, || {
-        ring::req_ring_write(R_GET_HASH, path.len() as u64, 0, path.as_bytes())
+        ring::req_ring_write(R_GET_HASH, rp.len() as u64, 0, &rp)
     }) {
         Some((result, _, _)) => {
             // Disciplina obj_get (test-6): check-first, payload solo a Ok.

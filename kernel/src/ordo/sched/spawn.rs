@@ -12,6 +12,36 @@ pub fn init() {
     crate::serial_println!("[ordo] init (preemptive, 32-prio + RR, quantum {} tick)", QUANTUM_TICKS);
 }
 
+/// Leader del gruppo (S1.1): la cwd vive sul leader (i thread la
+/// condividono come POSIX).
+pub(super) fn cwd_owner(sched: &Scheduler, pid: usize) -> usize {
+    sched.processes.get(pid).and_then(|p| p.thread_group).unwrap_or(pid)
+}
+
+/// Eredita la cwd nel figlio (S1.1): dal gruppo del parent, `/` se orfano
+/// del kernel o cwd vuota. Chiamare sotto lock dopo `place_process`.
+pub(super) fn inherit_cwd(sched: &mut Scheduler, child: usize, parent: Option<usize>) {
+    let (buf, len) = match parent {
+        Some(p) if p < sched.processes.len() => {
+            let o = cwd_owner(sched, p);
+            match sched.processes.get(o) {
+                Some(op) => (op.cwd, op.cwd_len),
+                None => ([0u8; 256], 0),
+            }
+        }
+        _ => ([0u8; 256], 0),
+    };
+    if let Some(c) = sched.processes.get_mut(child) {
+        if len == 0 {
+            c.cwd[0] = b'/';
+            c.cwd_len = 1;
+        } else {
+            c.cwd = buf;
+            c.cwd_len = len;
+        }
+    }
+}
+
 pub fn spawn(name: &'static str, priority: Priority, entry: crate::ordo::process::ProcessFn, parent: Option<usize>, parent_chan: Option<usize>) -> Option<usize> {
     let mut guard = SCHED.lock();
     let sched = guard.as_mut().expect("scheduler non inizializzato");
@@ -25,6 +55,7 @@ pub fn spawn(name: &'static str, priority: Priority, entry: crate::ordo::process
         }
     };
     sched.place_process(id, process);
+    inherit_cwd(sched, id, parent);
     sched.set_ready(id);
     let p = &sched.processes[id];
     crate::serial_println!(
@@ -115,6 +146,7 @@ pub unsafe fn create_user(
         }
     };
     sched.place_process(id, process);
+    inherit_cwd(sched, id, parent);
     sched.set_ready(id);
     let p = &sched.processes[id];
     crate::serial_println!(

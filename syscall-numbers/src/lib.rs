@@ -177,6 +177,15 @@ pub const SYS_THREAD_EXIT: u64 = 55;
 pub const SYS_FUTEX_WAIT: u64 = 56;
 pub const SYS_FUTEX_WAKE: u64 = 57;
 pub const SYS_THREAD_SET_FS: u64 = 58;
+// ── Directory di lavoro (S1.1, cwd nel PCB) ─────────────────────────
+// CHDIR(path_ptr, len): imposta la cwd del GRUPPO (leader; i thread la
+// condividono come POSIX) — solo path assoluti (il client unisce i relativi
+// alla cwd cached; il kernel resta byte-opaco, niente `..`/normalizzazione).
+// GETCWD(buf, cap): copia cwd + NUL, ritorna len senza NUL (cap corta = -1,
+// il chiamante rialloca come boot_cmdline). CWD_MAX 256 = MAX_PATH cardo.
+pub const SYS_CHDIR: u64 = 59;
+pub const SYS_GETCWD: u64 = 60;
+pub const CWD_MAX: usize = 256;
 /// Bound command line salvata dal kernel (stesso del parser PVH, mai oltre).
 pub const BOOT_CMDLINE_MAX: usize = 512;
 /// Cap pagine di `SYS_DMA_ALLOC` (38.1: 1 pagina = PRD + 7 settori bastano).

@@ -241,6 +241,13 @@ pub struct Process {
     /// dallo svegliante (wake/deadline sweep) sotto lock, letto dal waiter
     /// al risveglio. Resettato a ogni WAIT.
     pub futex_woken: Option<bool>,
+    /// Directory di lavoro (S1.1): vive sul LEADER del gruppo (i thread la
+    /// condividono come POSIX; il campo dei thread resta vuoto e ignorato).
+    /// Buffer 256B = MAX_PATH cardo; `cwd_len` byte validi, sempre assoluta
+    /// (`/` default). Sopravvive a exec (e' persona, non immagine), ereditata
+    /// da fork/spawn. Il kernel non normalizza mai (`..` testuale).
+    pub cwd: [u8; 256],
+    pub cwd_len: u16,
 }
 
 impl Process {
@@ -320,6 +327,8 @@ impl Process {
             thread_group: None,
             fs_base: 0,
             futex_woken: None,
+            cwd: [0u8; 256],
+            cwd_len: 0,
             exit_code: 0,
             waiting_pid: None,
             waiting_req: 0,
@@ -406,6 +415,8 @@ impl Process {
             thread_group: None,
             fs_base: 0,
             futex_woken: None,
+            cwd: [0u8; 256],
+            cwd_len: 0,
             exit_code: 0,
             waiting_pid: None,
             waiting_req: 0,
@@ -472,6 +483,8 @@ impl Process {
             thread_group: None,
             fs_base: 0,
             futex_woken: None,
+            cwd: [0u8; 256],
+            cwd_len: 0,
             exit_code: 0,
             waiting_pid: None,
             waiting_req: 0,
@@ -551,6 +564,8 @@ impl Process {
             thread_group: Some(leader),
             fs_base,
             futex_woken: None,
+            cwd: [0u8; 256],
+            cwd_len: 0,
             exit_code: 0,
             waiting_pid: None,
             waiting_req: 0,

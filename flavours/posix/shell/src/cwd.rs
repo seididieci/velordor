@@ -58,6 +58,11 @@ pub(crate) fn resolve(path: &str) -> String {
 
 pub(crate) fn cmd_cd(args: &[&str]) -> i64 {
     if args.len() < 2 {
+        // S1.1: anche il kernel (i figli ereditano via fork/spawn).
+        if civis::chdir("/").is_err() {
+            term::term_err("cd: chdir / fallita\n");
+            return 1;
+        }
         cwd_set(String::from("/"));
         return 0;
     }
@@ -67,6 +72,13 @@ pub(crate) fn cmd_cd(args: &[&str]) -> i64 {
     let mut probe = vec![0u8; 256];
     if civis::readdir(&path, &mut probe, 256).is_err() {
         term::term_err("cd: no such directory: ");
+        term::term_err(args[1]);
+        term::term_err("\n");
+        return 1;
+    }
+    // S1.1: pubblica nel kernel (stessa validazione: stat-dir dentro chdir).
+    if civis::chdir(&path).is_err() {
+        term::term_err("cd: chdir fallita: ");
         term::term_err(args[1]);
         term::term_err("\n");
         return 1;

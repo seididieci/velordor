@@ -280,7 +280,7 @@ pub unsafe fn syscall4_out(
     (rax, rdi, rsi, rdx, r10)
 }
 
-pub use fs::{ops_async::*, ring::*, session::*, sync::*, obj::*};
+pub use fs::{ops_async::*, ring::*, session::*, sync::*, obj::*, cwd::*};
 pub use ipc::*;
 pub use print::*;
 pub use spawn::*;

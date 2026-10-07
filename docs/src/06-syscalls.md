@@ -223,6 +223,8 @@ extern "C" fn syscall_handler() -> i64 {
 | `futex_wait` | 56 | dorme se `*addr == expected` fino a WAKE o deadline a tick (0 = mai): 0 svegliato / 1 no / -1 errore |
 | `futex_wake` | 57 | sveglia fino a `n` waiter su `addr` → svegliati |
 | `thread_set_fs` | 58 | base TLS (FS) del thread corrente (S-T T2, FSGSBASE da ring 3 se presente) |
+| `chdir` | 59 | imposta la cwd del gruppo (S1.1, solo assoluti ≤256B; il client unisce i relativi) |
+| `getcwd` | 60 | copia cwd + NUL, ritorna len (cap corta = -1, pattern boot_cmdline) |
 | `JOB_CANCEL` | — | tag cancel cooperativo parent→figlio sul canale di nascita (44b, w0=2/SIGINT informativo): il figlio puo' gestirlo o ignorarlo (escalation a kill) |
 | `EXIT_SIGINT` | — | causa di morte 130 = 128+SIGINT per Ctrl-C su job non cooperante (44b, convenzione al bordo come `FAULT_EXIT_CODE`) |
 | `spawn` | 20 | Crea un processo dal binario embedded `name` e ritorna il **canale di nascita** verso il figlio |
@@ -483,7 +485,8 @@ implementa: `0=exit`, `2=write`, `8=getpid`, `16=send`, `17=recv`, `18=reply`,
 `44=text_stats`, `45=fork`, `46=peer_pid`, `47=peer_info`, `48=exec`,
 `49=dma_alloc`, `50=suspend`, `51=resume` (Fase 44a, job control),
 `52=meminfo` (Fase 52, P3), `54=thread_create`, `55=thread_exit`,
-`56=futex_wait`, `57=futex_wake`, `58=thread_set_fs` (S-T, ADR-0046).
+`56=futex_wait`, `57=futex_wake`, `58=thread_set_fs` (S-T, ADR-0046),
+`59=chdir`, `60=getcwd` (S1.1, cwd nel PCB).
 
 Le vecchie syscall 3-7/23-24 (FS relay) sono state rimosse con la Fase 9.6:
 le operazioni FS sono ora IPC dirette client→cardo.

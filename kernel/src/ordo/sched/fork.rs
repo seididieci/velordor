@@ -150,6 +150,7 @@ pub fn fork_current() -> Option<(usize, usize)> {
         )
     };
     sched.place_process(child_pid, child);
+    super::spawn::inherit_cwd(sched, child_pid, Some(parent_pid));
     sched.set_ready(child_pid);
     // Niente `set_parent_chan` (riprenderebe SCHED, gia' trattenuto qui):
     // assegnazione diretta sotto lock.

@@ -696,3 +696,93 @@ pub fn t_symlink() -> bool {
     let _ = civis::remove("/t60real.txt");
     true
 }
+
+/// t61 — chdir/getcwd S1.1: default `/`, relativi contro cwd, errori,
+/// persistenza del gruppo, cleanup con ritorno a `/`.
+pub fn t_chdir() -> bool {
+    // Default: `/`.
+    match civis::getcwd() {
+        Ok(v) if v == b"/" => {}
+        other => {
+            println!("[usertests] t61: getcwd default = {:?}", other.map(|v| v.len()));
+            return false;
+        }
+    }
+    if civis::mkdir("/t61d").is_err() {
+        println!("[usertests] t61: mkdir FAILED");
+        return false;
+    }
+    // chdir assoluto + getcwd combacia.
+    if civis::chdir("/t61d").is_err() {
+        println!("[usertests] t61: chdir FAILED");
+        return false;
+    }
+    match civis::getcwd() {
+        Ok(v) if v == b"/t61d" => {}
+        other => {
+            println!("[usertests] t61: getcwd dopo chdir = {:?}", other.map(|v| v.len()));
+            return false;
+        }
+    }
+    // Relativi contro cwd: create + read senza slash iniziale.
+    if civis::open("f61.txt", civis::O_CREAT | civis::O_TRUNC).is_err() {
+        println!("[usertests] t61: create relativo FAILED");
+        return false;
+    }
+    if let Ok(fd) = civis::open("f61.txt", civis::O_TRUNC) {
+        let w = civis::write_fs(fd, b"cwd-ok", 6);
+        let _ = civis::close(fd);
+        if w != Ok(6) {
+            println!("[usertests] t61: write relativo FAILED");
+            return false;
+        }
+    }
+    let fd = match civis::open("f61.txt", 0) {
+        Ok(f) => f,
+        Err(e) => {
+            println!("[usertests] t61: open relativo = {:?}", e);
+            return false;
+        }
+    };
+    let mut buf = [0u8; 6];
+    let r = civis::read_fs(fd, &mut buf, 6);
+    let _ = civis::close(fd);
+    if r != Ok(6) || &buf != b"cwd-ok" {
+        println!("[usertests] t61: read relativo = {:?}", r);
+        return false;
+    }
+    // Il file e' davvero sotto /t61d (assoluto incrociato).
+    let mut st = civis::Stat { size: 0, kind: 0, readonly: false, mtime: 0 };
+    if civis::stat("/t61d/f61.txt", &mut st).is_err() || st.size != 6 {
+        println!("[usertests] t61: stat incrociato FAILED");
+        return false;
+    }
+    // Errori: file, mancante, relativo-mancante.
+    if civis::chdir("/t61d/f61.txt").is_ok() {
+        println!("[usertests] t61: chdir su file ok?!");
+        return false;
+    }
+    if civis::chdir("/t61mai").is_ok() {
+        println!("[usertests] t61: chdir mancante ok?!");
+        return false;
+    }
+    if civis::chdir("sottomai").is_ok() {
+        println!("[usertests] t61: chdir relativo-mancante ok?!");
+        return false;
+    }
+    // Cleanup: torna a `/` (i test dopo pretendono la root) e rimuovi.
+    if civis::chdir("/").is_err() {
+        println!("[usertests] t61: chdir / FAILED");
+        return false;
+    }
+    match civis::getcwd() {
+        Ok(v) if v == b"/" => {}
+        _ => {
+            println!("[usertests] t61: getcwd finale non root");
+            return false;
+        }
+    }
+    let _ = civis::remove("/t61d/f61.txt");
+    let _ = civis::remove("/t61d");
+    true
+}
