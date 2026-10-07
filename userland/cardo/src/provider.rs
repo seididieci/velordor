@@ -42,6 +42,9 @@ pub trait LocalFs {
     fn stat(&mut self, rel: &str) -> Result<Meta, u64>;
     fn mkdir(&mut self, rel: &str) -> Result<(), u64>;
     fn remove(&mut self, rel: &str) -> Result<(), u64>;
+    /// Rename S1.1: sposta `old` in `new` NELLO STESSO provider (il dispatch
+    /// cross-mount rifiuta prima: mai chiamato tra mount diversi).
+    fn rename(&mut self, old: &str, new: &str) -> Result<(), u64>;
     /// Spazio del mount (Fase 52, P3: sensore per quota/swap futuri). Il
     /// `rel` e' ignorato (spazio del mount, non del path): la risoluzione
     /// mount resta negli handler, mai nel provider.
@@ -86,5 +89,6 @@ pub trait LocalFsDyn {
     fn stat_dyn(&mut self, rel: &str) -> Result<Meta, u64>;
     fn mkdir_dyn(&mut self, rel: &str) -> Result<(), u64>;
     fn remove_dyn(&mut self, rel: &str) -> Result<(), u64>;
+    fn rename_dyn(&mut self, old: &str, new: &str) -> Result<(), u64>;
     fn statvfs_dyn(&mut self, rel: &str) -> Result<StatVfs, u64>;
 }

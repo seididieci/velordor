@@ -7,9 +7,9 @@
 # shell) e rimanda a run.sh. Righe attese + zero FAIL/PANIC/FAULT:
 #   [testfs] PASS 5/5
 #   [testfat] PASS 7/7
-#   [testsarca] PASS 54/54
+#   [testsarca] PASS 55/55
 #   [posixtests] PASS 4/4
-#   [usertests] PASS 54/54
+#   [usertests] PASS 55/55
 #   [threadtest] PASS 11/11
 set -euo pipefail
 cd "$(dirname "$0")"

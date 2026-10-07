@@ -67,7 +67,7 @@ use civis::{
     R_WRITE, R_RIGHTS_DROP, R_RIGHTS_GET, R_STAT, R_LSEEK, R_DUP_GRANT, R_DUP_CLAIM,
     R_DUP_CANCEL, R_PIPE_CREATE, R_DISK_LIST, R_DISK_INFO, R_SYNC, R_STATVFS, R_GET_HASH,
     R_OBJ_PUT, R_OBJ_GET, R_SNAP_CREATE, R_SNAP_DELETE, R_SNAP_ROLLBACK, R_SNAP_CLONE,
-    R_OBJ_GET_ID, R_OBJ_STAT_ID, R_OBJ_DELETE, R_OBJ_STAT, R_ARCA_DEBUG,
+    R_OBJ_GET_ID, R_OBJ_STAT_ID, R_OBJ_DELETE, R_OBJ_STAT, R_ARCA_DEBUG, R_RENAME,
 };
 // Sentinelle di errore FS (Fase 40): i rifiuti tipizzati viaggiano qui invece
 // del generico ERR; il client li mappa in `posix::Error`. Fase 42: ERR_EMPTY

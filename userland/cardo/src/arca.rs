@@ -366,6 +366,109 @@ impl ArcaFs {
         }
     }
 
+    /// Rename con motore esplicito (S1.1): file = move chiave a commit
+    /// singolo (stesso uuid/storia, replace atomico); dir = move di TUTTE
+    /// le chiavi col prefisso + voci ram a UN commit. Regole: file→dir =
+    /// ISDIR, dir→file = NOTDIR, dir→non-vuota = EXISTS, assente = NOTFOUND.
+    /// Mai oltre il bound chiavi (INVALID, mai troncamenti).
+    #[inline(never)]
+    pub fn ns_rename(&mut self, eng: &mut DiskEngine, old: &str, new: &str) -> Result<(), u64> {
+        if old.is_empty() || new.is_empty() {
+            return Err(crate::ERR_INVALID);
+        }
+        if old.len() > civis::OBJ_KEY_MAX || new.len() > civis::OBJ_KEY_MAX {
+            return Err(crate::ERR_INVALID);
+        }
+        if old == new {
+            // No-op identitaria: esiste davvero?
+            if crate::btree_drv::ns_stat(eng, old.as_bytes()).is_some()
+                || self.ram_dirs.contains_key(old)
+            {
+                return Ok(());
+            }
+            return Err(crate::ERR_NOTFOUND);
+        }
+        let old_is_file = crate::btree_drv::ns_stat(eng, old.as_bytes()).is_some();
+        let mut old_pref = Vec::with_capacity(old.len() + 1);
+        old_pref.extend_from_slice(old.as_bytes());
+        old_pref.push(b'/');
+        let old_has_kids =
+            crate::btree_drv::ns_scan(eng, &old_pref).map(|v| !v.is_empty()).unwrap_or(false)
+                || self.ram_dirs.keys().any(|k| k.len() > old.len() && k.starts_with(old) && k.as_bytes().get(old.len()) == Some(&b'/'));
+        let new_is_file = crate::btree_drv::ns_stat(eng, new.as_bytes()).is_some();
+        let mut new_pref = Vec::with_capacity(new.len() + 1);
+        new_pref.extend_from_slice(new.as_bytes());
+        new_pref.push(b'/');
+        let new_has_kids =
+            crate::btree_drv::ns_scan(eng, &new_pref).map(|v| !v.is_empty()).unwrap_or(false)
+                || self.ram_dirs.keys().any(|k| k.len() > new.len() && k.starts_with(new) && k.as_bytes().get(new.len()) == Some(&b'/'));
+        let new_is_ramdir = self.ram_dirs.contains_key(new);
+        if !old_is_file && !old_has_kids && !self.ram_dirs.contains_key(old) {
+            return Err(crate::ERR_NOTFOUND);
+        }
+        if old_is_file && (new_has_kids || new_is_ramdir) {
+            return Err(crate::ERR_ISDIR);
+        }
+        if !old_is_file && new_is_file {
+            return Err(crate::ERR_NOTDIR);
+        }
+        if !old_is_file && (new_has_kids) {
+            return Err(crate::ERR_EXISTS);
+        }
+        if old_is_file {
+            // File→dir (ram o emergente, anche vuota in senso chiavi) =
+            // ISDIR come ramfs (una dst prefisso-di-chiavi E' una dir).
+            if new_has_kids {
+                return Err(crate::ERR_ISDIR);
+            }
+            crate::btree_drv::ns_rename(eng, old.as_bytes(), new.as_bytes())?;
+            return Ok(());
+        }
+        // Dir: sposta ogni chiave col prefisso + voci ram, UN commit.
+        let mut keys = crate::btree_drv::ns_scan(eng, &old_pref).unwrap_or_default();
+        keys.sort();
+        for k in keys.iter() {
+            let suffix = k.get(old_pref.len()..).ok_or(crate::ERR)?;
+            let mut nk = Vec::with_capacity(new_pref.len() + suffix.len());
+            nk.extend_from_slice(&new_pref);
+            nk.extend_from_slice(suffix);
+            if nk.len() > civis::OBJ_KEY_MAX {
+                return Err(crate::ERR_INVALID);
+            }
+            match eng.rename_key(crate::btree_drv::NS_BUCKET, k, &nk) {
+                Some(_) => {}
+                None => return Err(crate::ERR),
+            }
+        }
+        // Voci ram con prefisso (+ la dir stessa se nel set).
+        let mut moves: Vec<(String, u64)> = Vec::new();
+        self.ram_dirs.retain(|k, v| {
+            if *k == *old || (k.len() > old.len() && k.starts_with(old) && k.as_bytes().get(old.len()) == Some(&b'/')) {
+                moves.push((k.clone(), *v));
+                false
+            } else {
+                true
+            }
+        });
+        for (k, v) in moves.into_iter() {
+            let suffix = k.get(old.len()..).unwrap_or("");
+            let mut nk = String::with_capacity(new.len() + suffix.len());
+            nk.push_str(new);
+            nk.push_str(suffix);
+            self.ram_dirs.insert(nk, v);
+        }
+        // Antenati del dst come mkdir (dir emergenti visibili subito).
+        let now = crate::wall::wall_secs();
+        for a in Self::ancestors(new) {
+            self.ram_dirs.entry(a).or_insert(now);
+        }
+        if crate::btree_drv::commit(eng) {
+            Ok(())
+        } else {
+            Err(crate::ERR)
+        }
+    }
+
     /// Statvfs con motore esplicito (blocchi 3584; liberi illimitati come
     /// ramfs — sensore vero con quota/taglio, mai numero inventato).
     #[inline(never)]
@@ -427,6 +530,9 @@ impl<'e> ArcaWith<'e> {
     fn remove(&mut self, rel: &str) -> Result<(), u64> {
         self.a.ns_remove(self.eng, rel)
     }
+    fn rename(&mut self, old: &str, new: &str) -> Result<(), u64> {
+        self.a.ns_rename(self.eng, old, new)
+    }
     fn statvfs(&mut self) -> Result<StatVfs, u64> {
         self.a.ns_statvfs(self.eng)
     }
@@ -471,6 +577,9 @@ impl LocalFsDyn for ArcaWith<'_> {
     fn remove_dyn(&mut self, rel: &str) -> Result<(), u64> {
         self.remove(rel)
     }
+    fn rename_dyn(&mut self, old: &str, new: &str) -> Result<(), u64> {
+        self.rename(old, new)
+    }
     fn statvfs_dyn(&mut self, _rel: &str) -> Result<StatVfs, u64> {
         self.statvfs()
     }
@@ -501,6 +610,9 @@ impl LocalFs for ArcaFs {
         Err(crate::ERR_READONLY)
     }
     fn remove(&mut self, _rel: &str) -> Result<(), u64> {
+        Err(crate::ERR_READONLY)
+    }
+    fn rename(&mut self, _old: &str, _new: &str) -> Result<(), u64> {
         Err(crate::ERR_READONLY)
     }
     fn statvfs(&mut self, _rel: &str) -> Result<StatVfs, u64> {
@@ -547,6 +659,9 @@ impl LocalFsDyn for ArcaFs {
     }
     fn remove_dyn(&mut self, rel: &str) -> Result<(), u64> {
         <Self as LocalFs>::remove(self, rel)
+    }
+    fn rename_dyn(&mut self, old: &str, new: &str) -> Result<(), u64> {
+        <Self as LocalFs>::rename(self, old, new)
     }
     fn statvfs_dyn(&mut self, rel: &str) -> Result<StatVfs, u64> {
         <Self as LocalFs>::statvfs(self, rel)

@@ -1740,6 +1740,53 @@ impl<S: BlockStore> BTree<S> {
         Some(true)
     }
 
+    /// Rinomina una chiave nello stesso bucket (S1.1): la secondary punta
+    /// allo STESSO uuid/head (storia condivisa, niente copia dati); se `new`
+    /// esiste la sua catena e' liberata prima (replace atomico: UN commit
+    /// del chiamante copre tutto, mai mezze rename). Solo secondary: il
+    /// chiamante gestisce set transient/dir emergenti. `Some(true)` =
+    /// rinominato, `Some(false)` = sorgente assente, `None` = IO/bound.
+    #[inline(never)]
+    pub fn rename_key(&mut self, bucket: &[u8], old: &[u8], new: &[u8]) -> Option<bool> {
+        let sk_old = seckey_encode(bucket, old)?;
+        let sk_new = seckey_encode(bucket, new)?;
+        if sk_old == sk_new {
+            return Some(true); // no-op identitaria
+        }
+        let sec = match self.btree_lookup(self.root_secondary, TREE_SECONDARY, &sk_old) {
+            Some((_, leaf, i, true)) => {
+                let (s, _) = sec_rec_parse(&leaf.vals[i])?;
+                s
+            }
+            _ => return Some(false),
+        };
+        // Dst esistente: liberata prima (stessa disciplina di `delete`).
+        if self
+            .btree_lookup(self.root_secondary, TREE_SECONDARY, &sk_new)
+            .map(|(_, _, _, found)| found)
+            .unwrap_or(false)
+        {
+            self.delete(bucket, new)?;
+        }
+        let uuid = sec.uuid;
+        let mut sec_new = sec;
+        sec_new.key = new.to_vec();
+        let nr = self.btree_insert(
+            self.root_secondary,
+            TREE_SECONDARY,
+            sk_new,
+            sec_rec_encode(&sec_new)?,
+        )?;
+        self.root_secondary = nr;
+        let (nr2, _) = self.btree_remove(self.root_secondary, TREE_SECONDARY, &sk_old)?;
+        self.root_secondary = nr2;
+        self.by_id.insert(uuid, {
+            let sk = seckey_encode(bucket, new)?;
+            sk
+        });
+        Some(true)
+    }
+
     // ── Snapshot / clone / rollback (pin = refcount su disco) ──────────
 
     /// Tutte le seckey di un bucket (scansione secondary: O(bucket), il

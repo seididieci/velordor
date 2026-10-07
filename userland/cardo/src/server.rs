@@ -584,6 +584,8 @@ fn real_main(_sp: u64) -> ! {
             R_OPEN | R_MKDIR | R_READDIR | R_REGISTER | R_MOUNT | R_UMOUNT | R_DELETE | R_STAT => {
                 w0 as usize
             }
+            // RENAME: payload "old\0new\0", w0 = lunghezza totale.
+            R_RENAME => w0 as usize,
             R_WRITE | R_RIGHTS_DROP => w1 as usize,
             // LSEEK: payload 1 byte = whence (fd in w0, offset in w1).
             R_LSEEK => 1,
@@ -684,6 +686,20 @@ fn real_main(_sp: u64) -> ! {
                 Ok(p) => rights::within_subtree(rights::rights_subtree(&rights, chan), rights::normalize_sub_view(p)),
                 Err(_) => true,
             },
+            // RENAME: ENTRAMBI i capi nel subtree (scrivere fuori dal
+            // proprio confine via rename del dst e' lo stesso bypass di
+            // una write: check su old E new, mai uno solo).
+            R_RENAME => match core::str::from_utf8(payload) {
+                Ok(p) => match p.split_once('\0') {
+                    Some((old, new)) => {
+                        let sub = rights::rights_subtree(&rights, chan);
+                        rights::within_subtree(sub, rights::normalize_sub_view(old))
+                            && rights::within_subtree(sub, rights::normalize_sub_view(new.trim_end_matches('\0')))
+                    }
+                    None => true,
+                },
+                Err(_) => true,
+            },
             R_MOUNT => match core::str::from_utf8(payload) {
                 Ok(spec) => match spec.split_once('\0') {
                     Some((_, target)) => rights::within_subtree(
@@ -765,6 +781,19 @@ fn real_main(_sp: u64) -> ! {
             R_DELETE => {
                 match core::str::from_utf8(&payload) {
                     Ok(path) => handlers::handle_delete(&mut fs, &mut fat_mounts, &mounts, path, &mut fat_gen, &mut disk),
+                    Err(_) => Err(ERR_INVALID),
+                }
+            }
+
+            R_RENAME => {
+                match core::str::from_utf8(&payload) {
+                    Ok(p) => match p.split_once('\0') {
+                        Some((old, new)) => handlers::handle_rename(
+                            &mut fs, &mut fat_mounts, &mounts,
+                            old, new.trim_end_matches('\0'), &mut fat_gen, &mut disk,
+                        ),
+                        None => Err(ERR_INVALID),
+                    },
                     Err(_) => Err(ERR_INVALID),
                 }
             }

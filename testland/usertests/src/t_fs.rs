@@ -517,3 +517,92 @@ pub fn t_diskboot() -> bool {
     true
 }
 
+
+/// t59 — rename S1.1 su ramfs: move, replace, dir con figli, errori
+/// tipizzati, cross-mount rifiutato. Cleanup finale (ramfs condivisa).
+pub fn t_rename() -> bool {
+    // Fixture.
+    if civis::open("/t59a.txt", civis::O_CREAT | civis::O_TRUNC).is_err() {
+        println!("[usertests] t59: create a FAILED");
+        return false;
+    }
+    if let Ok(fd) = civis::open("/t59a.txt", civis::O_TRUNC) {
+        let w = civis::write_fs(fd, b"rename-59", 9);
+        let _ = civis::close(fd);
+        if w != Ok(9) {
+            println!("[usertests] t59: write a FAILED");
+            return false;
+        }
+    }
+    // Move base: vecchio sparisce, nuovo leggibile intatto.
+    if civis::rename("/t59a.txt", "/t59b.txt").is_err() {
+        println!("[usertests] t59: rename base FAILED");
+        return false;
+    }
+    if civis::open("/t59a.txt", 0).is_ok() {
+        println!("[usertests] t59: vecchio ancora presente?!");
+        return false;
+    }
+    let fd = match civis::open("/t59b.txt", 0) {
+        Ok(f) => f,
+        Err(e) => {
+            println!("[usertests] t59: open b = {:?}", e);
+            return false;
+        }
+    };
+    let mut buf = [0u8; 9];
+    let r = civis::read_fs(fd, &mut buf, 9);
+    let _ = civis::close(fd);
+    if r != Ok(9) || &buf != b"rename-59" {
+        println!("[usertests] t59: contenuto dopo move = {:?}", r);
+        return false;
+    }
+    // Replace: file su file esistente.
+    if civis::open("/t59c.txt", civis::O_CREAT | civis::O_TRUNC).is_err() {
+        println!("[usertests] t59: create c FAILED");
+        return false;
+    }
+    if civis::rename("/t59c.txt", "/t59b.txt").is_err() {
+        println!("[usertests] t59: replace FAILED");
+        return false;
+    }
+    let mut st = civis::Stat { size: 99, kind: 0, readonly: false, mtime: 0 };
+    if civis::stat("/t59b.txt", &mut st).is_err() || st.size != 0 {
+        println!("[usertests] t59: replace non ha sostituito (size={})", st.size);
+        return false;
+    }
+    // Dir con figli: move subtree.
+    if civis::mkdir("/t59d").is_err()
+        || civis::open("/t59d/f.txt", civis::O_CREAT).is_err()
+    {
+        println!("[usertests] t59: setup dir FAILED");
+        return false;
+    }
+    if civis::rename("/t59d", "/t59e").is_err() {
+        println!("[usertests] t59: rename dir FAILED");
+        return false;
+    }
+    if civis::open("/t59e/f.txt", 0).is_err() || civis::open("/t59d/f.txt", 0).is_ok() {
+        println!("[usertests] t59: subtree non spostato");
+        return false;
+    }
+    // Errori tipizzati: assente, file→dir, cross-mount (/tmp e' un mount
+    // ramfs separato: rename tra mount = Invalid).
+    if civis::rename("/t59mai", "/t59x").is_ok() {
+        println!("[usertests] t59: rename assente ok?!");
+        return false;
+    }
+    if !matches!(civis::rename("/t59b.txt", "/t59e"), Err(civis::Error::IsDir)) {
+        println!("[usertests] t59: file→dir non IsDir");
+        return false;
+    }
+    if civis::rename("/t59b.txt", "/tmp/t59b.txt").is_ok() {
+        println!("[usertests] t59: cross-mount ok?!");
+        return false;
+    }
+    // Cleanup.
+    let _ = civis::remove("/t59b.txt");
+    let _ = civis::remove("/t59e/f.txt");
+    let _ = civis::remove("/t59e");
+    true
+}

@@ -456,6 +456,18 @@ pub const R_STATVFS: u32 = 0x24;
 //   mount `Local` (ramfs/FAT via trait `read`); device/remoti/sintetici e
 //   mount inattivi → ERR. Gate RIGHTS_READDIR + subtree come R_STAT.
 pub const R_GET_HASH: u32 = 0x25;
+/// Rinomina `old` in `new` sullo STESSO mount (S1.1): payload
+/// `old\0new\0` (w0 = lunghezza totale). Stesso-mount o rifiuto
+/// (`ERR_INVALID` cross-mount: niente EXDEV tipizzato, mai silent-copy);
+/// mount remoti/FAT → rifiuto (FAT: namespace immutabile come mkdir/remove;
+/// readonly). Sovrascrittura di `new` esistente = replace atomico (la
+/// catena di `new` e' liberata nello stesso commit su Arca; su ramfs move
+/// di chiave). Limite noto: fd aperti sul vecchio nome vanno stale
+/// (NotFound al prossimo uso, mai dati altrui — gli handle sono per-path).
+/// Numero 0x33: R_* e FS_* condividono il match di dispatch in cardo —
+/// 0x30/0x31/0x32 sono FS_REGISTER/FS_BUF_REG/FS_NOTIFY (0x31 ha dirottato
+/// l'handshake dei ring a boot: osservato, mai piu').
+pub const R_RENAME: u32 = 0x33;
 // ── ArcaFS: casa propria (Fase 56.2a) ────────────────────────────────
 // Tag R_OBJ_*/R_SNAP_*/R_ARCA_DEBUG, bound OBJ_*_MAX e formato blocchi
 // (ARCA_*) vivono nel crate `arcafs` (il kernel non li usa — verificato).

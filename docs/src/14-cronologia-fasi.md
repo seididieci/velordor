@@ -2137,3 +2137,19 @@
           exec ed entry raw-asm compatibili con l'output LLVM. Nota: in
           shell il path e' `/fat/test/…` (`/test/` non e' nel namespace
           shell). Prossimo: S1.1 (FS MUST, un commit per syscall).
+          S1.1-rename (R_RENAME 0x33): stesso-mount o rifiuto (cross-mount
+          INVALID, remoti/FAT READONLY come mkdir/remove); trait provider +
+          ramfs (move BTreeMap, matrice errori POSIX: file→dir ISDIR,
+          dir→file NOTDIR, dir→non-vuota EXISTS) + Arca ns a commit singolo
+          (rename_key: stessa storia, replace atomico); fd aperti vanno
+          stale loud (handle per-path, limite dichiarato); diritti su
+          ENTRAMBI i capi. Test t59 (ramfs) + v55 (ns). LEZIONE DURA: in
+          Rust un identificatore non importato in posizione pattern NON e'
+          errore ma binding irrefutabile (match-all silenzioso, solo warning
+          `unused_variables` sepolto): R_RENAME mancava nella `use` list di
+          cardo main.rs e i 3 arm mangiavano OGNI op a boot (obj assente).
+          Perso ore su teorie (GC, timing, codegen, VMA, stale-image) prima
+          di leggere il warning giusto; il TMP nel dispatch ha mostrato
+          l'arm scattare su op altrui. Da ora: nuovo tag = import + grep
+          del warning `unused variable` nel build log. Gate: 5/5 + 7/7 +
+          55/55 + 4/4 + 55/55 + 11/11 + shell 10/10, zero FAIL/PANIC/FAULT.

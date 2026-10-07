@@ -134,7 +134,7 @@ velordo/
 
 ## Stato corrente
 
-Gate: `[testfs] PASS 5/5` + `[testfat] PASS 7/7` + `[testsarca] PASS 54/54` + `[posixtests] PASS 4/4` + `[usertests] PASS 54/54` + `[threadtest] PASS 11/11` + shell (10/10 fasi via `test-shell-all.sh`), zero FAIL/PANIC/FAULT (vedi `docs/src/11-testing.md`).
+Gate: `[testfs] PASS 5/5` + `[testfat] PASS 7/7` + `[testsarca] PASS 55/55` + `[posixtests] PASS 4/4` + `[usertests] PASS 55/55` + `[threadtest] PASS 11/11` + shell (10/10 fasi via `test-shell-all.sh`), zero FAIL/PANIC/FAULT (vedi `docs/src/11-testing.md`).
 
 - **Stato e futuro**: `ROADMAP.md` (sorgente unica: tabella completate 1-55, Pianificate, Parcheggiate).
 - **Storia dettagliata**: `docs/src/14-cronologia-fasi.md` (log per fase: decisioni, bug trovati, lezioni, validazioni).
@@ -336,12 +336,12 @@ rg '\[bench\]' /tmp/bench-run1.log /tmp/bench-run2.log /tmp/bench-run3.log
 # Suite di regressione (boot): 6 righe PASS attese e ZERO FAIL/PANIC
 #   [testfs] PASS 5/5
 #   [testfat] PASS 7/7
-#   [testsarca] PASS 54/54
+#   [testsarca] PASS 55/55
 #   [posixtests] PASS 4/4
-#   [usertests] PASS 54/54
+#   [usertests] PASS 55/55
 #   [threadtest] PASS 11/11
 timeout 150 ./run-tests.sh > /tmp/boot.log
-rg '\[testfs\] PASS 5/5|\[testfat\] PASS 7/7|\[testsarca\] PASS 54/54|\[posixtests\] PASS 4/4|\[usertests\] PASS 54/54|\[threadtest\] PASS 11/11' /tmp/boot.log
+rg '\[testfs\] PASS 5/5|\[testfat\] PASS 7/7|\[testsarca\] PASS 55/55|\[posixtests\] PASS 4/4|\[usertests\] PASS 55/55|\[threadtest\] PASS 11/11' /tmp/boot.log
 test "$(rg -c 'FAIL|PANIC|#.* FAULT' /tmp/boot.log)" = "0"
 ```
 

@@ -607,6 +607,22 @@ pub fn ns_stat(eng: &DiskEngine, key: &[u8]) -> Option<(u64, u64)> {
     eng.stat(NS_BUCKET, key).map(|(_, size, _, mtime)| (size, mtime))
 }
 
+/// RENAME namespace (S1.1): sposta la chiave (stesso uuid/storia, replace
+/// atomico del dst) con UN commit. Quota-neutral (stessi blocchi, nuova
+/// chiave: niente gate, lo slack nodi lo assorbe lo spazio libero — a volume
+/// pieno l'allocatore fallisce loud). Assente = `Err(ERR_NOTFOUND)`.
+#[inline(never)]
+pub fn ns_rename(eng: &mut DiskEngine, old: &[u8], new: &[u8]) -> Result<(), u64> {
+    if old.len() > civis::OBJ_KEY_MAX || new.len() > civis::OBJ_KEY_MAX {
+        return Err(ERR_INVALID);
+    }
+    match eng.rename_key(NS_BUCKET, old, new) {
+        Some(true) => commit_or(eng, 0).map(|_| ()),
+        Some(false) => Err(ERR_NOTFOUND),
+        None => Err(ERR),
+    }
+}
+
 /// DELETE namespace: sempre commit. Assente = `Err(ERR_NOTFOUND)`.
 #[inline(never)]
 pub fn ns_delete(eng: &mut DiskEngine, key: &[u8]) -> Result<(), u64> {

@@ -417,6 +417,90 @@ impl LocalFs for RamFs {
         }
     }
 
+    /// Rename S1.1: sposta il nodo (stesso oggetto, subtree al seguito per
+    /// le dir). Regole: file→dir = ISDIR, dir→file = NOTDIR, dir→non-vuota
+    /// = EXISTS, assente = NOTFOUND. Niente autocreate dei parent (POSIX:
+    /// parent dst mancante = NOTFOUND). Move di chiave BTreeMap: atomico
+    /// per costruzione (niente stati intermedi osservabili).
+    fn rename(&mut self, old_rel: &str, new_rel: &str) -> Result<(), u64> {
+        fn split(path: &str) -> Option<(&str, &str)> {
+            let p = path.trim_start_matches('/');
+            if p.is_empty() {
+                return None;
+            }
+            match p.rsplit_once('/') {
+                Some(("", _)) => None, // "/x" senza parent → root
+                Some((par, leaf)) if !leaf.is_empty() => Some((par, leaf)),
+                None => Some(("", p)),
+                _ => None,
+            }
+        }
+        let (old_par, old_leaf) = split(old_rel).ok_or(crate::ERR_INVALID)?;
+        let (new_par, new_leaf) = split(new_rel).ok_or(crate::ERR_INVALID)?;
+        // Naviga a una dir esistente (mai autocreate qui).
+        fn nav<'a>(
+            root: &'a mut BTreeMap<String, FsNode>,
+            par: &str,
+        ) -> Option<&'a mut BTreeMap<String, FsNode>> {
+            let mut cur = root;
+            if par.is_empty() {
+                return Some(cur);
+            }
+            for part in par.split('/') {
+                match cur.get_mut(part) {
+                    Some(FsNode::Dir { entries, .. }) => cur = entries,
+                    _ => return None,
+                }
+            }
+            Some(cur)
+        }
+        // Classifica src/dst prima di mutare (two-phase: a rifiuto niente si
+        // muove).
+        let src_kind = match nav(&mut self.root, old_par).and_then(|d| d.get(old_leaf)) {
+            Some(FsNode::File { .. }) => 0,
+            Some(FsNode::Dir { entries, .. }) if entries.is_empty() => 1,
+            Some(FsNode::Dir { .. }) => 2,
+            None => return Err(crate::ERR_NOTFOUND),
+        };
+        if old_par == new_par && old_leaf == new_leaf {
+            return Ok(()); // no-op identitaria (esiste: vedi sopra)
+        }
+        let dst_kind = match nav(&mut self.root, new_par).and_then(|d| d.get(new_leaf)) {
+            Some(FsNode::File { .. }) => 0,
+            Some(FsNode::Dir { entries, .. }) if entries.is_empty() => 1,
+            Some(FsNode::Dir { .. }) => 2,
+            None => 3,
+        };
+        if dst_kind == 3 && new_par != old_par {
+            // Parent dst distinto e navigazione fallita → parent mancante.
+            // (nav ritorna None sia per parent mancante che... qui dst
+            // assente E parent ok danno 3; parent mancante da' 3 uguale:
+            // distinguiamo verificando il parent.)
+            if nav(&mut self.root, new_par).is_none() {
+                return Err(crate::ERR_NOTFOUND);
+            }
+        }
+        // file→dir (anche vuota) = ISDIR; dir→file = NOTDIR;
+        // dir→dir-non-vuota = EXISTS; replace solo file→file e
+        // dir-vuota→dir-vuota; dir-non-vuota→libero/vuota = move subtree.
+        match (src_kind, dst_kind) {
+            (_, 3) => {}                       // dst libero: ok
+            (0, 0) | (1, 1) | (2, 1) => {}     // replace omogenei
+            (0, 1) | (0, 2) => return Err(crate::ERR_ISDIR),
+            (1, 0) | (2, 0) => return Err(crate::ERR_NOTDIR),
+            (1, 2) | (2, 2) => return Err(crate::ERR_EXISTS),
+            _ => return Err(crate::ERR_INVALID),
+        }
+        // Move: out dal parent src, dentro il parent dst (replace se occupato
+        // da file/dir-vuota — gia' validato sopra).
+        let node = nav(&mut self.root, old_par)
+            .and_then(|d| d.remove(old_leaf))
+            .ok_or(crate::ERR_NOTFOUND)?;
+        let dst = nav(&mut self.root, new_par).ok_or(crate::ERR_NOTFOUND)?;
+        dst.insert(String::from(new_leaf), node);
+        Ok(())
+    }
+
     fn statvfs(&mut self, _rel: &str) -> Result<StatVfs, u64> {
         // ramfs memory-backed (Fase 52, P3): blocchi usati camminati,
         // libero/available illimitati (= u64::MAX: cresce con l'heap fino a
@@ -467,6 +551,10 @@ impl crate::provider::LocalFsDyn for RamFs {
 
     fn remove_dyn(&mut self, rel: &str) -> Result<(), u64> {
         <Self as LocalFs>::remove(self, rel)
+    }
+
+    fn rename_dyn(&mut self, old: &str, new: &str) -> Result<(), u64> {
+        <Self as LocalFs>::rename(self, old, new)
     }
 
     fn statvfs_dyn(&mut self, rel: &str) -> Result<StatVfs, u64> {

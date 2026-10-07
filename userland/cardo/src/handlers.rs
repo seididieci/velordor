@@ -993,6 +993,66 @@ pub fn handle_delete(
     }
 }
 
+/// Rinomina `old` in `new` sullo STESSO mount (S1.1, `R_RENAME`).
+/// Cross-mount = `ERR_INVALID` loud (niente EXDEV tipizzato, mai
+/// silent-copy); mount remoti/FAT = rifiuto (FAT: namespace immutabile).
+/// Provider `Local`/Arca via trait (rel mount-relative), ramfs radice via
+/// trait (path intero). Ritorna Ok(0).
+#[inline(never)]
+pub fn handle_rename(
+    fs: &mut ramfs::RamFs,
+    mounts_fat: &mut Vec<mount::FsMount>,
+    mounts: &[mount_legacy::Mount],
+    old: &str,
+    new: &str,
+    fgen: &mut u64,
+    disk: &mut Option<btree_drv::DiskEngine>,
+) -> Result<u64, u64> {
+    if old.is_empty() || new.is_empty() || old.len() > MAX_PATH || new.len() > MAX_PATH {
+        return Err(ERR_INVALID);
+    }
+    // Mai dentro driver remoti (nessun dei due capi).
+    if mount_legacy::resolve_mount(old, mounts).is_some()
+        || mount_legacy::resolve_mount(new, mounts).is_some()
+    {
+        return Err(ERR_INVALID);
+    }
+    // Mount `Local`/Arca via trait: entrambi i capi sullo STESSO mount
+    // (stesso mid) o rifiuto cross-mount.
+    let ro = mount::resolve_fsmount(mounts_fat, old, fgen);
+    let rn = mount::resolve_fsmount(mounts_fat, new, fgen);
+    match (ro, rn) {
+        (Some((mid_o, rel_o)), Some((mid_n, rel_n))) => {
+            if mid_o != mid_n {
+                return Err(ERR_INVALID); // cross-mount
+            }
+            let m = mount::by_id_mut(mounts_fat, mid_o).ok_or(ERR_NOTFOUND)?;
+            if m.is_provider() {
+                if let Some(mut w) = m.arca_with(disk.as_mut()) {
+                    w.rename_dyn(&rel_o, &rel_n)?;
+                    return Ok(0);
+                }
+                let d = m.local_dyn().ok_or(ERR)?;
+                d.rename_dyn(&rel_o, &rel_n)?;
+                return Ok(0);
+            }
+            return Err(ERR_READONLY); // FAT: namespace immutabile
+        }
+        (Some(_), None) | (None, Some(_)) => return Err(ERR_INVALID), // a cavallo
+        (None, None) => {}
+    }
+    // Ramfs radice (legacy): entrambi i capi Ram o rifiuto.
+    let ko = mount_legacy::resolve_local(mounts_fat, old).ok_or(ERR_NOTFOUND)?;
+    let kn = mount_legacy::resolve_local(mounts_fat, new).ok_or(ERR_NOTFOUND)?;
+    match (ko, kn) {
+        (mount_legacy::FsKind::Ram, mount_legacy::FsKind::Ram) => {
+            crate::provider::LocalFs::rename(fs, old, new)?;
+            Ok(0)
+        }
+        _ => Err(ERR_INVALID),
+    }
+}
+
 /// Monta una sorgente sul target (Fase 16b, payload "source\0target\0").
 /// Ritorna Ok(0) se il mount e' ATTIVO, Err tipizzato altrimenti: a resolve
 /// fallito (sorgente/target invalidi, nome ignoto, driver irraggiungibile)

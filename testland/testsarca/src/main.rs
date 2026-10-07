@@ -1043,6 +1043,24 @@ fn real_main(_sp: u64) -> ! {
             && is_dir("/arca/keep")
             && !is_dir("/arca/vuota");
         c.ok("posix bounce+remount", v50);
+        // 55. rename S1.1 su namespace Arca: file, replace, dir con figli,
+        // errori tipizzati (file→dir ISDIR, assente NOTFOUND).
+        let v55 = civis::mkdir("/arca/rn").is_ok()
+            && wr_all("/arca/rn/a.txt", civis::O_CREAT, b"rename-me")
+            && civis::rename("/arca/rn/a.txt", "/arca/rn/b.txt").is_ok()
+            && matches!(rd_all("/arca/rn/b.txt"), Some(v) if v.as_slice() == b"rename-me")
+            && civis::open("/arca/rn/a.txt", 0).is_err()
+            && wr_all("/arca/rn/c.txt", civis::O_CREAT, b"secondo")
+            && civis::rename("/arca/rn/c.txt", "/arca/rn/b.txt").is_ok()
+            && matches!(rd_all("/arca/rn/b.txt"), Some(v) if v.as_slice() == b"secondo")
+            && civis::rename("/arca/rn/mai", "/arca/rn/x").is_err()
+            && matches!(civis::rename("/arca/rn/b.txt", "/arca/rn"), Err(civis::Error::IsDir))
+            && civis::rename("/arca/rn", "/arca/rn2").is_ok()
+            && matches!(rd_all("/arca/rn2/b.txt"), Some(v) if v.as_slice() == b"secondo")
+            && !is_dir("/arca/rn");
+        c.ok("posix rename file+dir", v55);
+        let _ = civis::remove("/arca/rn2/b.txt");
+        let _ = civis::remove("/arca/rn2");
         // Cleanup best-effort (il volume resta pulito per i run dopo).
         let _ = civis::remove("/arca/keep/v");
         let _ = civis::remove("/arca/keep");

@@ -118,6 +118,11 @@ impl<B: BlockSource> crate::provider::LocalFs for Fat32<B> {
         // remove su FAT e' fuori scope.
         Err(crate::ERR_READONLY)
     }
+
+    fn rename(&mut self, _old: &str, _new: &str) -> Result<(), u64> {
+        // rename su FAT e' fuori scope (namespace immutabile come mkdir).
+        Err(crate::ERR_READONLY)
+    }
 }
 
 // ── Implementazione LocalFsDyn per Fat32 (Fase 48 wiring, Fase 49 handle
@@ -170,5 +175,9 @@ impl<B: BlockSource> crate::provider::LocalFsDyn for Fat32<B> {
 
     fn remove_dyn(&mut self, rel: &str) -> Result<(), u64> {
         <Self as crate::provider::LocalFs>::remove(self, rel)
+    }
+
+    fn rename_dyn(&mut self, old: &str, new: &str) -> Result<(), u64> {
+        <Self as crate::provider::LocalFs>::rename(self, old, new)
     }
 }

@@ -235,6 +235,32 @@ pub fn remove(path: &str) -> Result<(), Error> {
     }
 }
 
+/// S1.1 — rinomina `old` in `new` sullo STESSO mount (payload `old\0new\0`).
+/// Cross-mount/remoti/FAT = errore (mai silent-copy); fd aperti sul vecchio
+/// nome vanno stale (NotFound al prossimo uso). Errori tipizzati dal server
+/// (NotFound/IsDir/NotDir/Exists/ReadOnly/Invalid).
+pub fn rename(old: &str, new: &str) -> Result<(), Error> {
+    session::fs_gate()?;
+    let mut p = alloc::vec::Vec::with_capacity(old.len() + new.len() + 2);
+    p.extend_from_slice(old.as_bytes());
+    p.push(0);
+    p.extend_from_slice(new.as_bytes());
+    p.push(0);
+    if !ring::req_ring_write(R_RENAME, p.len() as u64, 0, &p) {
+        return Err(Error::RingFull);
+    }
+    let len = p.len();
+    match session::fs_notify_result(FS_NOTIFY, || {
+        ring::req_ring_write(R_RENAME, len as u64, 0, &p)
+    }) {
+        Some((result, _, _)) => {
+            ring::resp_ring_consume(16);
+            session::fs_reply_check(result).map(|_| ())
+        }
+        None => Err(Error::NotReady),
+    }
+}
+
 /// Fase 19.2 — metadati di un path (zero kernel: frame R_STAT a cardo, nessun
 /// fd coinvolto). `size` = byte del file (0 per dir/device); `kind` = tipo
 /// (STAT_FILE/DIR/DEVICE); `readonly` = bit 7 (FAT sempre, ramfs mai, device
