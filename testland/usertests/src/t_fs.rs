@@ -606,3 +606,93 @@ pub fn t_rename() -> bool {
     let _ = civis::remove("/t59e");
     true
 }
+
+/// t60 — symlink S1.1 su ramfs: create/readlink/follow/open/stat,
+/// dangling, loop, rename-del-link. Cleanup finale.
+pub fn t_symlink() -> bool {
+    // Create (link=/t60link -> target=/t60real.txt, dangling ammesso: il
+    // target si crea dopo) + readlink + stat kind.
+    if civis::symlink("/t60link", "/t60real.txt").is_err() {
+        println!("[usertests] t60: symlink create FAILED");
+        return false;
+    }
+    match civis::readlink("/t60link") {
+        Ok(v) if v == b"/t60real.txt" => {}
+        other => {
+            println!("[usertests] t60: readlink = {:?}", other.map(|v| v.len()));
+            return false;
+        }
+    }
+    let mut st = civis::Stat { size: 0, kind: 0, readonly: false, mtime: 0 };
+    if civis::stat("/t60link", &mut st).is_err() || !st.is_symlink() {
+        println!("[usertests] t60: stat link kind={} (atteso symlink)", st.kind);
+        return false;
+    }
+    // Dangling: open fallisce NOTFOUND finche' il target manca.
+    if civis::open("/t60link", 0).is_ok() {
+        println!("[usertests] t60: open dangling ok?!");
+        return false;
+    }
+    // Crea il target: open segue e legge.
+    if civis::open("/t60real.txt", civis::O_CREAT | civis::O_TRUNC).is_err() {
+        println!("[usertests] t60: create target FAILED");
+        return false;
+    }
+    if let Ok(fd) = civis::open("/t60real.txt", civis::O_TRUNC) {
+        let w = civis::write_fs(fd, b"linkdata", 8);
+        let _ = civis::close(fd);
+        if w != Ok(8) {
+            println!("[usertests] t60: write target FAILED");
+            return false;
+        }
+    }
+    let fd = match civis::open("/t60link", 0) {
+        Ok(f) => f,
+        Err(e) => {
+            println!("[usertests] t60: open via link = {:?}", e);
+            return false;
+        }
+    };
+    let mut buf = [0u8; 8];
+    let r = civis::read_fs(fd, &mut buf, 8);
+    let _ = civis::close(fd);
+    if r != Ok(8) || &buf != b"linkdata" {
+        println!("[usertests] t60: read via link = {:?}", r);
+        return false;
+    }
+    // Loop: a->b, b->a: open rifiutato (niente hang).
+    if civis::symlink("/t60b", "/t60a").is_err() || civis::symlink("/t60a", "/t60b").is_err() {
+        println!("[usertests] t60: setup loop FAILED");
+        return false;
+    }
+    if civis::open("/t60a", 0).is_ok() {
+        println!("[usertests] t60: open loop ok?!");
+        return false;
+    }
+    // Esistente = EXISTS (link path occupato da file); readlink su file = errore.
+    if civis::symlink("/t60real.txt", "/t60x").is_ok() {
+        println!("[usertests] t60: symlink su esistente ok?!");
+        return false;
+    }
+    if civis::readlink("/t60real.txt").is_ok() {
+        println!("[usertests] t60: readlink su file ok?!");
+        return false;
+    }
+    // Rename del link (sposta il link, mai il target).
+    if civis::rename("/t60link", "/t60link2").is_err() {
+        println!("[usertests] t60: rename link FAILED");
+        return false;
+    }
+    if civis::readlink("/t60link").is_ok()
+        || !matches!(civis::readlink("/t60link2"), Ok(v) if v == b"/t60real.txt")
+    {
+        println!("[usertests] t60: rename link non spostato");
+        return false;
+    }
+    // Cleanup.
+    let _ = civis::remove("/t60link2");
+    let _ = civis::remove("/t60a");
+    let _ = civis::remove("/t60b");
+    let _ = civis::remove("/t60real.txt");
+    true
+}

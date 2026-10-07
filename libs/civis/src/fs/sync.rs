@@ -261,6 +261,62 @@ pub fn rename(old: &str, new: &str) -> Result<(), Error> {
     }
 }
 
+/// S1.1 — `symlink(target, link)`: crea un link simbolico (payload
+/// `link\0target\0`). Il target non e' risolto (dangling ammessi);
+/// FAT/remoti = errore. Errori tipizzati (Exists/NotFound/Invalid/ReadOnly).
+pub fn symlink(link: &str, target: &str) -> Result<(), Error> {
+    session::fs_gate()?;
+    let mut p = alloc::vec::Vec::with_capacity(link.len() + target.len() + 2);
+    p.extend_from_slice(link.as_bytes());
+    p.push(0);
+    p.extend_from_slice(target.as_bytes());
+    p.push(0);
+    if !ring::req_ring_write(R_SYMLINK, p.len() as u64, 0, &p) {
+        return Err(Error::RingFull);
+    }
+    let len = p.len();
+    match session::fs_notify_result(FS_NOTIFY, || {
+        ring::req_ring_write(R_SYMLINK, len as u64, 0, &p)
+    }) {
+        Some((result, _, _)) => {
+            ring::resp_ring_consume(16);
+            session::fs_reply_check(result).map(|_| ())
+        }
+        None => Err(Error::NotReady),
+    }
+}
+
+/// S1.1 — `readlink(path)`: legge il target del link (reply w0 = len +
+/// frame). Non segue (come readlink POSIX); su non-link = errore.
+pub fn readlink(path: &str) -> Result<alloc::vec::Vec<u8>, Error> {
+    session::fs_gate()?;
+    if !ring::req_ring_write(R_READLINK, path.len() as u64, 0, path.as_bytes()) {
+        return Err(Error::RingFull);
+    }
+    match session::fs_notify_result(FS_NOTIFY, || {
+        ring::req_ring_write(R_READLINK, path.len() as u64, 0, path.as_bytes())
+    }) {
+        Some((result, w1, payload_len)) => {
+            let total = match session::fs_reply_check(result) {
+                Ok(v) => v as usize,
+                Err(e) => {
+                    ring::resp_ring_consume(16);
+                    return Err(e);
+                }
+            };
+            let _ = w1;
+            // Consuma SEMPRE l'intero frame (16 + payload_len): parziali
+            // disallineerebbero il ring (stessa disciplina obj_get).
+            let mut buf = alloc::vec::Vec::with_capacity(payload_len);
+            buf.resize(payload_len, 0);
+            ring::resp_ring_read_payload(&mut buf, payload_len);
+            buf.truncate(total.min(payload_len));
+            Ok(buf)
+        }
+        None => Err(Error::NotReady),
+    }
+}
+
 /// Fase 19.2 — metadati di un path (zero kernel: frame R_STAT a cardo, nessun
 /// fd coinvolto). `size` = byte del file (0 per dir/device); `kind` = tipo
 /// (STAT_FILE/DIR/DEVICE); `readonly` = bit 7 (FAT sempre, ramfs mai, device
@@ -283,6 +339,9 @@ impl Stat {
     }
     pub fn is_device(&self) -> bool {
         self.kind & 0x3 == STAT_DEVICE
+    }
+    pub fn is_symlink(&self) -> bool {
+        self.kind & 0x3 == STAT_SYMLINK
     }
 }
 

@@ -100,6 +100,7 @@ fn real_main(_sp: u64) -> ! {
     helpers::report(&mut total, &mut ok, "t57 policy identita' + dinieghi GRANT/PIPE", t_policy::t_policy());
     helpers::report(&mut total, &mut ok, "t58 sys nativo + blake (N0)", t_stable::t_sys_native());
     helpers::report(&mut total, &mut ok, "t59 rename ramfs (move/replace/dir/errori)", t_fs::t_rename());
+    helpers::report(&mut total, &mut ok, "t60 symlink ramfs (follow/loop/rename)", t_fs::t_symlink());
     // t34 per ULTIMO: i drop sono irrevocabili sul canale di usertests.
     helpers::report(&mut total, &mut ok, "t34 diritti per-canale lato server", t_fs::t_rights());
 

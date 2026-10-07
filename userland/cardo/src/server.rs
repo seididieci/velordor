@@ -586,6 +586,9 @@ fn real_main(_sp: u64) -> ! {
             }
             // RENAME: payload "old\0new\0", w0 = lunghezza totale.
             R_RENAME => w0 as usize,
+            // SYMLINK: payload "link\0target\0", w0 = len. READLINK:
+            // payload path, w0 = len (reply a frame dedicato).
+            R_SYMLINK | R_READLINK => w0 as usize,
             R_WRITE | R_RIGHTS_DROP => w1 as usize,
             // LSEEK: payload 1 byte = whence (fd in w0, offset in w1).
             R_LSEEK => 1,
@@ -700,6 +703,18 @@ fn real_main(_sp: u64) -> ! {
                 },
                 Err(_) => true,
             },
+            // SYMLINK: check sul LINK (il target e' opaco, mai confine).
+            // READLINK: check sul path (leggere fuori subtree = bypass).
+            R_SYMLINK | R_READLINK => match core::str::from_utf8(payload) {
+                Ok(p) => {
+                    let link = p.split_once('\0').map(|(l, _)| l).unwrap_or(p);
+                    rights::within_subtree(
+                        rights::rights_subtree(&rights, chan),
+                        rights::normalize_sub_view(link.trim_end_matches('\0')),
+                    )
+                }
+                Err(_) => true,
+            },
             R_MOUNT => match core::str::from_utf8(payload) {
                 Ok(spec) => match spec.split_once('\0') {
                     Some((_, target)) => rights::within_subtree(
@@ -793,6 +808,35 @@ fn real_main(_sp: u64) -> ! {
                             old, new.trim_end_matches('\0'), &mut fat_gen, &mut disk,
                         ),
                         None => Err(ERR_INVALID),
+                    },
+                    Err(_) => Err(ERR_INVALID),
+                }
+            }
+
+            R_SYMLINK => {
+                match core::str::from_utf8(&payload) {
+                    Ok(p) => match p.split_once('\0') {
+                        Some((link, target)) => handlers::handle_symlink(
+                            &mut fs, &mut fat_mounts, &mounts,
+                            link, target.trim_end_matches('\0'), &mut fat_gen, &mut disk,
+                        ),
+                        None => Err(ERR_INVALID),
+                    },
+                    Err(_) => Err(ERR_INVALID),
+                }
+            }
+
+            R_READLINK => {
+                match core::str::from_utf8(&payload) {
+                    Ok(path) => match handlers::handle_readlink(
+                        &mut fs, &mut fat_mounts, &mounts, path, &mut fat_gen, &mut disk,
+                    ) {
+                        Ok(target) => {
+                            rings::resp_ring_write(target.len() as u64, 0, target.as_bytes());
+                            let _ = civis::reply(0, target.len() as u64, 0);
+                            continue;
+                        }
+                        Err(e) => Err(e),
                     },
                     Err(_) => Err(ERR_INVALID),
                 }

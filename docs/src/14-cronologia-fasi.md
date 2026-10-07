@@ -2153,3 +2153,13 @@
           l'arm scattare su op altrui. Da ora: nuovo tag = import + grep
           del warning `unused variable` nel build log. Gate: 5/5 + 7/7 +
           55/55 + 4/4 + 55/55 + 11/11 + shell 10/10, zero FAIL/PANIC/FAULT.
+          S1.1-symlink (R_SYMLINK 0x34 + R_READLINK 0x35, STAT_SYMLINK=3):
+          ramfs FsNode::Symlink + Arca marker `\x00symlink` (solo marker,
+          niente doppioni base); stat=lstat (kind 3), open segue (max 8 hop,
+          relativi vs dir del link); probe-vs-explicit separati in
+          path_readlink (il probe non fallisce mai sui non-link: prima
+          rompeva TUTTI gli open su file esistenti); stat_kind passava solo
+          0/1 (fix: 2 bit intatti); missing-check di ns_rename ignorava i
+          marker (fix). FAT/remoti fuori scope. Test t60 + v56. Gate: 5/5 +
+          7/7 + 56/56 + 4/4 + 56/56 + 11/11 + shell 10/10, zero
+          FAIL/PANIC/FAULT.

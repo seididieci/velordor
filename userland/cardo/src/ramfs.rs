@@ -36,6 +36,9 @@ impl RamHandle {
 pub enum FsNode {
     File { data: Vec<u8>, mode: u32, mtime: u64 },
     Dir { entries: BTreeMap<String, FsNode>, mode: u32, mtime: u64 },
+    /// Symlink S1.1: target opaco (risolto all'open, mai qui). `mode` come
+    /// i file (placeholder Strato 0, mai enforcement).
+    Symlink { target: String, mode: u32, mtime: u64 },
 }
 
 /// Mode Unix di default (placeholder Strato 0, Fase 16b): conservati, MAI
@@ -127,7 +130,9 @@ impl RamFs {
         let node = self.find_or_create(path)?;
         match node {
             FsNode::File { data, .. } => Some(data),
-            FsNode::Dir { .. } => None,
+            // Symlink: mai scrittura sul link (l'handler segue prima);
+            // diretto = rifiuto loud.
+            FsNode::Symlink { .. } | FsNode::Dir { .. } => None,
         }
     }
 
@@ -139,6 +144,7 @@ impl RamFs {
             for node in dir.values() {
                 match node {
                     FsNode::File { data, .. } => *acc += data.len() as u64,
+                    FsNode::Symlink { target, .. } => *acc += target.len() as u64,
                     FsNode::Dir { entries, .. } => sum(entries, acc),
                 }
             }
@@ -198,6 +204,7 @@ impl RamFs {
                 // assente: rifiuto (niente `remove` sotto borrow attivo).
                 let ok = match current.get(part) {
                     Some(FsNode::File { .. }) => true,
+                    Some(FsNode::Symlink { .. }) => true,
                     Some(FsNode::Dir { entries, .. }) => entries.is_empty(),
                     _ => false,
                 };
@@ -279,6 +286,8 @@ impl LocalFs for RamFs {
         match self.find(path) {
             Some(FsNode::File { .. }) => Ok(RamHandle::new(path).ok_or(crate::ERR_INVALID)?),
             Some(FsNode::Dir { .. }) => Err(crate::ERR_ISDIR),
+            // Symlink: l'handler segue prima di aprire; diretto = loud.
+            Some(FsNode::Symlink { .. }) => Err(crate::ERR_INVALID),
             None => Err(crate::ERR_NOTFOUND),
         }
     }
@@ -297,6 +306,7 @@ impl LocalFs for RamFs {
                 Ok(n)
             }
             Some(FsNode::Dir { .. }) => Err(crate::ERR_ISDIR),
+            Some(FsNode::Symlink { .. }) => Err(crate::ERR_INVALID),
             None => Err(crate::ERR_NOTFOUND),
         }
     }
@@ -308,6 +318,7 @@ impl LocalFs for RamFs {
         // Timbro mtime campionato una volta per op (Fase 50).
         let now = crate::wall::wall_secs();
         match self.find_or_create(&path_owned) {
+            Some(FsNode::Symlink { .. }) => return Err(crate::ERR_INVALID),
             Some(FsNode::File { data, mtime, .. }) => {
                 let n = if append {
                     let n = buf.len();
@@ -361,6 +372,14 @@ impl LocalFs for RamFs {
                 readonly: false,
                 mtime: *mtime,
             }),
+            // Symlink: stat = lstat (il link stesso, mai il target: size =
+            // target len, kind 3; l'open segue invece).
+            Some(FsNode::Symlink { target, mtime, .. }) => Ok(Meta {
+                size: target.len() as u64,
+                kind: 3, // symlink (STAT_SYMLINK)
+                readonly: false,
+                mtime: *mtime,
+            }),
             None => Err(crate::ERR_NOTFOUND),
         }
     }
@@ -373,6 +392,7 @@ impl LocalFs for RamFs {
         // Crea la directory (e le intermedie).
         match self.find(path) {
             Some(FsNode::Dir { .. }) => Err(crate::ERR_EXISTS), // gia' esistente.
+            Some(FsNode::Symlink { .. }) => Err(crate::ERR_EXISTS),
             Some(FsNode::File { .. }) => Err(crate::ERR_NOTDIR),
             None => {
                 // Crea ricorsivamente.
@@ -417,6 +437,48 @@ impl LocalFs for RamFs {
         }
     }
 
+    /// Symlink S1.1: crea il link (target opaco, bound chiave come rename).
+    /// Esistente (qualunque tipo) = EXISTS; parent mancante = NOTFOUND.
+    fn symlink(&mut self, link: &str, target: &str) -> Result<(), u64> {
+        let now = crate::wall::wall_secs();
+        let lp = link.trim_start_matches('/');
+        let tp = target.trim_start_matches('/');
+        if lp.is_empty() || tp.is_empty() || lp.len() > 255 || tp.len() > 1024 {
+            return Err(crate::ERR_INVALID);
+        }
+        let (par, leaf) = match lp.rsplit_once('/') {
+            Some((p, l)) if !l.is_empty() => (p, l),
+            None => ("", lp),
+            _ => return Err(crate::ERR_INVALID),
+        };
+        if self.find(lp).is_some() {
+            return Err(crate::ERR_EXISTS);
+        }
+        // Naviga al parent (mai autocreate: parent mancante = NOTFOUND).
+        let mut cur = &mut self.root;
+        if !par.is_empty() {
+            for part in par.split('/') {
+                match cur.get_mut(part) {
+                    Some(FsNode::Dir { entries, .. }) => cur = entries,
+                    _ => return Err(crate::ERR_NOTFOUND),
+                }
+            }
+        }
+        cur.insert(
+            String::from(leaf),
+            FsNode::Symlink { target: String::from(tp), mode: MODE_FILE_DEF, mtime: now },
+        );
+        Ok(())
+    }
+
+    fn readlink(&mut self, rel: &str) -> Result<String, u64> {
+        match self.find(rel.trim_start_matches('/')) {
+            Some(FsNode::Symlink { target, .. }) => Ok(target.clone()),
+            Some(_) => Err(crate::ERR_INVALID), // non-link: mai target inventati
+            None => Err(crate::ERR_NOTFOUND),
+        }
+    }
+
     /// Rename S1.1: sposta il nodo (stesso oggetto, subtree al seguito per
     /// le dir). Regole: file→dir = ISDIR, dir→file = NOTDIR, dir→non-vuota
     /// = EXISTS, assente = NOTFOUND. Niente autocreate dei parent (POSIX:
@@ -458,6 +520,8 @@ impl LocalFs for RamFs {
         // muove).
         let src_kind = match nav(&mut self.root, old_par).and_then(|d| d.get(old_leaf)) {
             Some(FsNode::File { .. }) => 0,
+            // Symlink: si rinomina IL LINK (mai follow, come POSIX).
+            Some(FsNode::Symlink { .. }) => 0,
             Some(FsNode::Dir { entries, .. }) if entries.is_empty() => 1,
             Some(FsNode::Dir { .. }) => 2,
             None => return Err(crate::ERR_NOTFOUND),
@@ -467,6 +531,7 @@ impl LocalFs for RamFs {
         }
         let dst_kind = match nav(&mut self.root, new_par).and_then(|d| d.get(new_leaf)) {
             Some(FsNode::File { .. }) => 0,
+            Some(FsNode::Symlink { .. }) => 0,
             Some(FsNode::Dir { entries, .. }) if entries.is_empty() => 1,
             Some(FsNode::Dir { .. }) => 2,
             None => 3,
@@ -551,6 +616,14 @@ impl crate::provider::LocalFsDyn for RamFs {
 
     fn remove_dyn(&mut self, rel: &str) -> Result<(), u64> {
         <Self as LocalFs>::remove(self, rel)
+    }
+
+    fn symlink_dyn(&mut self, link: &str, target: &str) -> Result<(), u64> {
+        <Self as LocalFs>::symlink(self, link, target)
+    }
+
+    fn readlink_dyn(&mut self, rel: &str) -> Result<String, u64> {
+        <Self as LocalFs>::readlink(self, rel)
     }
 
     fn rename_dyn(&mut self, old: &str, new: &str) -> Result<(), u64> {

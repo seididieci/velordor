@@ -92,6 +92,13 @@ impl ArcaFs {
         if rel.is_empty() {
             return NsKind::Dir { ram_mtime: None };
         }
+        // Link prima dei file (il marker decide, mai la base: la base di
+        // un link non esiste come chiave).
+        if let Some(lk) = link_key(rel) {
+            if crate::btree_drv::ns_stat(eng, &lk).is_some() {
+                return NsKind::Link;
+            }
+        }
         if crate::btree_drv::ns_stat(eng, rel.as_bytes()).is_some() {
             return NsKind::File;
         }
@@ -123,6 +130,12 @@ impl ArcaFs {
         let mut files: Vec<String> = Vec::new();
         let mut dirs: Vec<String> = Vec::new();
         for k in keys.iter() {
+            // Marker symlink: nascosti, la base appare come nome (il tipo
+            // lo dice stat, readdir elenca soli nomi come ramfs).
+            let k: &[u8] = match unmark(k) {
+                Some(base) => base,
+                None => k.as_slice(),
+            };
             let rem = k.strip_prefix(pref.as_slice())?;
             let rem = core::str::from_utf8(rem).ok()?;
             let (head, rest) = Self::split_head(rem);
@@ -209,6 +222,9 @@ impl ArcaFs {
                 ArcaHandle::new(rel).ok_or(crate::ERR_INVALID)
             }
             NsKind::Dir { .. } => Err(crate::ERR_ISDIR),
+            // Symlink: l'handler segue prima di aprire (max 8 hop);
+            // diretto = loud (mai open del blob-target come file).
+            NsKind::Link => Err(crate::ERR_INVALID),
             NsKind::Missing => {
                 if !creat {
                     return Err(crate::ERR_NOTFOUND);
@@ -310,6 +326,13 @@ impl ArcaFs {
                 let mtime = self.dir_mtime(eng, rel, ram_mtime);
                 Ok(Meta { size: 0, kind: 1, readonly: false, mtime })
             }
+            // Symlink: stat = lstat (size/mtime del marker, kind 3).
+            NsKind::Link => {
+                let lk = link_key(rel).ok_or(crate::ERR_INVALID)?;
+                let (size, mtime) =
+                    crate::btree_drv::ns_stat(eng, &lk).ok_or(crate::ERR_NOTFOUND)?;
+                Ok(Meta { size, kind: 3, readonly: false, mtime })
+            }
             NsKind::Missing => Err(crate::ERR_NOTFOUND),
         }
     }
@@ -341,13 +364,55 @@ impl ArcaFs {
         Ok(())
     }
 
+    /// Symlink con motore esplicito (S1.1): crea il marker col target.
+    /// Esistente (file/dir/link/emergente) = EXISTS; bound = INVALID.
+    #[inline(never)]
+    pub fn ns_symlink(&mut self, eng: &mut DiskEngine, link: &str, target: &str) -> Result<(), u64> {
+        if link.is_empty() || target.is_empty() {
+            return Err(crate::ERR_INVALID);
+        }
+        if target.len() > 1024 {
+            return Err(crate::ERR_INVALID);
+        }
+        let lk = link_key(link).ok_or(crate::ERR_INVALID)?;
+        if !matches!(self.classify(eng, link), NsKind::Missing) {
+            return Err(crate::ERR_EXISTS);
+        }
+        crate::btree_drv::ns_put(eng, &lk, 0, target.as_bytes())?;
+        Ok(())
+    }
+
+    /// Readlink con motore esplicito: target del marker o errore (file/dir
+    /// = INVALID, mai target inventati; assente = NOTFOUND).
+    #[inline(never)]
+    pub fn ns_readlink(&mut self, eng: &DiskEngine, rel: &str) -> Result<Vec<u8>, u64> {
+        if rel.is_empty() {
+            return Err(crate::ERR_INVALID);
+        }
+        let lk = link_key(rel).ok_or(crate::ERR_INVALID)?;
+        crate::btree_drv::ns_get(eng, &lk).ok_or_else(|| {
+            if crate::btree_drv::ns_stat(eng, rel.as_bytes()).is_some() {
+                crate::ERR_INVALID
+            } else {
+                crate::ERR_NOTFOUND
+            }
+        })
+    }
+
     /// Remove con motore esplicito: file = delete+commit; dir con figli =
     /// NOTFOUND (come ramfs); dir RAM vuota = tolta dal set; mai-esistita =
-    /// NOTFOUND (mai `Ok` silenzioso).
+    /// NOTFOUND (mai `Ok` silenzioso). Link = cancella il marker (mai il
+    /// target).
     #[inline(never)]
     pub fn ns_remove(&mut self, eng: &mut DiskEngine, rel: &str) -> Result<(), u64> {
         if rel.is_empty() {
             return Err(crate::ERR_INVALID);
+        }
+        if let Some(lk) = link_key(rel) {
+            if crate::btree_drv::ns_stat(eng, &lk).is_some() {
+                crate::btree_drv::ns_delete(eng, &lk)?;
+                return Ok(());
+            }
         }
         if crate::btree_drv::ns_stat(eng, rel.as_bytes()).is_some() {
             crate::btree_drv::ns_delete(eng, rel.as_bytes())?;
@@ -380,9 +445,13 @@ impl ArcaFs {
             return Err(crate::ERR_INVALID);
         }
         if old == new {
-            // No-op identitaria: esiste davvero?
+            // No-op identitaria: esiste davvero (file, dir o link)?
+            let is_link = link_key(old)
+                .map(|lk| crate::btree_drv::ns_stat(eng, &lk).is_some())
+                .unwrap_or(false);
             if crate::btree_drv::ns_stat(eng, old.as_bytes()).is_some()
                 || self.ram_dirs.contains_key(old)
+                || is_link
             {
                 return Ok(());
             }
@@ -403,7 +472,13 @@ impl ArcaFs {
             crate::btree_drv::ns_scan(eng, &new_pref).map(|v| !v.is_empty()).unwrap_or(false)
                 || self.ram_dirs.keys().any(|k| k.len() > new.len() && k.starts_with(new) && k.as_bytes().get(new.len()) == Some(&b'/'));
         let new_is_ramdir = self.ram_dirs.contains_key(new);
-        if !old_is_file && !old_has_kids && !self.ram_dirs.contains_key(old) {
+        // Il marker conta come esistenza (la base di un link non esiste
+        // mai come chiave: senza questo il missing scatta prima del ramo
+        // link sotto).
+        let old_is_link = link_key(old)
+            .map(|lk| crate::btree_drv::ns_stat(eng, &lk).is_some())
+            .unwrap_or(false);
+        if !old_is_file && !old_has_kids && !self.ram_dirs.contains_key(old) && !old_is_link {
             return Err(crate::ERR_NOTFOUND);
         }
         if old_is_file && (new_has_kids || new_is_ramdir) {
@@ -414,6 +489,31 @@ impl ArcaFs {
         }
         if !old_is_file && (new_has_kids) {
             return Err(crate::ERR_EXISTS);
+        }
+        // Link: si sposta IL MARKER (mai follow, mai il target). Dst file
+        // o link = replace; dst dir = ISDIR (come i file).
+        if let Some(old_lk) = link_key(old) {
+            if crate::btree_drv::ns_stat(eng, &old_lk).is_some() {
+                if new_has_kids || new_is_ramdir {
+                    return Err(crate::ERR_ISDIR);
+                }
+                if new_is_file {
+                    crate::btree_drv::ns_delete(eng, new.as_bytes())?;
+                } else if let Some(new_lk) = link_key(new) {
+                    if crate::btree_drv::ns_stat(eng, &new_lk).is_some() {
+                        crate::btree_drv::ns_delete(eng, &new_lk)?;
+                    }
+                }
+                let new_lk = link_key(new).ok_or(crate::ERR_INVALID)?;
+                match eng.rename_key(crate::btree_drv::NS_BUCKET, &old_lk, &new_lk) {
+                    Some(_) => {}
+                    None => return Err(crate::ERR),
+                }
+                if crate::btree_drv::commit(eng) {
+                    return Ok(());
+                }
+                return Err(crate::ERR);
+            }
         }
         if old_is_file {
             // File→dir (ram o emergente, anche vuota in senso chiavi) =
@@ -488,6 +588,31 @@ enum NsKind {
     Missing,
     File,
     Dir { ram_mtime: Option<u64> },
+    /// Symlink S1.1 (solo marker, mai chiave base).
+    Link,
+}
+
+/// Suffisso delle chiavi-marker dei symlink (S1.1): il link `a/b` vive SOLO
+/// come chiave `a/b\x00symlink` col target come valore (niente doppioni
+/// base/marker, niente formato valori nuovo). NUL 0x00 non compare nei path
+/// POSIX: i marker non collidono mai con file veri e si filtrano con
+/// `strip_suffix` in un punto solo.
+const LINK_SUFFIX: &[u8] = b"\x00symlink";
+
+/// Chiave marker di un path (None oltre bound: mai troncamenti).
+fn link_key(rel: &str) -> Option<Vec<u8>> {
+    let mut k = Vec::with_capacity(rel.len() + LINK_SUFFIX.len());
+    k.extend_from_slice(rel.as_bytes());
+    k.extend_from_slice(LINK_SUFFIX);
+    if k.len() > civis::OBJ_KEY_MAX {
+        return None;
+    }
+    Some(k)
+}
+
+/// Base di una chiave marker (None se non e' un marker).
+fn unmark(key: &[u8]) -> Option<&[u8]> {
+    key.strip_suffix(LINK_SUFFIX)
 }
 
 /// Mount Arca + motore globale legati per un'op (56.3): uuid combaciante o
@@ -532,6 +657,14 @@ impl<'e> ArcaWith<'e> {
     }
     fn rename(&mut self, old: &str, new: &str) -> Result<(), u64> {
         self.a.ns_rename(self.eng, old, new)
+    }
+    fn symlink(&mut self, link: &str, target: &str) -> Result<(), u64> {
+        self.a.ns_symlink(self.eng, link, target)
+    }
+    fn readlink(&mut self, rel: &str) -> Result<String, u64> {
+        self.a.ns_readlink(self.eng, rel).and_then(|v| {
+            String::from_utf8(v).map_err(|_| crate::ERR_INVALID)
+        })
     }
     fn statvfs(&mut self) -> Result<StatVfs, u64> {
         self.a.ns_statvfs(self.eng)
@@ -580,6 +713,12 @@ impl LocalFsDyn for ArcaWith<'_> {
     fn rename_dyn(&mut self, old: &str, new: &str) -> Result<(), u64> {
         self.rename(old, new)
     }
+    fn symlink_dyn(&mut self, link: &str, target: &str) -> Result<(), u64> {
+        self.symlink(link, target)
+    }
+    fn readlink_dyn(&mut self, rel: &str) -> Result<String, u64> {
+        self.readlink(rel)
+    }
     fn statvfs_dyn(&mut self, _rel: &str) -> Result<StatVfs, u64> {
         self.statvfs()
     }
@@ -614,6 +753,12 @@ impl LocalFs for ArcaFs {
     }
     fn rename(&mut self, _old: &str, _new: &str) -> Result<(), u64> {
         Err(crate::ERR_READONLY)
+    }
+    fn symlink(&mut self, _link: &str, _target: &str) -> Result<(), u64> {
+        Err(crate::ERR_READONLY)
+    }
+    fn readlink(&mut self, _rel: &str) -> Result<String, u64> {
+        Err(crate::ERR_NOTFOUND)
     }
     fn statvfs(&mut self, _rel: &str) -> Result<StatVfs, u64> {
         Err(crate::ERR_NOTFOUND)
@@ -662,6 +807,12 @@ impl LocalFsDyn for ArcaFs {
     }
     fn rename_dyn(&mut self, old: &str, new: &str) -> Result<(), u64> {
         <Self as LocalFs>::rename(self, old, new)
+    }
+    fn symlink_dyn(&mut self, link: &str, target: &str) -> Result<(), u64> {
+        <Self as LocalFs>::symlink(self, link, target)
+    }
+    fn readlink_dyn(&mut self, rel: &str) -> Result<String, u64> {
+        <Self as LocalFs>::readlink(self, rel)
     }
     fn statvfs_dyn(&mut self, rel: &str) -> Result<StatVfs, u64> {
         <Self as LocalFs>::statvfs(self, rel)

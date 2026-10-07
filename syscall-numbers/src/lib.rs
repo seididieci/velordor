@@ -468,6 +468,13 @@ pub const R_GET_HASH: u32 = 0x25;
 /// 0x30/0x31/0x32 sono FS_REGISTER/FS_BUF_REG/FS_NOTIFY (0x31 ha dirottato
 /// l'handshake dei ring a boot: osservato, mai piu').
 pub const R_RENAME: u32 = 0x33;
+/// Symlink S1.1: R_SYMLINK crea (`link\0target\0`, w0 = len), R_READLINK
+/// legge (`path`, w0 = len; reply w0 = len target + frame col target).
+/// Il target NON e' risolto alla creazione (dangling ammessi come POSIX);
+/// la risoluzione avviene all'open (max 8 hop). FAT: namespace immutabile
+/// (READONLY come rename); remoti: INVALID.
+pub const R_SYMLINK: u32 = 0x34;
+pub const R_READLINK: u32 = 0x35;
 // ── ArcaFS: casa propria (Fase 56.2a) ────────────────────────────────
 // Tag R_OBJ_*/R_SNAP_*/R_ARCA_DEBUG, bound OBJ_*_MAX e formato blocchi
 // (ARCA_*) vivono nel crate `arcafs` (il kernel non li usa — verificato).
@@ -483,6 +490,10 @@ pub const SYNC_PERWRITE: u32 = 2;
 pub const STAT_FILE: u64 = 0;
 pub const STAT_DIR: u64 = 1;
 pub const STAT_DEVICE: u64 = 2;
+/// Symlink (S1.1): quarto tipo nei 2 bit. `stat` NON segue (lstat: riporta
+/// il link); `open` segue (fino a 8, oltre = INVALID come ELOOP senza numero
+/// dedicato). Mapping al bordo POSIX (S_IFLNK) in S1.3.
+pub const STAT_SYMLINK: u64 = 3;
 pub const STAT_READONLY: u64 = 0x80;
 /// Flag `open`: crea il file se non esiste (Fase 18.2: prima l'open creava
 /// sempre su ramfs ignorando i flag — ora POSIX: senza O_CREAT il file deve

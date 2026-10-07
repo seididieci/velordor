@@ -1061,6 +1061,25 @@ fn real_main(_sp: u64) -> ! {
         c.ok("posix rename file+dir", v55);
         let _ = civis::remove("/arca/rn2/b.txt");
         let _ = civis::remove("/arca/rn2");
+        // 56. symlink S1.1 su namespace Arca: create/readlink/follow/stat
+        // kind, dangling, cleanup (stesso mount, chiavi isolate `s56`).
+        let v56 = civis::mkdir("/arca/s56").is_ok()
+            && civis::symlink("/arca/s56/link", "/arca/s56/real.txt").is_ok()
+            && matches!(civis::readlink("/arca/s56/link"), Ok(v) if v == b"/arca/s56/real.txt")
+            && {
+                let mut st = civis::Stat { size: 0, kind: 0, readonly: false, mtime: 0 };
+                civis::stat("/arca/s56/link", &mut st).is_ok() && st.is_symlink()
+            }
+            && civis::open("/arca/s56/link", 0).is_err()
+            && wr_all("/arca/s56/real.txt", civis::O_CREAT, b"arc-link")
+            && matches!(rd_all("/arca/s56/link"), Some(v) if v.as_slice() == b"arc-link")
+            && civis::symlink("/arca/s56/dang", "/arca/s56/altri").is_ok()
+            && civis::open("/arca/s56/dang", 0).is_err();
+        c.ok("posix symlink + follow", v56);
+        let _ = civis::remove("/arca/s56/link");
+        let _ = civis::remove("/arca/s56/dang");
+        let _ = civis::remove("/arca/s56/real.txt");
+        let _ = civis::remove("/arca/s56");
         // Cleanup best-effort (il volume resta pulito per i run dopo).
         let _ = civis::remove("/arca/keep/v");
         let _ = civis::remove("/arca/keep");

@@ -36,6 +36,17 @@ pub fn handle_open(
     let trunc = flags & civis::O_TRUNC != 0;
     let append = flags & civis::O_APPEND != 0;
 
+    // S1.1: segue i symlink (max 8 hop) prima del routing — tranne i path
+    // remoti (driver opachi, mai link). Il probe e' None per i non-link
+    // (mai errore spurio: solo il routing fallito resta Err).
+    let owned;
+    let path = if mount_legacy::resolve_mount(path, mounts).is_none() {
+        owned = follow_links(fs, mounts_fat, mounts, path, fgen, disk)?;
+        owned.as_str()
+    } else {
+        path
+    };
+
     // Cerca nei mount point registrati (vela, console, block, futuri driver).
     if let Some((driver_chan, rel)) = mount_legacy::resolve_mount(path, mounts) {
         // (Ramo device invariato: gli errori dei driver restano opachi —
@@ -593,7 +604,9 @@ pub fn stat_reply(rings: &BTreeMap<u64, (u64, u64)>, chan: u64, size: u64, kind:
 /// ignorato (era il caso prima del wiring FAT).
 #[inline(never)]
 fn stat_kind(meta: &crate::provider::Meta) -> u64 {
-    let base = if meta.kind == 1 { civis::STAT_DIR } else { civis::STAT_FILE };
+    // S1.1: passa i 2 bit di tipo intatti (file/dir/device/symlink=3) +
+    // bit readonly. Prima collassava tutto a file/dir (il symlink spariva).
+    let base = (meta.kind & 0x3) as u64;
     if meta.readonly {
         base | civis::STAT_READONLY
     } else {
@@ -1050,6 +1063,213 @@ pub fn handle_rename(
             Ok(0)
         }
         _ => Err(ERR_INVALID),
+    }
+}
+
+/// Legge il target di un link SENZA seguire (S1.1): stesso routing degli
+/// open locali (provider via trait, ramfs radice, remoti/FAT = errore).
+/// `probe` = uso interno del follow: qualunque esito non-link (file, dir,
+/// assente, FAT, driver) diventa `Ok(None)` — solo gli errori di routing
+/// restano Err. `probe = false` (readlink esplicita): file/dir = INVALID
+/// (mai target inventati), assente = NOTFOUND, FAT/remoti = errore.
+#[inline(never)]
+fn path_readlink(
+    fs: &mut ramfs::RamFs,
+    mounts_fat: &mut Vec<mount::FsMount>,
+    mounts: &[mount_legacy::Mount],
+    path: &str,
+    fgen: &mut u64,
+    disk: &mut Option<btree_drv::DiskEngine>,
+    probe: bool,
+) -> Result<Option<String>, u64> {
+    // Driver opachi e FAT (niente link): probe = None, esplicita = errore.
+    if mount_legacy::resolve_mount(path, mounts).is_some() {
+        return if probe { Ok(None) } else { Err(ERR_INVALID) };
+    }
+    if let Some((mid, rel)) = mount::resolve_fsmount(mounts_fat, path, fgen) {
+        let m = mount::by_id_mut(mounts_fat, mid).ok_or(ERR_NOTFOUND)?;
+        if m.is_provider() {
+            let r = if let Some(mut w) = m.arca_with(disk.as_mut()) {
+                w.readlink_dyn(rel)
+            } else if let Some(mut d) = m.local_dyn() {
+                d.readlink_dyn(rel)
+            } else {
+                return Err(ERR);
+            };
+            return match r {
+                Ok(t) => Ok(Some(t)),
+                Err(_) if probe => Ok(None),
+                Err(e) => Err(e),
+            };
+        }
+        return if probe { Ok(None) } else { Err(ERR_READONLY) };
+    }
+    match mount_legacy::resolve_local(mounts_fat, path).ok_or(ERR_NOTFOUND)? {
+        mount_legacy::FsKind::Ram => match crate::provider::LocalFs::readlink(fs, path) {
+            Ok(t) => Ok(Some(t)),
+            Err(_) if probe => Ok(None),
+            Err(e) => Err(e),
+        },
+        _ => Err(ERR_INVALID),
+    }
+}
+
+/// Stat lstat di un path con lo stesso routing di `path_readlink` (S1.1):
+/// serve a `handle_readlink` per distinguere file/dir esistenti (INVALID)
+/// dai path mancanti (NOTFOUND). Remoti = INVALID (driver opachi).
+#[inline(never)]
+fn path_stat(
+    fs: &mut ramfs::RamFs,
+    mounts_fat: &mut Vec<mount::FsMount>,
+    mounts: &[mount_legacy::Mount],
+    path: &str,
+    fgen: &mut u64,
+    disk: &mut Option<btree_drv::DiskEngine>,
+    out: &mut crate::provider::Meta,
+) -> Result<(), u64> {
+    if mount_legacy::resolve_mount(path, mounts).is_some() {
+        return Err(ERR_INVALID);
+    }
+    if let Some((mid, rel)) = mount::resolve_fsmount(mounts_fat, path, fgen) {
+        let m = mount::by_id_mut(mounts_fat, mid).ok_or(ERR_NOTFOUND)?;
+        if m.is_provider() {
+            if let Some(mut w) = m.arca_with(disk.as_mut()) {
+                *out = w.stat_dyn(rel)?;
+            } else if let Some(mut d) = m.local_dyn() {
+                *out = d.stat_dyn(rel)?;
+            } else {
+                return Err(ERR);
+            }
+            return Ok(());
+        }
+        // FAT: stat via trait (file/dir con metadati veri).
+        *out = mount::by_id_mut(mounts_fat, mid)
+            .ok_or(ERR)?
+            .fat_mut()
+            .ok_or(ERR)?
+            .stat(rel)
+            .map_err(|_| ERR_NOTFOUND)?;
+        return Ok(());
+    }
+    match mount_legacy::resolve_local(mounts_fat, path).ok_or(ERR_NOTFOUND)? {
+        mount_legacy::FsKind::Ram => {
+            *out = crate::provider::LocalFs::stat(fs, path)?;
+            Ok(())
+        }
+        _ => Err(ERR_INVALID),
+    }
+}
+
+/// Risolve i symlink di `path` (S1.1, follow POSIX all'open/stat): fino a 8
+/// hop, target relativi contro la dir del link. Ritorna il path risolto
+/// (sempre assoluto, allocato) o l'errore: loop oltre 8 = INVALID (ELOOP
+/// senza numero dedicato, mai hang), link a vuoto = NOTFOUND dal livello
+/// sotto. Usato da open (segue) — stat NON segue (lstat).
+#[inline(never)]
+fn follow_links(
+    fs: &mut ramfs::RamFs,
+    mounts_fat: &mut Vec<mount::FsMount>,
+    mounts: &[mount_legacy::Mount],
+    path: &str,
+    fgen: &mut u64,
+    disk: &mut Option<btree_drv::DiskEngine>,
+) -> Result<String, u64> {
+    let mut cur = String::from(path);
+    for _ in 0..8 {
+        match path_readlink(fs, mounts_fat, mounts, &cur, fgen, disk, true)? {
+            Some(target) => {
+                if target.starts_with('/') {
+                    cur = target;
+                } else {
+                    // Relativo alla dir del link (mai oltre la root: i `..`
+                    // restano testuali, la normalizzazione e' del chiamante
+                    // come per gli altri path).
+                    match cur.rsplit_once('/') {
+                        Some((dir, _)) if !dir.is_empty() => {
+                            cur = String::from(dir);
+                            cur.push('/');
+                            cur.push_str(&target);
+                        }
+                        _ => {
+                            cur = String::from("/");
+                            cur.push_str(&target);
+                        }
+                    }
+                }
+            }
+            None => return Ok(cur),
+        }
+    }
+    Err(ERR_INVALID) // oltre 8 hop: loop
+}
+
+/// Crea un symlink (S1.1, `R_SYMLINK`): solo mount Local/Arca/ramfs (stessa
+/// struttura di handle_rename senza il secondo capo: il target non si
+/// risolve mai qui). FAT/remoti = rifiuto. Ritorna Ok(0).
+#[inline(never)]
+pub fn handle_symlink(
+    fs: &mut ramfs::RamFs,
+    mounts_fat: &mut Vec<mount::FsMount>,
+    mounts: &[mount_legacy::Mount],
+    link: &str,
+    target: &str,
+    fgen: &mut u64,
+    disk: &mut Option<btree_drv::DiskEngine>,
+) -> Result<u64, u64> {
+    if link.is_empty() || target.is_empty() || link.len() > MAX_PATH || target.len() > 1024 {
+        return Err(ERR_INVALID);
+    }
+    if mount_legacy::resolve_mount(link, mounts).is_some() {
+        return Err(ERR_INVALID);
+    }
+    if let Some((mid, rel)) = mount::resolve_fsmount(mounts_fat, link, fgen) {
+        let m = mount::by_id_mut(mounts_fat, mid).ok_or(ERR_NOTFOUND)?;
+        if m.is_provider() {
+            if let Some(mut w) = m.arca_with(disk.as_mut()) {
+                w.symlink_dyn(rel, target)?;
+                return Ok(0);
+            }
+            let d = m.local_dyn().ok_or(ERR)?;
+            d.symlink_dyn(rel, target)?;
+            return Ok(0);
+        }
+        return Err(ERR_READONLY);
+    }
+    match mount_legacy::resolve_local(mounts_fat, link).ok_or(ERR_NOTFOUND)? {
+        mount_legacy::FsKind::Ram => {
+            crate::provider::LocalFs::symlink(fs, link, target)?;
+            Ok(0)
+        }
+        _ => Err(ERR_INVALID),
+    }
+}
+
+/// Legge un symlink (S1.1, `R_READLINK`): ritorna il target (il chiamante
+/// scrive il frame). Stesso routing di readlink interno.
+#[inline(never)]
+pub fn handle_readlink(
+    fs: &mut ramfs::RamFs,
+    mounts_fat: &mut Vec<mount::FsMount>,
+    mounts: &[mount_legacy::Mount],
+    path: &str,
+    fgen: &mut u64,
+    disk: &mut Option<btree_drv::DiskEngine>,
+) -> Result<String, u64> {
+    if path.is_empty() || path.len() > MAX_PATH {
+        return Err(ERR_INVALID);
+    }
+    match path_readlink(fs, mounts_fat, mounts, path, fgen, disk, false)? {
+        Some(t) => Ok(t),
+        // Non-link: se esiste e' file/dir (INVALID, mai target inventati),
+        // se manca NOTFOUND — distinguiamo con una stat leggera (lstat:
+        // non segue, il link stesso e' gia' escluso dal ramo sopra).
+        None => {
+            let mut st = crate::provider::Meta { size: 0, kind: 0, readonly: false, mtime: 0 };
+            match path_stat(fs, mounts_fat, mounts, path, fgen, disk, &mut st) {
+                Ok(()) => Err(ERR_INVALID),
+                Err(_) => Err(ERR_NOTFOUND),
+            }
+        }
     }
 }
 

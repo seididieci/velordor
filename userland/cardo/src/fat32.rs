@@ -123,6 +123,15 @@ impl<B: BlockSource> crate::provider::LocalFs for Fat32<B> {
         // rename su FAT e' fuori scope (namespace immutabile come mkdir).
         Err(crate::ERR_READONLY)
     }
+
+    fn symlink(&mut self, _link: &str, _target: &str) -> Result<(), u64> {
+        // FAT non ha symlink (fuori scope come rename).
+        Err(crate::ERR_READONLY)
+    }
+
+    fn readlink(&mut self, _rel: &str) -> Result<alloc::string::String, u64> {
+        Err(crate::ERR_NOTFOUND)
+    }
 }
 
 // ── Implementazione LocalFsDyn per Fat32 (Fase 48 wiring, Fase 49 handle
@@ -179,5 +188,13 @@ impl<B: BlockSource> crate::provider::LocalFsDyn for Fat32<B> {
 
     fn rename_dyn(&mut self, old: &str, new: &str) -> Result<(), u64> {
         <Self as crate::provider::LocalFs>::rename(self, old, new)
+    }
+
+    fn symlink_dyn(&mut self, link: &str, target: &str) -> Result<(), u64> {
+        <Self as crate::provider::LocalFs>::symlink(self, link, target)
+    }
+
+    fn readlink_dyn(&mut self, rel: &str) -> Result<alloc::string::String, u64> {
+        <Self as crate::provider::LocalFs>::readlink(self, rel)
     }
 }
