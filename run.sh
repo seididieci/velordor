@@ -49,7 +49,10 @@ bash scripts/inject-bins.sh
 # evitare collisioni con arca.img — il kernel sceglie la root per UUID (mai
 # per lettera/scan). Le derivate sono copie di blocchi del volume originale:
 # NON vanno seedate a loro volta.
-if [ "${ARCA_IMG:-0}" = "1" ]; then
+# S1.2: le derivate MBR/GPT sono cablate a 32 MiB (build-arca-part.sh):
+# con volumi grandi si saltano (fail-loud dentro gli script, mai immagini
+# a meta': i test 12-13 restano adaptively-PASS come senza quarto drive).
+if [ "${ARCA_IMG:-0}" = "1" ] && [ "${ARCA_SIZE_MIB:-32}" = "32" ]; then
     ./scripts/build-arca-part.sh
     python3 ./scripts/build-arca-gpt.sh
     # UUID distinti per partizione MBR (LBA63) e GPT (LBA64).
@@ -77,7 +80,9 @@ fi
 # manuali — mount-in-partizione coperto via GPT, vedi 11-testing).
 # La suite cerca i volumi via magic/UUID, mai per lettera.
 DRIVES="$DRIVES -drive file=userland/disk/arca.img,format=raw,if=ide"
-if [ "${ARCA_IMG:-0}" = "1" ]; then
+# S1.2: quarto drive solo se la derivata esiste davvero (a size non-default
+# non viene generata: vedi sopra; QEMU fallirebbe su file assente).
+if [ "${ARCA_IMG:-0}" = "1" ] && [ -f userland/disk/arca-gpt.img ]; then
     DRIVES="$DRIVES -drive file=userland/disk/arca-gpt.img,format=raw,if=ide"
 fi
 # Fase 2 (root su volume): passa la cmdline `-append` a QEMU. Il kernel legge
@@ -93,8 +98,9 @@ fi
 # shellcheck disable=SC2086
 # S-T (T2): FSGSBASE per la TLS user (rdfsbase/wrfsbase da ring 3). Solo
 # questo flag oltre qemu64: niente altro cambia per gli altri test.
+# S1.2: RAM parametrica (default 256M: gate veloce; multi-GB per S1.3).
 exec qemu-system-x86_64 \
-    -m 256M \
+    -m ${RUN_MEM:-256M} \
     -cpu qemu64,+fsgsbase \
     -display "$DISPLAY" \
     -serial stdio \

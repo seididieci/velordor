@@ -247,7 +247,8 @@ pub fn bind(mut store: VolumeStore) -> Option<DiskEngine> {
         }
         // Orphan-GC SEMPRE al load-bind (anche pulito: superset della spec,
         // deterministico senza dipendere dal timing del kill), poi commit
-        // (chiude DIRTY e fissa la generazione di recovery).
+        // (chiude DIRTY e fissa la generazione di recovery). S1.2: il walk
+        // e' CPU-only (niente I/O per blocco), scala ai GB senza costi.
         let n_orph = match gc_run(&mut eng) {
             Some(n) => n,
             None => {
@@ -285,7 +286,10 @@ fn gc_collect(eng: &mut DiskEngine) -> Option<Vec<u64>> {
     let mut free = eng.store.vol().freelist_blocks();
     free.sort_unstable();
     let high = eng.store.vol().stats().0;
-    let mut probe = format::boxed_node();
+    // S1.2: niente probe di lettura per blocco (era I/O pura sprecata: la
+    // decisione non dipende dalla leggibilita' — irraggiungibile = orfano
+    // comunque). Il walk resta CPU-only (sort + binary search) e scala a
+    // volumi da GB; la GC resta SEMPRE al load-bind come da 56.2c.
     let mut orphans = Vec::new();
     let mut n = 1u64;
     while n < high {
@@ -293,8 +297,6 @@ fn gc_collect(eng: &mut DiskEngine) -> Option<Vec<u64>> {
             || reach.binary_search(&n).is_ok()
             || free.binary_search(&n).is_ok();
         if !known {
-            // Leggibile o no: irraggiungibile = orfano (vedi sopra).
-            let _ = eng.store.vol().read_node(n, &mut probe);
             orphans.push(n);
         }
         n += 1;

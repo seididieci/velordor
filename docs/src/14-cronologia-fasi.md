@@ -2179,3 +2179,13 @@
           parse ottale. Test t62 (mode varie incluse 000 senza enforcement).
           Gate: 5/5 + 7/7 + 56/56 + 4/4 + 58/58 + 11/11 + shell 10/10, zero
           FAIL/PANIC/FAULT.
+          S1.2 sizing (volumi grandi + RAM multi-GB): ARCA_SIZE_MIB (default
+          32; derivate MBR/GPT solo a 32, oltre si saltano con skip del
+          quarto drive) + RUN_MEM (default 256M). Scoperta: il probe
+          read_node nel walk orphan-GC era I/O pura sprecata (decisione
+          indipendente dalla leggibilita') — rimosso, la GC resta SEMPRE al
+          load-bind e scala ai GB (CPU-only). Verifiche: volume 1 GB
+          creato/seedato/montato come root + gate verde; gate verde a 4 GB;
+          gate verde 4G+1GB al rerun (un flake content_hash/tamper al primo
+          tentativo sotto il carico massimo — stessa famiglia v29/v38,
+          sotto monitoraggio). Nessun test nuovo (configurazioni, non fasi).
