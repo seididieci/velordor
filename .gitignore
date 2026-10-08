@@ -39,3 +39,6 @@ docs/book/
 # Python bytecode (harness di test)
 __pycache__/
 *.pyc
+
+# Output PAL std (S1.3): sysroot + hello ricompilabili via scripts/build-pal.sh.
+pal/build/

@@ -74,3 +74,4 @@
 - [ADR-0044: Quota e subvolumi ArcaFS — budget per bucket + ERR_NOSPC (A3)](./adr/0044-arca-quota-subvolumi.md)
 - [ADR-0045: Self-hosting rustc — survey S0, gap PAL + scala S1…Sn](./adr/0045-selfhosting-s0.md)
 - [ADR-0046: Thread kernel 1:1 + TLS + futex (S-T)](./adr/0046-thread-kernel-futex.md)
+- [ADR-0047: PAL std Velordo — hello std nativo (S1.3)](./adr/0047-pal-std-velordo.md)

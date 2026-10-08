@@ -169,6 +169,15 @@ Voci con scope e vittoria dichiarati (non date).
        thread/TLS/futex; DEFER: net, backtrace, dynamic-lib); sizing
        (hello ~85 MB RSS, sysroot ~200–400 MB → volumi/RAM da crescere).
        Prossimo: S1 (MUST senza thread + PAL single-thread).
+- [x] **S1.3 PAL std Velordo + hello nativo** (chiusa, ADR-0047):
+       `target_os = "velordo"` (`singlethread`, liste `no_threads`),
+       alloc bump su sbrk, console su SYS_WRITE, Instant su ticks, RDRAND,
+       `_start`+`lang_start`, sysroot assemblato (rlib+rmeta), hello std
+       (println/Vec/Mutex/HashMap/Instant) verde via test-shell-std.py
+       (6/6, fuori gate default con SKIP). Rinviati a S2: thread/fs/net/
+       SystemTime/test-harness, `singlethread = false`.
+       Vittoria conseguita: std gira nativo. Prossimo: S2 (sysroot nativo
+       + rustc).
 - [x] **S-T thread kernel 1:1 + TLS + futex** (chiusa, ADR-0046): thread =
        PCB con gruppo (cr3/canali/fd/heap/VMA condivisi col leader, stack/
        TSS/FS/coda propri); pool 32→128 (bitmask u128, TSS pool, VMA 64);

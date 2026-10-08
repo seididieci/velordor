@@ -46,6 +46,10 @@ mcopy -i "$IMG" testland/build/userforeign.bin  ::/test/foreign.bin  || exit 1
 # Suite della personalita' POSIX (Fase 58.5, ADR-0041): binario separato in
 # flavours/posix/tests/build (dest 8.3 "posixtst").
 mcopy -i "$IMG" flavours/posix/tests/build/userposixtests.bin ::/test/posixtst.bin || exit 1
+# Hello std nativo (S1.3): solo se compilato via scripts/build-pal.sh.
+if [ -f pal/build/hello-std.bin ]; then
+    mcopy -i "$IMG" pal/build/hello-std.bin ::/test/stdhello.bin || exit 1
+fi
 # Script shell per `source` (velocizzazione test: 1 riga digitata invece di N
 # comandi via sendkey) + pilota del builtin permanente. Nomi 8.3 come i .bin
 # (il FAT non ha LFN: oltre 8+3 mcopy fallisce loud, mai nomi troncati in

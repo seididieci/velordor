@@ -2189,3 +2189,13 @@
           gate verde 4G+1GB al rerun (un flake content_hash/tamper al primo
           tentativo sotto il carico massimo — stessa famiglia v29/v38,
           sotto monitoraggio). Nessun test nuovo (configurazioni, non fasi).
+          S1.3 PAL std + hello nativo (ADR-0047): target_os velordo con
+          singlethread + no_threads, alloc bump/sbrk, console SYS_WRITE,
+          Instant/ticks, RDRAND, _start→lang_start, sysroot rlib+rmeta,
+          hello (println/Vec/Mutex/HashMap/Instant) verde 6/6 via
+          test-shell-std.py (fuori gate, SKIP se assente). Lezioni build:
+          -Zforce-unstable-if-unmarked obbligatorio (hashbrown, come Xous
+          #133857), niente crate `test` (restricted_std), rmeta accanto ai
+          rlib (embed-metadata=no), panic=abort solo per il target.
+          Rinviati a S2: thread/fs/net/SystemTime. Gate invariato verde
+          (5/5 + 7/7 + 56/56 + 4/4 + 58/58 + 11/11 + shell 10/10).

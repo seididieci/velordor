@@ -86,6 +86,13 @@ seed_bin testland/build/userdemo.bin test/demo.bin
 seed_bin testland/build/userbench.bin test/bench.bin tst test/bench.bin
 seed_bin testland/build/userforeign.bin test/foreign.bin
 seed_bin flavours/posix/tests/build/userposixtests.bin test/posixtst.bin tst test/posixtst.bin
+# Hello std nativo (S1.3): solo se compilato via scripts/build-pal.sh (fuori
+# dal gate default: rust-lang/rust + ~10 min di build). Niente fail-loud qui:
+# il gate non dipende dalla PAL.
+if [ -f "$ROOT/pal/build/hello-std.bin" ]; then
+    SEED_NS+=( "ns:test/stdhello.bin=$ROOT/pal/build/hello-std.bin" )
+    echo "[arca] + stdhello (PAL)"
+fi
 # Script shell /test/sh (stessi di inject-bins.sh: *.txt + *.sh).
 for s in scripts/sh/*.txt scripts/sh/*.sh; do
     if [ ! -f "$ROOT/$s" ]; then
