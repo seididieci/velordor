@@ -718,14 +718,14 @@ fn run_dupsibclaim(nonce: u64) -> (bool, usize) {
 /// intatto) e verifica che lseek venga rifiutato con Failed (il choke
 /// centrale risponde ERR generico). Ritorna (ok, detail).
 fn run_seekdeny() -> (bool, usize) {
-    let fd = match civis::open("/t54seek.txt", civis::O_CREAT) {
+    let fd = match civis::open("/t54seek.txt", civis::OPEN_CREATE) {
         Ok(f) => f,
         Err(_) => return (false, 0),
     };
     if civis::rights_drop(civis::RIGHTS_ALL & !civis::RIGHTS_SEEK, None).is_err() {
         return (false, 1);
     }
-    let r = civis::lseek(fd, 0, civis::SEEK_SET);
+    let r = civis::lseek(fd, 0, civis::SEEK_START);
     let _ = civis::close(fd);
     match r {
         Err(civis::Error::Failed) => (true, 0),
@@ -745,7 +745,7 @@ fn run_grantdeny() -> (bool, usize) {
         return (false, detail);
     }
     detail |= 1;
-    let fd = match civis::open("/t57grant.txt", civis::O_CREAT) {
+    let fd = match civis::open("/t57grant.txt", civis::OPEN_CREATE) {
         Ok(f) => f,
         Err(_) => return (false, detail),
     };
@@ -772,7 +772,7 @@ fn run_grantdeny() -> (bool, usize) {
     // WRITE e' intatto, quindi write+read-back devono funzionare.
     let mut b = [0u8; 4];
     if civis::write_fs(fd, b"qwer", 4) == Ok(4)
-        && civis::lseek(fd, 0, civis::SEEK_SET).is_ok()
+        && civis::lseek(fd, 0, civis::SEEK_START).is_ok()
         && civis::read_fs(fd, &mut b, 4) == Ok(4)
         && b == *b"qwer"
     {

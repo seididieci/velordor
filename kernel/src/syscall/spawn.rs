@@ -128,13 +128,14 @@ pub(super) fn sys_spawn_image(img_ptr: u64, img_len: usize, meta_ptr: u64, meta_
     }
 }
 
-/// fork() (Fase 34, ADR-0024): duplica il chiamante in COW. Nessun argomento.
-/// Ritorna al padre `(pid_figlio, canale_nascita)` — pid in `rax`, canale in
-/// `rdi` via multi-registro (pattern `ring_alloc`/`ps_info`); al figlio `(0,
-/// canale)` (il figlio usa il canale 0 = `CHANNEL_PARENT`). -1 se non c'e' un
-/// PID libero, il pool canali e' esaurito o l'OOM colpisce il walk/stack/TSS.
-pub(super) fn sys_fork() -> i64 {
-    match crate::ordo::sched::fork_current() {
+/// spawn_copy (Fase 34, ADR-0024): duplica il chiamante in COW. Nessun
+/// argomento. Ritorna al padre `(pid_figlio, canale_nascita)` — pid in `rax`,
+/// canale in `rdi` via multi-registro (pattern `ring_alloc`/`ps_info`); al
+/// figlio `(0, canale)` (il figlio usa il canale 0 = `CHANNEL_PARENT`). -1 se
+/// non c'e' un PID libero, il pool canali e' esaurito o l'OOM colpisce il
+/// walk/stack/TSS.
+pub(super) fn sys_spawn_copy() -> i64 {
+    match crate::ordo::sched::spawn_copy_current() {
         Some((pid, chan)) => super::dispatch::apply_ipc(crate::ordo::sched::IpcResult {
             rax: pid as i64,
             rdi: chan as u64,

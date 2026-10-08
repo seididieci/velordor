@@ -24,6 +24,7 @@ NEW_FILES = [
     "sys/thread/velordo.rs",
     "sys/io/error/velordo.rs",
     "os/velordo/mod.rs",
+    "os/velordo/os_str.rs",
 ]
 
 # (file-relativo-a-std/src, anchor, inserimento): anchor deve occorrere UNA volta.

@@ -81,7 +81,7 @@ La numerazione e' definita nel dispatch di `syscall_handler` in `kernel/src/sysc
 | Num | Syscall | Note |
 |-----|---------|------|
 | 0 | `exit(code)` | termina il processo corrente (`sched::exit_current`) |
-| 2 | `write(fd, buf, count)` | fd 1/2 → seriale; altri fd → `-1` |
+| 2 | `write(con, buf, count)` | `CONSOLE_OUT`/`CONSOLE_ERR` → seriale; altre maniglie → `-1` (non fd POSIX) |
 | 3-7 | (ritirate) | erano `open/read/write_fs/close/readdir` kernel-side; dalla Fase 9.6 sono IPC dirette client→cardo (wrapper `civis` su ring, Fase 10.2) |
 | 8 | `getpid()` | id del processo corrente |
 | 16 | `send(channel, tag, w0, w1)` | IPC per canale (0 = parent), Fase 7+13 |
@@ -111,11 +111,11 @@ La numerazione e' definita nel dispatch di `syscall_handler` in `kernel/src/sysc
 | 42 | `shm_create(len)` | crea una regione di memoria condivisa (Fase 30, max 256 KiB, frame contigui azzerati) → id (>= 1) o -1 |
 | 43 | `shm_map(id, hint, prot, flags)` | mappa la regione condivisa `id` come VMA (prot R/RW, PTE non-owned pre-materializzate): le pagine sono le stesse per tutti i mappatori (scritture visibili); refcount, a 0 i frame sono liberati; con `MAP_COW` (Fase 33, solo `PROT_READ`) le pagine sono `RO`+`COW` (stessi frame finche' nessuno scrive, copia privata al primo write) con refcount per-frame; ritorna la base o -1 |
 | 44 | `text_stats()` | contatori shared text (Fase 32, debug/test): `hits` in rax, `misses` in rdi, `live` in rsi; dalla Fase 33 `rdx` = fault COW gestiti (`cow_count`) |
-| 45 | `fork()` | duplica il chiamante in COW (Fase 34, nessun argomento): padre `(pid_figlio, canale)` (rax + rdi multi-registro), figlio `(0, canale)`; -1 su PID/canali/OOM esauriti |
+| 45 | `spawn_copy()` | figlio-copia in COW (Fase 34, nessun argomento): padre `(pid_figlio, canale)` (rax + rdi multi-registro), figlio `(0, canale)`; -1 su PID/canali/OOM esauriti |
 | 46 | `peer_pid(chan)` | pid del peer del canale `chan` (0 = nascita), o -1 (Fase 35, hardening: i server attribuiscono le richieste; abilita la policy `FS_REGISTER`) |
 | 47 | `peer_info(chan)` | hash dell'immagine del peer del canale `chan` (0 = nascita): 0 + hash in rdi, o -1 (Fase 36, identita' misurata: policy su identita' in init/cardo) |
 | 48 | `exec_image(img, len, args, argslen)` | sostituisce l'immagine del chiamante (Fase 37, exec in-place): stesso PID/canali, nuovo address space + stack argv+env stile Linux (`args` = blocco `[argc:8][envc:8][argv][magic?][env]` entro `ARGS_MAX`, 0/0 = argc=0; env = byte opachi, kernel neutro — ADR-0033), hash rimisurato; mai ritorno (salta all'entry), -1 a validazione fallita (processo intatto) |
-| 49 | `dma_alloc(pages)` | alloca `pages` (1..=`DMA_PAGES_MAX`) frame contigui azzerati per DMA Bus-Master (Fase 38.1): mappa RW/NX a `USER_DMA_VA`, ritorna il fisico base (il device vuole phys per PRD/BMIBA); single-slot (seconda alloc = -1), free a teardown/exec, mai ereditata dal fork |
+| 49 | `dma_alloc(pages)` | alloca `pages` (1..=`DMA_PAGES_MAX`) frame contigui azzerati per DMA Bus-Master (Fase 38.1): mappa RW/NX a `USER_DMA_VA`, ritorna il fisico base (il device vuole phys per PRD/BMIBA); single-slot (seconda alloc = -1), free a teardown/exec, mai ereditata dal figlio-copia |
 | 50 | `suspend(pid)` | congela un processo user (Fase 44a, job control, ADR-0035): fuori dalle ready queue finche' resume (i wake lo saltano, i messaggi restano in coda); meccanismo neutro. 0 se sospeso (idempotente), -1 se non sospendibile (init/kernel/se'/non-figlio/terminato) |
 | 51 | `resume(pid)` | rimette in schedulazione un sospeso (Fase 44a): no-op ok se running; un bloccato con coda non vuota si sveglia subito. Stessi gate di `suspend` |
 
@@ -238,7 +238,7 @@ extern "C" fn syscall_handler() -> i64 {
 | `shm_create` | 42 | Crea una regione di memoria condivisa (Fase 30) → id |
 | `shm_map` | 43 | Mappa una regione condivisa (Fase 30) → base (zero-copy tra processi) |
 | `shm_map_cow` | 43 | Mappa una regione in COW (Fase 33, `MAP_COW`, solo `PROT_READ`) → base (copia privata al primo write) |
-| `fork` | 45 | Duplica il processo in COW (Fase 34) → padre `(pid, chan)`, figlio `(0, chan)` |
+| `spawn_copy` | 45 | Figlio-copia in COW (Fase 34) → padre `(pid, chan)`, figlio `(0, chan)` |
 | `peer_pid` | 46 | Pid del peer di un canale (Fase 35) → pid o `Err` |
 | `peer_info` | 47 | Hash immagine del peer di un canale (Fase 36) → hash o `Err` |
 | `exec_image` | 48 | Exec in-place senza argv (Fase 37.0) → mai ritorno, `Err` a validazione fallita |
@@ -299,11 +299,11 @@ prima che il FS esista).
 
 | Syscall | Numero | Descrizione |
 |---------|--------|-------------|
-| `write` | 2 | Scrive su seriale (fd 1/2); altri fd → `-1` |
+| `write` | 2 | Scrive su seriale (`CONSOLE_OUT`/`CONSOLE_ERR`); altre maniglie → `-1` |
 
 > Le classiche `read`/`open`/`close`/`readdir` non sono syscall kernel:
 > sono wrapper IPC diretti in `civis` (client → cardo, v. [File System](./09-filesystem.md)).
-> `fork` (45, Fase 34) e `mmap` (39, Fase 28) esistono; `sbrk` e' la 25.
+> `spawn_copy` (45, Fase 34) e `mmap` (39, Fase 28) esistono; `sbrk` e' la 25.
 > `exec` in-place (48, Fase 37.0 nucleo + 37.1 argv: `exec_image`/`exec`;
 > convenzione argv stile Linux come dato neutro, `_start` via macro `entry!`)
 > esiste; `wait` esplicito arriva con la shell 37.2 (`EXIT_NOTIFY` gia'
@@ -482,7 +482,7 @@ implementa: `0=exit`, `2=write`, `8=getpid`, `16=send`, `17=recv`, `18=reply`,
 `31=service_register`, `32=service_lookup`, `33=send_async`, `34=recv_nonblock`,
 `35=kill`, `36=service_pid`, `37=ps_info`, `38=spawn_image` (Fase 21),
 `39=mmap`, `40=munmap`, `41=mprotect`, `42=shm_create`, `43=shm_map`,
-`44=text_stats`, `45=fork`, `46=peer_pid`, `47=peer_info`, `48=exec`,
+`44=text_stats`, `45=spawn_copy`, `46=peer_pid`, `47=peer_info`, `48=exec`,
 `49=dma_alloc`, `50=suspend`, `51=resume` (Fase 44a, job control),
 `52=meminfo` (Fase 52, P3), `54=thread_create`, `55=thread_exit`,
 `56=futex_wait`, `57=futex_wake`, `58=thread_set_fs` (S-T, ADR-0046),
@@ -524,7 +524,7 @@ pub unsafe fn syscall4(number: u64, arg1: u64, arg2: u64, arg3: u64, arg4: u64) 
 ### Output seriale con line buffer (macros `print_str!` / `println!`)
 
 L'output utente passa da un **line buffer** in userspace: i bytes vengono accumulati
-in un buffer statico e flushati su stdout (fd 1) tramite una singola syscall quando
+in un buffer statico e flushati su console (`CONSOLE_OUT`) tramite una singola syscall quando
 si incontra un `\n` oppure il buffer e' pieno. Questo evita la frammentazione
 dell'output seriale (una syscall per ogni carattere o per ogni frammento).
 

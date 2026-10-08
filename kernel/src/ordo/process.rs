@@ -222,7 +222,7 @@ pub struct Process {
     pub text_id: u32,
     /// Identita' misurata dell'immagine ELF (Fase 36, Strato 2 di ADR-0026):
     /// FNV-1a (`syscall_numbers::image_hash`) sui byte caricati allo spawn.
-    /// 0 = nessuna immagine (processi kernel). Ereditato dal fork (stessi
+    /// 0 = nessuna immagine (processi kernel). Ereditato alla copia (stessi
     /// byte). Meccanismo neutro: il kernel misura ed espone (36.2), la policy
     /// vive fuori (init manifest, `FS_REGISTER` in cardo).
     pub image_hash: u64,
@@ -245,7 +245,7 @@ pub struct Process {
     /// condividono come POSIX; il campo dei thread resta vuoto e ignorato).
     /// Buffer 256B = MAX_PATH cardo; `cwd_len` byte validi, sempre assoluta
     /// (`/` default). Sopravvive a exec (e' persona, non immagine), ereditata
-    /// da fork/spawn. Il kernel non normalizza mai (`..` testuale).
+    /// da spawn_copy/spawn. Il kernel non normalizza mai (`..` testuale).
     pub cwd: [u8; 256],
     pub cwd_len: u16,
 }
@@ -426,19 +426,19 @@ impl Process {
         })
     }
 
-    /// Crea un processo **figlio fork** (Fase 34): condivide l'address space del
+    /// Crea un processo **figlio-copia** (Fase 34): condivide l'address space del
     /// padre in COW (walk a carico del chiamante su `child_cr3`), riprende come
     /// ritorno dalla syscall con `rax = 0` (`saved` punta al fake stack col
-    /// trampoline `fork_child_exit`). Kernel stack, TSS (senza porte: il figlio
-    /// non eredita la bitmap I/O del padre, least privilege) e `text_id` sono
-    /// del chiamante; IPC/ring/fd/canali NON si ereditano (solo il canale di
+    /// trampoline `spawn_copy_child_exit`). Kernel stack, TSS (senza porte: il
+    /// figlio non eredita la bitmap I/O del padre, least privilege) e `text_id`
+    /// sono del chiamante; IPC/ring/canali NON si ereditano (solo il canale di
     /// nascita, impostato dopo come in `finish_spawn`). Nome, priorita',
     /// `image_hash` (stessi byte del padre, Fase 36) e `req_next` (i req_id
-    /// divergono dopo il fork) copiati dal padre.
+    /// divergono dopo la copia) copiati dal padre.
     ///
     /// # Safety
     /// `child_cr3`/`stack_base`/`saved` devono essere validi e del figlio.
-    pub unsafe fn create_fork(
+    pub unsafe fn create_spawn_copy(
         name: &'static str,
         name_owned: [u8; 16],
         name_len: u8,
@@ -577,7 +577,7 @@ impl Process {
 
     /// Alloca uno slot TSS dal pool, lo configura (RSP0 + IST + bitmap I/O) e
     /// ritorna lo SLOT del pool (1-based). Il selettore GDT e' derivabile con
-    /// `gdt::selectors().tss_selector(slot)`. (Fase 34: `pub(crate)` per fork.)
+    /// `gdt::selectors().tss_selector(slot)`. (Fase 34: `pub(crate)` per spawn_copy.)
     pub(crate) fn alloc_tss(stack_top: u64, io_ranges: &[(u16, u16)]) -> Option<usize> {
         let slot = crate::gdt::alloc_tss_slot()?;
         crate::gdt::configure_tss(slot, x86_64::VirtAddr::new(stack_top), io_ranges);

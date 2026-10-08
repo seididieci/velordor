@@ -1,6 +1,6 @@
-//! Walk COW dell'address space per `fork` (Fase 34, ADR-0024).
+//! Walk COW dell'address space per `spawn_copy` (Fase 34, ADR-0024).
 //!
-//! `fork_share` duplica le foglie user del padre nello spazio del figlio:
+//! `spawn_copy_share` duplica le foglie user del padre nello spazio del figlio:
 //!   - foglie `owned` → condivise in COW (ref++, entrambi i lati `RO`+`COW`);
 //!   - foglie non-owned (text image, shm, iniettate) → specchiate identiche;
 //!   - finestre ring (`USER_FS_BUFFER`/`USER_RESP_RING`) e staging DMA
@@ -23,7 +23,7 @@ use super::teardown::raw_entry;
 /// Condivide l'address space `parent_cr3` in `child_cr3` (entrambi spazi user
 /// validi; il figlio tipicamente fresco da `new_address_space`). Ritorna false
 /// su OOM (spazio figlio parziale: il chiamante fa teardown).
-pub fn fork_share(parent_cr3: u64, child_cr3: u64) -> bool {
+pub fn spawn_copy_share(parent_cr3: u64, child_cr3: u64) -> bool {
     let kernel_pml4 = kernel_cr3();
     for i in 0..512 {
         let e = unsafe { raw_entry(parent_cr3, i) };
@@ -35,42 +35,42 @@ pub fn fork_share(parent_cr3: u64, child_cr3: u64) -> bool {
         if super::layout::PTE_ADDR_MASK & e == k {
             continue;
         }
-        if !fork_pdp(parent_cr3, child_cr3, e, i) {
+        if !spawn_copy_pdp(parent_cr3, child_cr3, e, i) {
             return false;
         }
     }
     true
 }
 
-fn fork_pdp(parent_cr3: u64, child_cr3: u64, pml4e: u64, i: usize) -> bool {
+fn spawn_copy_pdp(parent_cr3: u64, child_cr3: u64, pml4e: u64, i: usize) -> bool {
     let pdp = super::layout::PTE_ADDR_MASK & pml4e;
     for j in 0..512 {
         let e = unsafe { raw_entry(pdp, j) };
         if e & PTE_PRESENT == 0 {
             continue;
         }
-        if !fork_pd(parent_cr3, child_cr3, e, i, j) {
+        if !spawn_copy_pd(parent_cr3, child_cr3, e, i, j) {
             return false;
         }
     }
     true
 }
 
-fn fork_pd(parent_cr3: u64, child_cr3: u64, pdpe: u64, i: usize, j: usize) -> bool {
+fn spawn_copy_pd(parent_cr3: u64, child_cr3: u64, pdpe: u64, i: usize, j: usize) -> bool {
     let pd = super::layout::PTE_ADDR_MASK & pdpe;
     for k in 0..512 {
         let e = unsafe { raw_entry(pd, k) };
         if e & PTE_PRESENT == 0 {
             continue;
         }
-        if !fork_pt(parent_cr3, child_cr3, e, i, j, k) {
+        if !spawn_copy_pt(parent_cr3, child_cr3, e, i, j, k) {
             return false;
         }
     }
     true
 }
 
-fn fork_pt(parent_cr3: u64, child_cr3: u64, pde: u64, i: usize, j: usize, k: usize) -> bool {
+fn spawn_copy_pt(parent_cr3: u64, child_cr3: u64, pde: u64, i: usize, j: usize, k: usize) -> bool {
     // Foglia large-page 2M (PS, bit 7): lo user non ne ha mai (solo 4 KiB).
     if pde & 0x80 != 0 {
         crate::serial_println!("[fork] large page in spazio user: rifiuto");

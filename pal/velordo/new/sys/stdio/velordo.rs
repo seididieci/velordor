@@ -1,7 +1,7 @@
-//! Console Velordo (S1.3): stdout/stderr su SYS_WRITE (fd 1/2 → seriale),
-//! stdin EOF. Forma di `stdio/unsupported.rs` con write reale.
+//! Console Velordo (S1.3): stdout/stderr su SYS_WRITE (maniglia console →
+//! seriale), stdin EOF. Forma di `stdio/unsupported.rs` con write reale.
 
-use crate::sys::pal::write_fd as pal_write;
+use crate::sys::pal::write_console as pal_write;
 use crate::io::{self, BorrowedCursor, IoSlice, IoSliceMut};
 
 pub struct Stdin;
@@ -65,14 +65,14 @@ impl Stdout {
 impl io::Write for Stdout {
     #[inline]
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        Ok(pal_write(1, buf))
+        Ok(pal_write(buf))
     }
 
     #[inline]
     fn write_vectored(&mut self, bufs: &[IoSlice<'_>]) -> io::Result<usize> {
         let mut n = 0;
         for b in bufs {
-            n += pal_write(1, b);
+            n += pal_write(b);
         }
         Ok(n)
     }
@@ -88,7 +88,7 @@ impl io::Write for Stdout {
         // silenziosa a meta' riga).
         let mut done = 0;
         while done < buf.len() {
-            let n = pal_write(1, &buf[done..]);
+            let n = pal_write(&buf[done..]);
             if n == 0 {
                 return Err(io::Error::new(io::ErrorKind::WriteZero, "short write"));
             }

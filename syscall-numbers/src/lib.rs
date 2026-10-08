@@ -4,12 +4,16 @@
 // Single source of truth: kernel e userland (civis) dipendono da questo crate.
 
 pub const SYS_EXIT: u64 = 0;
-pub const SYS_OPEN: u64 = 3;
-pub const SYS_READ: u64 = 4;
-pub const SYS_WRITE_FS: u64 = 5;
-pub const SYS_CLOSE: u64 = 6;
-pub const SYS_READDIR: u64 = 7;
+// I numeri 3-7 (vecchie FS kernel-side) restano liberi (rimossi in Fase 10.2,
+// mai riassegnati).
+/// Scrive su console (`con` = maniglia console, non fd POSIX: nessun fd-table
+/// nel kernel; 1 = standard-output, 2 = standard-error per coincidenza
+/// storica coi numeri Unix, mai per semantica). `(con, ptr, len)` → byte
+/// scritti o -1.
 pub const SYS_WRITE: u64 = 2;
+/// Maniglie console per SYS_WRITE (valori storici, vedi sopra).
+pub const CONSOLE_OUT: u64 = 1;
+pub const CONSOLE_ERR: u64 = 2;
 pub const SYS_GETPID: u64 = 8;
 /// IPC su channel (ADR-0008): `send(channel, tag, w0, w1)` — invia il
 /// messaggio al peer del canale e BLOCCA il mittente finche' il peer non fa
@@ -79,7 +83,7 @@ pub const SYS_SERVICE_PID: u64 = 36;
 pub const SYS_PS_INFO: u64 = 37;
 /// Spawna un processo dal binario in memoria del chiamante (Fase 21, servizi
 /// da disco): `(img_ptr, img_len, meta_ptr, meta_len)`. Primitiva generale
-/// (come fork+exec): le porte I/O sono privilegio root (solo pid 1, gli altri
+/// (crea-figlio + carica-immagine): le porte I/O sono privilegio root
 /// con `io_count == 0`); prio 1..31 per tutti. `meta` e' uno SpawnMeta da 40 B
 /// (vedi sotto); ritorna il channel di nascita o -1.
 pub const SYS_SPAWN_IMAGE: u64 = 38;
@@ -102,12 +106,12 @@ pub const SYS_SHM_MAP: u64 = 43;
 /// Contatori shared text (Fase 32, debug/test): ritorna `hits` in rax,
 /// `misses` in rdi, `live` in rsi (nessun argomento).
 pub const SYS_TEXT_STATS: u64 = 44;
-/// Crea un figlio che condivide l'address space del chiamante in COW
-/// (Fase 34, `fork`): nessun argomento. Ritorna al padre `(pid_figlio,
+/// Crea un figlio-copia che condivide l'address space del chiamante in COW
+/// (Fase 34): nessun argomento. Ritorna al padre `(pid_figlio,
 /// canale_nascita)` (pid in rax, canale in rdi via multi-registro), al figlio
 /// `(0, canale_nascita)` (il figlio usa il canale 0 = `CHANNEL_PARENT`); -1
 /// se non c'e' un PID libero o il pool canali e' esaurito.
-pub const SYS_FORK: u64 = 45;
+pub const SYS_SPAWN_COPY: u64 = 45;
 /// `peer_pid(chan)`: pid del peer del canale `chan` (0 = canale di nascita,
 /// come `send`/`recv`), o -1 se il canale non esiste/`chan` non ne fa parte
 /// (Fase 35, hardening: i server possono attribuire una richiesta a un
@@ -135,7 +139,7 @@ pub const SYS_EXEC: u64 = 48;
 /// Bus-Master (Fase 38.1, ATA DMA): li mappa RW/NX a `USER_DMA_VA` e ritorna
 /// il fisico base (il chiamante programma PRD e BMIBA con phys reali — VA
 /// non bastano al device). Single-slot per processo (seconda alloc = -1);
-/// free a teardown/exec, mai ereditata dal fork. Precedente: `SYS_RING_ALLOC`
+/// free a teardown/exec, mai ereditata dal figlio-copia. Precedente: `SYS_RING_ALLOC`
 /// (26) ritorna gia' phys alle ring — stessa neutralita' (ADR-0005: il kernel
 /// non tocca il disco, alloca solo frame).
 pub const SYS_DMA_ALLOC: u64 = 49;
@@ -409,9 +413,10 @@ pub const R_DELETE: u32 = 0x1A;
 /// Metadati del path (Fase 19.2, zero kernel): payload = path; risposta
 /// self-written `[size:8][kind:8]` + `[mtime:8]` (Fase 50). Nessun fd coinvolto.
 pub const R_STAT: u32 = 0x1B;
-/// Sposta l'offset di un fd LOCALE (Fase 40, P1): w0 = fd, w1 = offset (bit
-/// reinterpretati come i64: negativi leciti per SEEK_END/SEEK_CUR), payload
-/// 1 byte = whence (SEEK_*). Solo Local (Remote → ERR_INVALID); dir →
+/// Sposta l'offset di un descrittore LOCALE (Fase 40, P1): w0 = descrittore,
+/// w1 = offset (bit reinterpretati come i64: negativi leciti per
+/// SEEK_END/SEEK_CURRENT), payload 1 byte = origine (SEEK_*).
+/// Solo Local (Remote → ERR_INVALID); dir →
 /// ERR_ISDIR. Ritorna il nuovo offset o una sentinella ERR_*. Nessun cambio
 /// se il check fallisce (two-phase: valida prima, applica dopo).
 pub const R_LSEEK: u32 = 0x1C;
@@ -512,22 +517,22 @@ pub const STAT_DEVICE: u64 = 2;
 pub const STAT_SYMLINK: u64 = 3;
 pub const STAT_READONLY: u64 = 0x80;
 /// Flag `open`: crea il file se non esiste (Fase 18.2: prima l'open creava
-/// sempre su ramfs ignorando i flag — ora POSIX: senza O_CREAT il file deve
+/// sempre su ramfs ignorando i flag — senza OPEN_CREATE il file deve
 /// esistere). Viaggia in w1 del frame R_OPEN (civis lo passava gia', il server
 /// lo ignorava).
-pub const O_CREAT: u32 = 0x200;
-/// Flag `open` (Fase 40, P1): azzera il file esistente (size → 0). Con O_CREAT
+pub const OPEN_CREATE: u32 = 0x200;
+/// Flag `open` (Fase 40, P1): azzera il file esistente (size → 0). Con OPEN_CREATE
 /// su file esistente: tronca invece di aprire intatto. Viaggia in w1 di
-/// R_OPEN come O_CREAT (bit indipendenti, combinabili).
-pub const O_TRUNC: u32 = 0x400;
-/// Flag `open` (Fase 40, P1): ogni write accoda a fine file (l'offset del fd
+/// R_OPEN come OPEN_CREATE (bit indipendenti, combinabili).
+pub const OPEN_TRUNC: u32 = 0x400;
+/// Flag `open` (Fase 40, P1): ogni write accoda a fine file (l'offset del canale
 /// e' ignorato in scrittura; la lettura usa l'offset normale). Viaggia in w1
-/// di R_OPEN. Combinabile con O_CREAT (crea se manca, poi accoda).
-pub const O_APPEND: u32 = 0x800;
+/// di R_OPEN. Combinabile con OPEN_CREATE (crea se manca, poi accoda).
+pub const OPEN_APPEND: u32 = 0x800;
 /// Origini di R_LSEEK (Fase 40, P1): dall'inizio, dal corrente, dalla fine.
 /// Payload 1 byte del frame R_LSEEK; altri valori → ERR_INVALID.
-pub const SEEK_SET: u64 = 0;
-pub const SEEK_CUR: u64 = 1;
+pub const SEEK_START: u64 = 0;
+pub const SEEK_CURRENT: u64 = 1;
 pub const SEEK_END: u64 = 2;
 /// Un driver registra il proprio prefix di mount.
 pub const R_REGISTER: u32 = 0x30;

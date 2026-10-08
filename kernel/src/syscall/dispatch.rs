@@ -3,7 +3,7 @@ use core::ptr::addr_of_mut;
 use super::entry::PERCPU;
 use super::ipc::{sys_send, sys_send_async, sys_recv, sys_recv_nonblock, sys_reply};
 use super::service::{sys_service_register, sys_service_lookup, sys_service_pid, sys_peer_pid, sys_peer_info};
-use super::spawn::{sys_spawn, sys_spawn_image, sys_fork};
+use super::spawn::{sys_spawn, sys_spawn_image, sys_spawn_copy};
 use super::exec::sys_exec;
 use super::cwd::{sys_chdir, sys_getcwd};
 use super::thread::{sys_thread_create, sys_thread_exit, sys_thread_set_fs};
@@ -68,8 +68,8 @@ pub(super) extern "C" fn syscall_handler() -> i64 {
             syscall_numbers::SYS_SHM_MAP => sys_shm_map((*p).arg1, (*p).arg2, (*p).arg3, (*p).arg4),
             // Fase 32: contatori shared text (debug/test).
             syscall_numbers::SYS_TEXT_STATS => sys_text_stats(),
-            // Fase 34: fork COW dell'address space.
-            syscall_numbers::SYS_FORK => sys_fork(),
+            // Fase 34: figlio-copia COW dell'address space.
+            syscall_numbers::SYS_SPAWN_COPY => sys_spawn_copy(),
             // Fase 37: exec in-place (stesso PID, nuova immagine; argv in 37.1.2).
             syscall_numbers::SYS_EXEC => sys_exec((*p).arg1, (*p).arg2 as usize, (*p).arg3, (*p).arg4 as usize),
             // Fase 35: pid del peer di un canale (policy server-side).

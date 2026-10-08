@@ -169,7 +169,7 @@ pub fn t_rights() -> bool {
         println!("[usertests] t34: GET default non ALL+root");
         return false;
     }
-    let Ok(fd) = civis::open("/t34.txt", civis::O_CREAT) else {
+    let Ok(fd) = civis::open("/t34.txt", civis::OPEN_CREATE) else {
         println!("[usertests] t34: open baseline FAILED");
         return false;
     };
@@ -423,7 +423,7 @@ pub fn t_stat() -> bool {
         return false;
     }
     // mtime ramfs: file creato+scritto dal test (Time gia' su a boot).
-    let fd = match civis::open("/t38mtime", civis::O_CREAT) {
+    let fd = match civis::open("/t38mtime", civis::OPEN_CREATE) {
         Ok(f) => f,
         Err(_) => {
             println!("[usertests] t38: create /t38mtime FAILED");
@@ -522,11 +522,11 @@ pub fn t_diskboot() -> bool {
 /// tipizzati, cross-mount rifiutato. Cleanup finale (ramfs condivisa).
 pub fn t_rename() -> bool {
     // Fixture.
-    if civis::open("/t59a.txt", civis::O_CREAT | civis::O_TRUNC).is_err() {
+    if civis::open("/t59a.txt", civis::OPEN_CREATE | civis::OPEN_TRUNC).is_err() {
         println!("[usertests] t59: create a FAILED");
         return false;
     }
-    if let Ok(fd) = civis::open("/t59a.txt", civis::O_TRUNC) {
+    if let Ok(fd) = civis::open("/t59a.txt", civis::OPEN_TRUNC) {
         let w = civis::write_fs(fd, b"rename-59", 9);
         let _ = civis::close(fd);
         if w != Ok(9) {
@@ -558,7 +558,7 @@ pub fn t_rename() -> bool {
         return false;
     }
     // Replace: file su file esistente.
-    if civis::open("/t59c.txt", civis::O_CREAT | civis::O_TRUNC).is_err() {
+    if civis::open("/t59c.txt", civis::OPEN_CREATE | civis::OPEN_TRUNC).is_err() {
         println!("[usertests] t59: create c FAILED");
         return false;
     }
@@ -573,7 +573,7 @@ pub fn t_rename() -> bool {
     }
     // Dir con figli: move subtree.
     if civis::mkdir("/t59d").is_err()
-        || civis::open("/t59d/f.txt", civis::O_CREAT).is_err()
+        || civis::open("/t59d/f.txt", civis::OPEN_CREATE).is_err()
     {
         println!("[usertests] t59: setup dir FAILED");
         return false;
@@ -634,11 +634,11 @@ pub fn t_symlink() -> bool {
         return false;
     }
     // Crea il target: open segue e legge.
-    if civis::open("/t60real.txt", civis::O_CREAT | civis::O_TRUNC).is_err() {
+    if civis::open("/t60real.txt", civis::OPEN_CREATE | civis::OPEN_TRUNC).is_err() {
         println!("[usertests] t60: create target FAILED");
         return false;
     }
-    if let Ok(fd) = civis::open("/t60real.txt", civis::O_TRUNC) {
+    if let Ok(fd) = civis::open("/t60real.txt", civis::OPEN_TRUNC) {
         let w = civis::write_fs(fd, b"linkdata", 8);
         let _ = civis::close(fd);
         if w != Ok(8) {
@@ -725,11 +725,11 @@ pub fn t_chdir() -> bool {
         }
     }
     // Relativi contro cwd: create + read senza slash iniziale.
-    if civis::open("f61.txt", civis::O_CREAT | civis::O_TRUNC).is_err() {
+    if civis::open("f61.txt", civis::OPEN_CREATE | civis::OPEN_TRUNC).is_err() {
         println!("[usertests] t61: create relativo FAILED");
         return false;
     }
-    if let Ok(fd) = civis::open("f61.txt", civis::O_TRUNC) {
+    if let Ok(fd) = civis::open("f61.txt", civis::OPEN_TRUNC) {
         let w = civis::write_fs(fd, b"cwd-ok", 6);
         let _ = civis::close(fd);
         if w != Ok(6) {
@@ -791,7 +791,7 @@ pub fn t_chdir() -> bool {
 /// NOTFOUND su mancante, R/W dopo chmod restrittivo (nessun enforcement
 /// fino ad A4: i build non devono fallire).
 pub fn t_chmod() -> bool {
-    if civis::open("/t62.txt", civis::O_CREAT | civis::O_TRUNC).is_err() {
+    if civis::open("/t62.txt", civis::OPEN_CREATE | civis::OPEN_TRUNC).is_err() {
         println!("[usertests] t62: create FAILED");
         return false;
     }
@@ -803,7 +803,7 @@ pub fn t_chmod() -> bool {
         }
     }
     // Dopo chmod 000 si scrive e legge comunque (Strato 0: placeholder).
-    if let Ok(fd) = civis::open("/t62.txt", civis::O_TRUNC) {
+    if let Ok(fd) = civis::open("/t62.txt", civis::OPEN_TRUNC) {
         let w = civis::write_fs(fd, b"rw", 2);
         let _ = civis::close(fd);
         if w != Ok(2) {

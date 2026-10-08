@@ -1,10 +1,11 @@
 use super::*;
 
-/// Scrive `count` byte da `buf` sul descrittore `fd`. Ritorna i byte scritti,
-/// oppure un valore negativo in caso di errore (es. fd non supportato).
+/// Scrive `count` byte da `buf` sulla maniglia console `con`
+/// (`CONSOLE_OUT`/`CONSOLE_ERR`, non fd POSIX). Ritorna i byte scritti,
+/// oppure un valore negativo in caso di errore (maniglia sconosciuta).
 #[inline]
-pub fn write(fd: u64, buf: *const u8, count: usize) -> i64 {
-    unsafe { syscall4(SYS_WRITE, fd, buf as u64, count as u64, 0) }
+pub fn write(con: u64, buf: *const u8, count: usize) -> i64 {
+    unsafe { syscall4(SYS_WRITE, con, buf as u64, count as u64, 0) }
 }
 
 /// Id del processo corrente.
@@ -287,18 +288,18 @@ pub fn ps_info(pid: u32) -> Option<PsEntry> {
     })
 }
 
-/// Scrive una stringa su stdout (fd 1) bypassando il line buffer.
+/// Scrive una stringa su console (`CONSOLE_OUT`) bypassando il line buffer.
 /// Usare solo per dati binari/raw; per output di testo usare `print!`/`println!`.
 #[inline]
 pub fn write_stdout(buf: *const u8, count: usize) -> i64 {
-    write(1, buf, count)
+    write(CONSOLE_OUT, buf, count)
 }
 
-/// Scrive byte su stdout (fd 1) bypassando il line buffer.
+/// Scrive byte su console (`CONSOLE_OUT`) bypassando il line buffer.
 /// Compat: usato dai programmi userspace esistenti.
 #[inline]
 pub fn print_string(s: &[u8]) -> i64 {
-    write(1, s.as_ptr(), s.len())
+    write(CONSOLE_OUT, s.as_ptr(), s.len())
 }
 
 /// `map_in(chan, phys, virt, count)`: mappa `count` pagine fisiche a partire

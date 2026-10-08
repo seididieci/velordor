@@ -28,9 +28,9 @@ mod misc;
 pub(crate) mod thread;
 
 pub use entry::{init, set_current, current_id, current_mm};
-// Fase 34 (fork): offset dei registri salvati + trampoline di ritorno figlio.
+// Fase 34 (figlio-copia): offset dei registri salvati + trampoline di ritorno figlio.
 pub(crate) use entry::{
-    fork_child_exit, SAVED_R8, SAVED_R9, SAVED_R10, SAVED_R11, SAVED_R13,
+    spawn_copy_child_exit, SAVED_R8, SAVED_R9, SAVED_R10, SAVED_R11, SAVED_R13,
     SAVED_R14, SAVED_R15, SAVED_RBX, SAVED_RBP, SAVED_RCX, SAVED_RDI, SAVED_RDX,
     SAVED_RSI, SAVED_USER_R12, SAVED_USER_RSP,
 };

@@ -19,7 +19,7 @@ pub enum FileEntry {
     /// (ramfs montata, domani ArcaFS) — aperto una volta via `open_dyn`,
     /// riusato a ogni read/write (mai reopen per-path, mai cache da
     /// invalidare: il provider e' in-memoria o gestisce le epoche da se').
-    /// `append` (Fase 40, O_APPEND): le write ignorano `offset` e accodano a
+    /// `append` (Fase 40, OPEN_APPEND): le write ignorano `offset` e accodano a
     /// fine file; le read usano `offset` normalmente.
     Local { path: String, kind: mount_legacy::FsKind, offset: usize, mnt: Option<u64>, fat_info: Option<FileInfo>, fat_gen: u64, any_info: Option<provider::AnyHandle>, append: bool },
     Remote { server_chan: u64, remote_fd: u32 },
@@ -233,7 +233,7 @@ impl FileTable {
         }
     }
 
-    /// True se il fd e' aperto in O_APPEND (Fase 40): le write accodano.
+    /// True se il fd e' aperto in OPEN_APPEND (Fase 40): le write accodano.
     pub fn is_append(&self, chan: u64, fd: u32) -> bool {
         matches!(
             self.files.get(&(chan, fd)),

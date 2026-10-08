@@ -14,12 +14,12 @@ mod ipc;
 mod ps;
 mod lifecycle;
 mod ctx;
-mod fork;
+mod spawn_copy;
 mod exec;
 
 pub use spawn::{init, spawn, create_user, spawn_thread};
 pub use futex::{futex_wait, futex_wake};
-pub use fork::fork_current;
+pub use spawn_copy::spawn_copy_current;
 pub use exec::exec_current;
 pub use tick::{on_tick, notify_irq};
 pub use ipc::{IpcResult, ipc_send, ipc_send_async, ipc_recv, ipc_recv_nonblock, ipc_reply};

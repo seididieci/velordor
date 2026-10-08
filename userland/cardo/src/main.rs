@@ -5,7 +5,7 @@
 //!   - ramfs in memoria sul mount point `/` (scrivibile, Fase 9.1)
 //!   - FAT32 dal disco via `block` sul mount point `/fat` (Fase 9.2 su
 //!     ATA locale; Fase 16 via IPC `DISK_*`; Fase 16c resolve nome→handle
-//!     lato driver; **scrivibile dalla Fase 20**: overwrite/crescita/`O_CREAT`,
+//!     lato driver; **scrivibile dalla Fase 20**: overwrite/crescita/`OPEN_CREATE`,
 //!     niente unlink)
 //!   - vela/console remoti via IPC per device `/dev/*` (Fase 9.3)
 //!

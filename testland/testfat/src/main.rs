@@ -222,7 +222,7 @@ fn real_main(_sp: u64) -> ! {
     // read-back con pattern. Il file resta (niente unlink su FAT, fuori
     // scope): gli assert dopo usano solo presenza/contenuto, mai conteggi.
     println!("[testfat] Test 7: create + grow 9000B /fat/TFATW.TXT");
-    match civis::open("/fat/TFATW.TXT", civis::O_CREAT) {
+    match civis::open("/fat/TFATW.TXT", civis::OPEN_CREATE) {
         Ok(fd) => {
             println!("[testfat] create fd={}", fd);
             let mut chunk = [0u8; 1000];

@@ -85,11 +85,11 @@ pub(crate) fn open_all_seed(
             0 => (0usize, 0),
             1 => (
                 1usize,
-                civis::O_CREAT | if r.append { civis::O_APPEND } else { civis::O_TRUNC },
+                civis::OPEN_CREATE | if r.append { civis::OPEN_APPEND } else { civis::OPEN_TRUNC },
             ),
             _ => (
                 2usize,
-                civis::O_CREAT | if r.append { civis::O_APPEND } else { civis::O_TRUNC },
+                civis::OPEN_CREATE | if r.append { civis::OPEN_APPEND } else { civis::OPEN_TRUNC },
             ),
         };
         let path = cwd::resolve(r.target.as_str());

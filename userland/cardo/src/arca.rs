@@ -195,8 +195,8 @@ impl ArcaFs {
         mt
     }
 
-    /// Apertura con motore esplicito (semantica `RamFs::open`: O_CREAT crea,
-    /// O_TRUNC azzera, dir = ISDIR, antenato file = NOTDIR).
+    /// Apertura con motore esplicito (semantica `RamFs::open`: OPEN_CREATE crea,
+    /// OPEN_TRUNC azzera, dir = ISDIR, antenato file = NOTDIR).
     #[inline(never)]
     pub fn ns_open(
         &mut self,
@@ -212,8 +212,8 @@ impl ArcaFs {
                 return Err(crate::ERR_NOTDIR);
             }
         }
-        let creat = flags & civis::O_CREAT != 0;
-        let trunc = flags & civis::O_TRUNC != 0;
+        let creat = flags & civis::OPEN_CREATE != 0;
+        let trunc = flags & civis::OPEN_TRUNC != 0;
         match self.classify(eng, rel) {
             NsKind::File => {
                 if trunc {

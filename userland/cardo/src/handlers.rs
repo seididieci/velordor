@@ -32,9 +32,9 @@ pub fn handle_open(
         return Err(ERR_INVALID);
     }
     let flags = flags as u32;
-    let creat = flags & civis::O_CREAT != 0;
-    let trunc = flags & civis::O_TRUNC != 0;
-    let append = flags & civis::O_APPEND != 0;
+    let creat = flags & civis::OPEN_CREATE != 0;
+    let trunc = flags & civis::OPEN_TRUNC != 0;
+    let append = flags & civis::OPEN_APPEND != 0;
 
     // S1.1: segue i symlink (max 8 hop) prima del routing — tranne i path
     // remoti (driver opachi, mai link). Il probe e' None per i non-link
@@ -114,7 +114,7 @@ pub fn handle_open(
             return Ok(ftable.open_local(chan, rel, mid, h, append));
         }
         // 49.5 — open FAT via trait `LocalFs` sul concreto (F5): `Fat32::open`
-        // assorbe O_CREAT (crea), O_TRUNC (tronca) e rifiuta le dir (ISDIR)
+        // assorbe OPEN_CREATE (crea), OPEN_TRUNC (tronca) e rifiuta le dir (ISDIR)
         // come `RamFs::open` — niente piu' create_file/truncate/find fuori
         // trait. La cache per-fd resta in ftable (path-based storage, come U1).
         let info = mount::by_id_mut(mounts_fat, mid)
@@ -123,7 +123,7 @@ pub fn handle_open(
             .ok_or(ERR)?
             .open(rel, flags)
             .map_err(|_| ERR_NOTFOUND)?;
-        // O_CREAT/O_TRUNC possono aver mutato il volume: invalida le cache.
+        // OPEN_CREATE/OPEN_TRUNC possono aver mutato il volume: invalida le cache.
         if creat || trunc {
             *fgen = fgen.wrapping_add(1);
         }
@@ -134,8 +134,8 @@ pub fn handle_open(
         // Local attivi passano sempre da resolve_fsmount): errore, mai shadow.
         mount_legacy::FsKind::Fat | mount_legacy::FsKind::Local => Err(ERR),
         mount_legacy::FsKind::Ram => {
-            // 47.1 — open via trait `LocalFs` (U1): la trait gestisce O_CREAT,
-            // validazione file/dir e O_TRUNC internamente; il RamHandle restituito
+            // 47.1 — open via trait `LocalFs` (U1): la trait gestisce OPEN_CREATE,
+            // validazione file/dir e OPEN_TRUNC internamente; il RamHandle restituito
             // non si memorizza in ftable (U1 mantiene path-based storage).
             let _ = crate::provider::LocalFs::open(fs, path, flags as u32)?;
             Ok(ftable.open(chan, path, mount_legacy::FsKind::Ram, None, append))
@@ -382,7 +382,7 @@ pub fn handle_write_local(
             let d = mount::by_id_mut(mounts_fat, mid).ok_or(ERR)?.local_dyn().ok_or(ERR)?;
             d.write_dyn(h, offset, &payload[..count.min(payload.len())], append)?
         };
-        // O_APPEND non usa `offset`: il nuovo offset e' la size dopo la
+        // OPEN_APPEND non usa `offset`: il nuovo offset e' la size dopo la
         // scrittura (via stat fresca, mai stale oltre l'op).
         let new_off = if append {
             let rel_owned: alloc::string::String = alloc::string::String::from(path);
@@ -433,7 +433,7 @@ pub fn handle_write_local(
         // cambiato valore): la cache resta valida alla nuova generazione.
         let fat_c = mount::by_id_mut(mounts_fat, mi).ok_or(ERR)?.fat().ok_or(ERR)?;
         let fresh = fat_c.find(&rel_path);
-        // O_APPEND non usa `offset` del fd: il nuovo offset e' la size dopo la
+        // OPEN_APPEND non usa `offset` del fd: il nuovo offset e' la size dopo la
         // scrittura. Altrimenti offset + n (contratto ramfs).
         let new_off = if append {
             fresh.map(|i| i.size as usize).unwrap_or(offset + n as usize)
@@ -445,9 +445,9 @@ pub fn handle_write_local(
         return Ok(n as u64);
     }
 
-    // 47.3 — write via trait `LocalFs` (U1): open con O_CREAT per creare file
+    // 47.3 — write via trait `LocalFs` (U1): open con OPEN_CREATE per creare file
     // inesistenti, poi write attraverso la trait (gestisce resize + copy).
-    let handle = crate::provider::LocalFs::open(fs, path, civis::O_CREAT)?;
+    let handle = crate::provider::LocalFs::open(fs, path, civis::OPEN_CREATE)?;
     let n = crate::provider::LocalFs::write(fs, handle, offset, payload, append)?;
     ftable.set_offset(chan, fd, offset + n as usize);
     Ok(n as u64)
@@ -1372,7 +1372,7 @@ pub fn handle_umount(
 }
 
 /// Sposta l'offset di un fd LOCALE (Fase 40, R_LSEEK): `off` con segno,
-/// `whence` = SEEK_SET/CUR/END. Solo Local (Remote → ERR_INVALID: l'offset
+/// `whence` = SEEK_START/CUR/END. Solo Local (Remote → ERR_INVALID: l'offset
 /// vive in cardo, i driver non lo conoscono). Ritorna il nuovo offset.
 /// Two-phase: valida tutto PRIMA di `set_offset` (a rifiuto l'offset resta
 /// quello di prima, mai stato intermedio).
@@ -1393,8 +1393,8 @@ pub fn handle_lseek(
     // conoscono).
     let (path, kind, cur, mnt) = ftable.get(chan, fd).ok_or(ERR_INVALID)?;
     let base: i64 = match whence {
-        civis::SEEK_SET => 0,
-        civis::SEEK_CUR => cur as i64,
+        civis::SEEK_START => 0,
+        civis::SEEK_CURRENT => cur as i64,
         civis::SEEK_END => {
             let size = match kind {
                 mount_legacy::FsKind::Ram => match fs.find(path).ok_or(ERR_NOTFOUND)? {

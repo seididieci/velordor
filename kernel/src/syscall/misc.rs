@@ -74,8 +74,9 @@ pub(super) fn sys_resume(pid: u64) -> i64 {
     }
 }
 
-/// write(fd, buf, count): stampa su seriale per fd 1/2; ogni altro fd
-/// (nessun file implementato in questa fase) → -1.
+/// write(con, buf, count): stampa su seriale per le maniglie console
+/// (`CONSOLE_OUT`/`CONSOLE_ERR`); qualunque altro valore → -1 (nessun
+/// fd-table nel kernel: `con` non e' un fd POSIX).
 ///
 /// Streaming raw a chunk fissi (256 B) via `serial::_write_bytes`: MAI
 /// allocazioni, per qualunque `count` (un `from_utf8_lossy` qui allocherebbe
@@ -84,8 +85,8 @@ pub(super) fn sys_resume(pid: u64) -> i64 {
 /// validazione UTF-8: audit fedele (byte in = byte sul filo). La logica
 /// dmesg (timestamp a inizio riga) vive nel writer ed e' trasparente al
 /// chunking, anche con `\n` a cavallo tra chunk.
-pub(super) fn sys_write(fd: u64, buf: *const u8, count: usize) -> i64 {
-    if fd != 1 && fd != 2 {
+pub(super) fn sys_write(con: u64, buf: *const u8, count: usize) -> i64 {
+    if con != syscall_numbers::CONSOLE_OUT && con != syscall_numbers::CONSOLE_ERR {
         return -1;
     }
     if count == 0 {

@@ -233,10 +233,10 @@ impl LocalFs for RamFs {
         if path.is_empty() {
             return Err(crate::ERR_NOTFOUND);
         }
-        let creat = flags & civis::O_CREAT != 0;
-        let trunc = flags & civis::O_TRUNC != 0;
+        let creat = flags & civis::OPEN_CREATE != 0;
+        let trunc = flags & civis::OPEN_TRUNC != 0;
 
-        // O_CREAT: crea il file se non esiste.
+        // OPEN_CREATE: crea il file se non esiste.
         if creat {
             if self.find(path).is_none() {
                 // Crea il file (e le directory intermedie se necessario).
@@ -268,7 +268,7 @@ impl LocalFs for RamFs {
                 }
             }
         } else if trunc {
-            // O_TRUNC senza O_CREAT: il file deve esistere.
+            // OPEN_TRUNC senza OPEN_CREATE: il file deve esistere.
             let node = self.find(path).ok_or(crate::ERR_NOTFOUND)?;
             match node {
                 FsNode::File { data, .. } => {

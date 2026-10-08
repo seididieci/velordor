@@ -116,7 +116,7 @@ pub(crate) fn cmd_touch(args: &[&str]) -> i64 {
         return 1;
     }
     let path = cwd::resolve(args[1]);
-    let Ok(fd) = civis::open(&path, civis::O_CREAT) else {
+    let Ok(fd) = civis::open(&path, civis::OPEN_CREATE) else {
         term::term_err("touch: failed\n");
         return 1;
     };
@@ -177,7 +177,7 @@ fn copy_file(src: &str, dst: &str) -> bool {
         term::term_err("\n");
         return false;
     };
-    let Ok(fd_out) = civis::open(&to, 0x200 /* O_CREAT */) else {
+    let Ok(fd_out) = civis::open(&to, 0x200 /* OPEN_CREATE */) else {
         term::term_err("cp: cannot create ");
         term::term_err(dst);
         term::term_err("\n");

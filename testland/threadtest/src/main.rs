@@ -309,7 +309,7 @@ fn real_main(_sp: u64) -> ! {
     let v9 = {
         // Fixture del leader (ramfs condivisa).
         let mut ok = false;
-        if let Ok(fd) = civis::open("/tTH.txt", civis::O_CREAT | civis::O_TRUNC) {
+        if let Ok(fd) = civis::open("/tTH.txt", civis::OPEN_CREATE | civis::OPEN_TRUNC) {
             if civis::write_fs(fd, b"12345", 5) == Ok(5) {
                 ok = true;
             }
@@ -344,9 +344,9 @@ fn real_main(_sp: u64) -> ! {
     }
     let v10 = {
         let mut ok = false;
-        if let Ok(fd) = civis::open("/tTH2.txt", civis::O_CREAT | civis::O_TRUNC) {
+        if let Ok(fd) = civis::open("/tTH2.txt", civis::OPEN_CREATE | civis::OPEN_TRUNC) {
             if civis::write_fs(fd, b"abcde", 5) == Ok(5)
-                && civis::lseek(fd, 0, civis::SEEK_SET) == Ok(0)
+                && civis::lseek(fd, 0, civis::SEEK_START) == Ok(0)
             {
                 T10_FD.store(fd as u64, Ordering::SeqCst);
                 if let Some(top) = alloc_stack() {

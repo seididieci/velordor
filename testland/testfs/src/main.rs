@@ -67,7 +67,7 @@ fn real_main(_sp: u64) -> ! {
 
     // Test 3: Write a file and read it back
     println!("[testfs] Test 3: write + read verification");
-    let fd2 = civis::open("test_write.txt", civis::O_CREAT);
+    let fd2 = civis::open("test_write.txt", civis::OPEN_CREATE);
     match fd2 {
         Ok(fd2) => {
             println!("[testfs] open fd={}", fd2);

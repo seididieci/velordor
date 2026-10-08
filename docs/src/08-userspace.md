@@ -359,7 +359,7 @@ esteso cosi' (dettagli in `AGENTS.md` e ADR):
 - **Fase 19 — Introspezione + metadati**: `ps` tabellare via syscall 37,
   `stat` lato cardo (frame `R_STAT`, zero kernel).
 - **Fase 20 — FAT32 scrivibile** ([ADR-0016](./adr/0016-fat-writable.md)):
-  `DISK_WRITE`, overwrite + crescita con allocazione, `O_CREAT` su /fat.
+  `DISK_WRITE`, overwrite + crescita con allocazione, `OPEN_CREATE` su /fat.
 - **Fase 21 — Servizi da disco** ([ADR-0017](./adr/0017-servizi-da-disco.md)):
   `spawn_image` (38), solo init/disk/fs embedded, resto da `/bin`+`/test`.
 - **Fase 22 — Detach dalla cascata** (emendamento ADR-0010 §6): flag

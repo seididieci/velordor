@@ -9,7 +9,7 @@ sistema ([ADR-0015](./adr/0015-posix-api-libr-protocollo-interno.md)):
 i builtin usano nomi POSIX ma il protocollo cardo sottostante e' interno.
 
 > **Fase 18 completata**: builtin utente (18.1: echo/clear/wc/hexdump/kill +
-> cwd; 18.2: rm/cp/mv/rmdir via `R_DELETE` + `O_CREAT` POSIX + contratto
+> cwd; 18.2: rm/cp/mv/rmdir via `R_DELETE` + `OPEN_CREATE` + contratto
 > EOF=0), prompt con cwd (18.1-bis), `ls` che mostra i mount (18.1-ter),
 > disciplina di linea anti-prompt-eating in tty (18.0).
 
@@ -26,7 +26,7 @@ la mostra (`/prova$ `, `$ ` a root).
 |---------|-------------|
 | `ls [-l] [path]` | Elenco directory (default: cwd; mostra anche i mount: `fat`, `dev`). Con `-l` una riga per entry `tipo size nome[ (ro)]` (tipo `d`/`-`/`v`, via `R_STAT`, Fase 19.2) |
 | `cat <file>` | Stampa contenuto file; senza file legge stdin (`<`, Fase 40.4) |
-| `touch <file>` | Crea file vuoto (`O_CREAT`) |
+| `touch <file>` | Crea file vuoto (`OPEN_CREATE`) |
 | `mkdir <dir>` | Crea directory |
 | `mount <src> <tgt>` | Monta un device/`UUID=`/`LABEL=` su un target (Fase 16b) |
 | `umount <tgt>` | Smonta un target (rifiutato se busy, Fase 16b) |
@@ -184,7 +184,7 @@ pipeline gira nel figlio (effetti scoped, `$?` iniziale 0).
   di `/dev/zero` non termina (come da file — stesso comportamento).
 - **stderr dei figli quasi-muto**: niente in userland scrive fd 2 oggi; `2>`
   su `run` crea il file ma resta vuoto finche' un programma non lo usa.
-- **`open(O_CREAT)` crea i padri** (ramfs `find_or_create`, mkdir -p):
+- **`open(OPEN_CREATE)` crea i padri** (ramfs `find_or_create`, mkdir -p):
   `> /nodir/x` crea `/nodir` invece di `ENOENT` (semantica server
   pre-esistente, fuori scope 40.4).
 - **Offset dup copiato, non condiviso** (dup-for-handoff, ADR-0031).
@@ -220,7 +220,7 @@ editabili (wrap VGA).
 - **`ls -l` minimale**: 1 round trip `R_STAT` per entry (ok per dir piccole);
   niente owner; `mtime` in `Stat` dalla Fase 50 ma non mostrato (display
   futuro); entry sparita tra `readdir` e `stat` → riga `? nome`, mai abortito.
-- **Read oltre EOF torna `0`** (contratto 18.2-bis); `open` senza `O_CREAT`
+- **Read oltre EOF torna `0`** (contratto 18.2-bis); `open` senza `OPEN_CREATE`
   non crea (POSIX, 18.2).
 
 La shell NON mappa la VGA: tutti i passaggi di input/output avvengono

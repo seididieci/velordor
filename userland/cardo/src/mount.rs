@@ -368,7 +368,7 @@ impl FsMount {
         }
     }
 
-    /// Come `fat` ma mutabile (Fase 49, F5: `open` con O_CREAT/O_TRUNC via
+    /// Come `fat` ma mutabile (Fase 49, F5: `open` con OPEN_CREATE/OPEN_TRUNC via
     /// trait sul concreto).
     pub fn fat_mut(&mut self) -> Option<&mut Fat32<IpcDisk>> {
         match &mut self.fs {

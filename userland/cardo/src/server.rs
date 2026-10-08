@@ -747,7 +747,7 @@ fn real_main(_sp: u64) -> ! {
         let result: Result<u64, u64> = match op_tag {
             R_OPEN => {
                 match core::str::from_utf8(&payload) {
-                    // w1 del frame R_OPEN = flags (O_CREAT, w0 = len path):
+                    // w1 del frame R_OPEN = flags (OPEN_CREATE, w0 = len path):
                     // il server li ignorava (creava sempre) — ora POSIX.
                     Ok(path) => handlers::handle_open(&mut fs, &mut ftable, &mut fat_mounts, &mounts, chan, w1, path, &mut fat_gen, &mut disk),
                     Err(_) => Err(ERR_INVALID),

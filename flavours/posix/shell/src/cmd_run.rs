@@ -2,8 +2,9 @@ use super::*;
 
 // ── Jobs (Fase 37.2) ────────────────────────────────────────────────
 // La shell lancia programmi con fork+exec: il parent carica file+argv PRIMA
-// del fork (il figlio post-fork ha l'FS avvelenato: `post_fork_child` —
-// legge solo i byte COW-condivisi e chiama `exec_image_args`, mai il FS).
+// del fork (il figlio post-copia ha l'FS avvelenato:
+// `post_spawn_copy_child` — legge solo i byte COW-condivisi e chiama
+// `exec_image_args`, mai il FS).
 // Job = figlio diretto (non-detached: muore con la shell); l'uscita si
 // osserva via EXIT_NOTIFY sul canale di nascita (nessun `wait` kernel in 37:
 // la notifica unificata basta). Job control interattivo in 44a/44b (fg/bg,

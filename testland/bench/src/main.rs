@@ -27,7 +27,7 @@ extern crate alloc;
 
 use alloc::vec::Vec;
 use civis;
-use civis::{println, O_CREAT, O_TRUNC};
+use civis::{println, OPEN_CREATE, OPEN_TRUNC};
 
 /// Spoiler cache (Fase 53, P4): 300 settori sequenziali da /dev/sda letti e
 /// scartati — oltre le 256 entry CLOCK di block: tutto l'evicted (dati +
@@ -51,11 +51,11 @@ fn spoil_cache() -> bool {
 }
 
 /// Crea `path` con `size` byte di pattern (una write, chunking civis).
-/// `O_CREAT|O_TRUNC`: idempotente tra righe che riusano lo stesso path con
+/// `OPEN_CREATE|OPEN_TRUNC`: idempotente tra righe che riusano lo stesso path con
 /// size diverse (su FAT il remove non esiste: b5 lascia il file, qui lo si
 /// re-tronca; l'immagine e' rigenerata a ogni run.sh comunque).
 fn bulk_create(path: &str, size: usize, seed: u8) -> bool {
-    let Ok(fd) = civis::open(path, O_CREAT | civis::O_TRUNC) else {
+    let Ok(fd) = civis::open(path, OPEN_CREATE | civis::OPEN_TRUNC) else {
         return false;
     };
     let buf: Vec<u8> = (0..size).map(|i| ((seed as usize + i) % 251) as u8).collect();
@@ -327,7 +327,7 @@ fn real_main(_sp: u64) -> ! {
 
     // b4: ramfs 4 KiB — stack FS+IPC senza disco (write poi read).
     if ok {
-        match civis::open("/BENCH.TMP", O_CREAT) {
+        match civis::open("/BENCH.TMP", OPEN_CREATE) {
             Err(e) => {
                 println!("[bench] ramfs_4K: FAIL (create {:?})", e);
                 ok = false;
@@ -360,7 +360,7 @@ fn real_main(_sp: u64) -> ! {
     // b5: overwrite 4 KiB su FAT — open+write+close (PIO + FLUSH per settore).
     // Il file resta nell'immagine (rigenerata a ogni run.sh): mai fixture altrui.
     if ok {
-        match civis::open("/fat/BENCH.TMP", O_CREAT) {
+        match civis::open("/fat/BENCH.TMP", OPEN_CREATE) {
             Err(e) => {
                 println!("[bench] fat_4K_oow: FAIL (create {:?})", e);
                 ok = false;

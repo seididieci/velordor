@@ -20,22 +20,23 @@ pub(crate) static FS_CHAN: AtomicI64 = AtomicI64::new(-1);
 pub(crate) static REQ_PHYS: AtomicU64 = AtomicU64::new(0);
 pub(crate) static RESP_PHYS: AtomicU64 = AtomicU64::new(0);
 
-/// Flag "sono un figlio fork" (Fase 34): i ring FS e i canali del padre NON si
-/// ereditano (le finestre ring non sono mappate nel figlio). Con questo flag
-/// ogni op FS fallisce subito con `Err` invece di faultare sul ring assente o
-/// — peggio — di riuscire l'handshake sui phys del padre (aliasing dei ring).
-/// Il figlio che deve fare FS deve prima `exec`-care (futuro) o restare senza.
-static FS_FORKED: AtomicBool = AtomicBool::new(false);
+/// Flag "sono un figlio-copia" (Fase 34): i ring FS e i canali del padre NON
+/// si ereditano (le finestre ring non sono mappate nel figlio). Con questo
+/// flag ogni op FS fallisce subito con `Err` invece di faultare sul ring
+/// assente o — peggio — di riuscire l'handshake sui phys del padre (aliasing
+/// dei ring). Il figlio che deve fare FS deve prima `exec`-care o restare
+/// senza.
+static FS_CHILD_COPY: AtomicBool = AtomicBool::new(false);
 
-/// Hook post-fork lato figlio (Fase 34): avvelena l'FS per questo processo e
+/// Hook post-copia lato figlio (Fase 34): avvelena l'FS per questo processo e
 /// pulisce il guard 1-in-volo copiato in COW dal padre (un'op in volo del
 /// padre non e' raccoglibile dal figlio: i ring e il canale sono del padre).
-pub fn post_fork_child() {
-    FS_FORKED.store(true, Ordering::Relaxed);
+pub fn post_spawn_copy_child() {
+    FS_CHILD_COPY.store(true, Ordering::Relaxed);
     FS_PENDING.store(-1, Ordering::Relaxed);
 }
 
-/// Re-inizializza l'FS in un figlio fork per le pipeline builtin (Fase 42).
+/// Re-inizializza l'FS in un figlio-copia per le pipeline builtin (Fase 42).
 /// Il figlio NON eredita canali/ring del padre (aliasing del protocollo
 /// SPSC: due processi sulla stessa coppia di ring corrompono teste/code).
 /// Azzera le cache COW-copiate (canale, fisici, guard) e rifa da zero:
@@ -47,7 +48,7 @@ pub fn post_fork_child() {
 /// supervisionato e garantito a runtime; una sua morte qui appende il figlio
 /// come appenderebbe qualunque client al primo handshake).
 pub fn fs_child_reinit() -> bool {
-    FS_FORKED.store(false, Ordering::Relaxed);
+    FS_CHILD_COPY.store(false, Ordering::Relaxed);
     FS_CHAN.store(-1, Ordering::Relaxed);
     REQ_PHYS.store(0, Ordering::Relaxed);
     RESP_PHYS.store(0, Ordering::Relaxed);
@@ -56,10 +57,10 @@ pub fn fs_child_reinit() -> bool {
     fs_init()
 }
 
-/// True se questo processo e' un figlio fork (FS inutilizzabile).
+/// True se questo processo e' un figlio-copia (FS inutilizzabile).
 #[inline]
-pub(crate) fn fs_forked() -> bool {
-    FS_FORKED.load(Ordering::Relaxed)
+pub(crate) fn is_spawn_copy_child() -> bool {
+    FS_CHILD_COPY.load(Ordering::Relaxed)
 }
 
 /// Risolve (una volta) il canale verso il fs server per nome.
@@ -91,11 +92,11 @@ pub(crate) fn fs_async_pending() -> bool {
 }
 
 /// Cancello comune dei wrapper FS (Fase 39, fondamenta posix): distingue i tre
-/// rifiuti che prima collassavano in un unico -1. Il figlio fork fallisce qui
+/// rifiuti che prima collassavano in un unico -1. Il figlio-copia fallisce qui
 /// con `Denied` invece di faultare sul ring assente (kill rumoroso → errore
 /// pulito; il figlio che deve fare FS deve prima `exec`-care).
 pub(crate) fn fs_gate() -> Result<(), Error> {
-    if fs_forked() {
+    if is_spawn_copy_child() {
         return Err(Error::Denied);
     }
     if !fs_init() {
@@ -206,8 +207,8 @@ pub(crate) fn fs_chan_rt() -> i64 {
 /// reply, il retry duplica. Per ramfs/devfs-console l'effetto e' benigno
 /// (overwrite degli stessi byte / device idempotenti); policy fine futura.
 pub(crate) fn fs_send(tag: u64, w0: u64, w1: u64) -> Result<IpcReply, Error> {
-    if fs_forked() {
-        return Err(Error::Denied); // figlio fork: niente FS (34, mai aliasare i ring)
+    if is_spawn_copy_child() {
+        return Err(Error::Denied); // figlio-copia: niente FS (34, mai aliasare i ring)
     }
     let c = fs_chan();
     if c >= 0 {
@@ -250,11 +251,11 @@ pub(crate) fn fs_rings() -> bool {
 
 /// Cancello leggero per il client LOG (Fase 57): come `fs_gate` ma SENZA
 /// handshake FS (il log funziona pre-FS e senza cardo: gli anelli bastano,
-/// la registrazione LOG viaggia su `LOG_REG` presso vestigia). Rifiuta su
-/// fork (aliasing) e su async-FS in volo (un frame LOG interleavato
+/// la registrazione LOG viaggia su `LOG_REG` presso vestigia). Rifiuta sul
+/// figlio-copia (aliasing) e su async-FS in volo (un frame LOG interleavato
 /// corromperebbe il ring condiviso — il formato non ha lunghezze).
 pub(crate) fn fs_light_gate() -> Result<(), Error> {
-    if fs_forked() {
+    if is_spawn_copy_child() {
         return Err(Error::Denied);
     }
     if !fs_rings() {

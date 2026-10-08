@@ -224,22 +224,24 @@ con zero-fill lazy (stesso contratto di `sbrk`: VA subito, frame al fault).
   Salvaguardie: `mprotect` a RW con pagine ancora condivise rifiutato (W
   bypasserebbe il fault); il re-map dell'edge PTE-staccata e' hole-fill (un
   re-map cieco clobbererebbe le copie private); ref saturo (255) mai wrappato.
-- Prerequisito di `fork` (Fase 34); il percorso `exec` resta lo split della
-  Fase 32 (il COW sul `.data` dell'immagine duplicherebbe la pagina scritta
-  per un guadagno di ~5 KiB: valutato e scartato).
+- Prerequisito di `spawn_copy` (Fase 34); il percorso `exec` resta lo split
+  della Fase 32 (il COW sul `.data` dell'immagine duplicherebbe la pagina
+  scritta per un guadagno di ~5 KiB: valutato e scartato).
 
-## `fork` — COW dell'address space (Fase 34, ADR-0024)
+## `spawn_copy` — COW dell'address space (Fase 34, ADR-0024)
 
-- `SYS_FORK = 45` (nessun argomento): walk dell'address space del padre
-  (`vmm_user::fork_share`): foglie owned → condivise `RO`+`COW` simmetriche
-  (`ref_inc` + `invlpg` sul padre); non-owned (text/shm/iniettate) specchiate
-  (con `text::add_ref`/`shm_ref`); finestre ring saltate; large-page rifiutate.
-  OOM → `-1` con unwind (spazio parziale distrutto, padre intatto).
+- `SYS_SPAWN_COPY = 45` (nessun argomento): walk dell'address space del padre
+  (`vmm_user::spawn_copy_share`): foglie owned → condivise `RO`+`COW`
+  simmetriche (`ref_inc` + `invlpg` sul padre); non-owned (text/shm/iniettate)
+  specchiate (con `text::add_ref`/`shm_ref`); finestre ring saltate;
+  large-page rifiutate. OOM → `-1` con unwind (spazio parziale distrutto,
+  padre intatto).
 - Contesto figlio = fake kernel stack (11 word a offset noti dall'entry, che
-  salva anche i callee-saved user) + `fork_child_exit` (`rax = 0`, `sysretq`,
-  mai `PERCPU.ipc_override`). Ritorno multi-registro: padre `(pid, chan)`,
-  figlio `(0, chan)`. TSS senza porte, VMA/`HEAP_BRK`/`req_next`/priorita'
-  ereditati, IPC/ring/fd/CBS no; `civis::post_fork_child` avvelena l'FS.
+  salva anche i callee-saved user) + `spawn_copy_child_exit` (`rax = 0`,
+  `sysretq`, mai `PERCPU.ipc_override`). Ritorno multi-registro: padre
+  `(pid, chan)`, figlio `(0, chan)`. TSS senza porte,
+  VMA/`HEAP_BRK`/`req_next`/priorita' ereditati, IPC/ring/canali no;
+  `civis::post_spawn_copy_child` avvelena l'FS.
 - Test t49: isolamento bidirezionale su globale COW + report sul canale di
   nascita + exit 0; nessun leak (`heap_out` piatto).
 

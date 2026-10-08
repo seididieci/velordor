@@ -8,7 +8,7 @@
 //! Stack nuovo con argv stile Linux (37.1; argc=0 senza args); `image_hash`
 //! rimisurato (Strato 2: senza, `peer_info` mentirebbe e la regola same-image
 //! 36.5 sarebbe bypassabile); porte I/O azzerate (least privilege, come il
-//! fork). Il nome display resta quello vecchio in 37.0 (37.1 lo deriva da
+//! figlio-copia). Il nome display resta quello vecchio in 37.0 (37.1 lo deriva da
 //! argv[0] in shell, mai nel kernel).
 //!
 //! Ritorna `Ok(())` e NON ritorna al chiamante: il frame syscall salvato viene
@@ -126,7 +126,7 @@ unsafe fn layout_argv(stack_top: u64, parsed: &ParsedArgs<'_>) -> u64 {
 /// chiamante, gia' validata come range user) e gli argomenti `args_block`
 /// (`None` = nessun argv/env → argc=0; `Some` = blocco `[argc:8][envc:8]
 /// [payload]`, copiato in heap kernel come i byte). SCHED lock trattenuto per tutta
-/// l'operazione (come `fork_current`); IF=0 in syscall, niente preemption e
+/// l'operazione (come `spawn_copy_current`); IF=0 in syscall, niente preemption e
 /// niente blocking nel mezzo (mai context switch su spazio dimezzato).
 pub fn exec_current(bytes: &[u8], args_block: Option<&[u8]>) -> Result<(), ()> {
     // 1. Validazione PRIMA di toccare qualunque stato (ELF malformato o args
@@ -146,7 +146,7 @@ pub fn exec_current(bytes: &[u8], args_block: Option<&[u8]>) -> Result<(), ()> {
     // thread non-leader = rifiuto loud: il morph di leadership (canali del
     // leader + mm condiviso da svuotare sotto i piedi dei fratelli) non ha
     // semantica sicura senza trasferimento di ownership dei canali — la PAL
-    // fa exec solo da leader (fork+exec intatto: il figlio e' single).
+    // fa exec solo da leader (spawn_copy+exec intatto: il figlio e' single).
     if sched.processes[me].thread_group.is_some() {
         crate::serial_println!("[exec ] pid={} thread non-leader: exec rifiutata", me);
         return Err(());

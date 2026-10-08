@@ -28,19 +28,19 @@ impl<B: BlockSource> crate::provider::LocalFs for Fat32<B> {
         if path.is_empty() {
             return Err(crate::ERR_NOTFOUND);
         }
-        // O_CREAT: crea il file se non esiste (single source `civis::O_*`,
+        // OPEN_CREATE: crea il file se non esiste (single source `civis::O_*`,
         // Fase 49: mai costanti magiche nel provider).
-        if flags & civis::O_CREAT != 0 && self.find(path).is_none() && !self.create_file(path) {
+        if flags & civis::OPEN_CREATE != 0 && self.find(path).is_none() && !self.create_file(path) {
             return Err(crate::ERR_NOTFOUND);
         }
         let info = self.find(path).ok_or(crate::ERR_NOTFOUND)?;
         if info.is_dir {
             return Err(crate::ERR_ISDIR);
         }
-        // O_TRUNC assorbito qui (Fase 49, come `RamFs::open`): niente piu'
+        // OPEN_TRUNC assorbito qui (Fase 49, come `RamFs::open`): niente piu'
         // find+truncate fuori trait nell'handler. Fallimento = rifiuto, mai
         // truncate parziale dichiarato riuscito (contratto `truncate`).
-        if flags & civis::O_TRUNC != 0 {
+        if flags & civis::OPEN_TRUNC != 0 {
             if !self.truncate(&info) {
                 return Err(crate::ERR);
             }
@@ -62,7 +62,7 @@ impl<B: BlockSource> crate::provider::LocalFs for Fat32<B> {
         if h.is_dir {
             return Err(crate::ERR_ISDIR);
         }
-        // Semantica come ramfs: O_APPEND ignora `off` e accoda a fine file;
+        // Semantica come ramfs: OPEN_APPEND ignora `off` e accoda a fine file;
         // altrimenti si scrive a `off`. `write_grow` e' un superset di
         // `write_file` (overwrite entro la size, crescita — e allocazione del
         // primo cluster per i file appena creati — oltre) come il vecchio

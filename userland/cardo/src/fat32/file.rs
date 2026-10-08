@@ -311,7 +311,7 @@ impl<B: BlockSource> Fat32<B> {
         }
         self.disk.write_sector(lba, &sec)
     }
-    /// Tronca il file a size 0 (Fase 40, O_TRUNC): libera la catena cluster
+    /// Tronca il file a size 0 (Fase 40, OPEN_TRUNC): libera la catena cluster
     /// (ogni entry torna a 0 in tutte le copie FAT, come `free` — niente leak
     /// a ogni `>` redirect) e azzera first_cluster+size nella dir-entry PER
     /// ULTIMA (i dati restano sui settori ma irraggiungibili, come un unlink).

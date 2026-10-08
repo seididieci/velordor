@@ -2,7 +2,7 @@ use super::*;
 
 // ── Fase 40.5 (t54): fd virtuali + redirect a livello civis/server ───────
 // La shell e' gia' coperta da test-shell.py (19 check 40.4e); qui si fissa il
-// meccanismo sotto: O_TRUNC/O_APPEND, lseek, codici errore esatti, handoff
+// meccanismo sotto: OPEN_TRUNC/OPEN_APPEND, lseek, codici errore esatti, handoff
 // grant/claim modello B (happy + single-use + cancel + attestazione
 // parentela), routing stdio diretto e diniego SEEK via diritti.
 // Solo ramfs (FAT coperta da testfat); fixture /t54* con cleanup finale.
@@ -43,8 +43,8 @@ fn recv_done2(chans: &[u64]) -> Option<(u64, u64)> {
 }
 
 fn t_trunc_append() -> bool {
-    // O_TRUNC: azzera all'open (stat size 0), poi scrive da zero.
-    let fd = match civis::open("/t54t.txt", civis::O_CREAT) {
+    // OPEN_TRUNC: azzera all'open (stat size 0), poi scrive da zero.
+    let fd = match civis::open("/t54t.txt", civis::OPEN_CREATE) {
         Ok(f) => f,
         Err(e) => {
             println!("[usertests] t54 trunc: create = {:?}", e);
@@ -56,7 +56,7 @@ fn t_trunc_append() -> bool {
         return false;
     }
     let _ = civis::close(fd);
-    let fd = match civis::open("/t54t.txt", civis::O_CREAT | civis::O_TRUNC) {
+    let fd = match civis::open("/t54t.txt", civis::OPEN_CREATE | civis::OPEN_TRUNC) {
         Ok(f) => f,
         Err(e) => {
             println!("[usertests] t54 trunc: reopen TRUNC = {:?}", e);
@@ -73,15 +73,15 @@ fn t_trunc_append() -> bool {
         return false;
     }
     let _ = civis::close(fd);
-    // O_APPEND: l'offset e' ignorato (lseek(0) + write accoda comunque).
-    let fd = match civis::open("/t54t.txt", civis::O_APPEND) {
+    // OPEN_APPEND: l'offset e' ignorato (lseek(0) + write accoda comunque).
+    let fd = match civis::open("/t54t.txt", civis::OPEN_APPEND) {
         Ok(f) => f,
         Err(e) => {
             println!("[usertests] t54 append: open = {:?}", e);
             return false;
         }
     };
-    if civis::lseek(fd, 0, civis::SEEK_SET).is_err() || !write_all(fd, b"++") {
+    if civis::lseek(fd, 0, civis::SEEK_START).is_err() || !write_all(fd, b"++") {
         println!("[usertests] t54 append: seek+write");
         return false;
     }
@@ -103,7 +103,7 @@ fn t_trunc_append() -> bool {
 }
 
 fn t_errcodes() -> bool {
-    // Open senza O_CREAT su mancante = NotFound (niente creazione).
+    // Open senza OPEN_CREATE su mancante = NotFound (niente creazione).
     match civis::open("/t54missing.txt", 0) {
         Err(civis::Error::NotFound) => {}
         other => {
@@ -175,7 +175,7 @@ fn t_errcodes() -> bool {
 }
 
 fn t_lseek() -> bool {
-    let fd = match civis::open("/t54s.txt", civis::O_CREAT | civis::O_TRUNC) {
+    let fd = match civis::open("/t54s.txt", civis::OPEN_CREATE | civis::OPEN_TRUNC) {
         Ok(f) => f,
         Err(e) => {
             println!("[usertests] t54 lseek: create = {:?}", e);
@@ -187,7 +187,7 @@ fn t_lseek() -> bool {
         return false;
     }
     // SET/CUR/END con valori attesi.
-    if civis::lseek(fd, 4, civis::SEEK_SET) != Ok(4) {
+    if civis::lseek(fd, 4, civis::SEEK_START) != Ok(4) {
         println!("[usertests] t54 lseek: SET 4");
         return false;
     }
@@ -196,7 +196,7 @@ fn t_lseek() -> bool {
         println!("[usertests] t54 lseek: read dopo SET");
         return false;
     }
-    if civis::lseek(fd, 1, civis::SEEK_CUR) != Ok(7) {
+    if civis::lseek(fd, 1, civis::SEEK_CURRENT) != Ok(7) {
         println!("[usertests] t54 lseek: CUR 1");
         return false;
     }
@@ -221,7 +221,7 @@ fn t_lseek() -> bool {
             return false;
         }
     }
-    match civis::lseek(fd, -1, civis::SEEK_SET) {
+    match civis::lseek(fd, -1, civis::SEEK_START) {
         Err(civis::Error::Invalid) => {}
         other => {
             println!("[usertests] t54 lseek: SET -1 = {:?} (atteso Invalid)", other);
@@ -252,7 +252,7 @@ fn t_lseek() -> bool {
             return false;
         }
     };
-    let lr = civis::lseek(rfd, 0, civis::SEEK_SET);
+    let lr = civis::lseek(rfd, 0, civis::SEEK_START);
     let _ = civis::close(rfd);
     match lr {
         Err(civis::Error::Invalid) => {}
@@ -266,14 +266,14 @@ fn t_lseek() -> bool {
 
 fn t_dup() -> bool {
     // Happy path: fixture + offset 3 pre-grant → l'helper legge "DEF".
-    let fd = match civis::open("/t54dup.txt", civis::O_CREAT | civis::O_TRUNC) {
+    let fd = match civis::open("/t54dup.txt", civis::OPEN_CREATE | civis::OPEN_TRUNC) {
         Ok(f) => f,
         Err(e) => {
             println!("[usertests] t54 dup: create = {:?}", e);
             return false;
         }
     };
-    if !write_all(fd, b"ABCDEF") || civis::lseek(fd, 3, civis::SEEK_SET) != Ok(3) {
+    if !write_all(fd, b"ABCDEF") || civis::lseek(fd, 3, civis::SEEK_START) != Ok(3) {
         println!("[usertests] t54 dup: setup");
         return false;
     }
@@ -317,7 +317,7 @@ fn t_dup() -> bool {
     }
     // Attestazione: A granta sul SUO canale, B (figlio nostro, non di A)
     // prova il claim → Invalid. Il nonce viaggia in T_DONE(w1).
-    let sfd = match civis::open("/t54sib.txt", civis::O_CREAT | civis::O_TRUNC) {
+    let sfd = match civis::open("/t54sib.txt", civis::OPEN_CREATE | civis::OPEN_TRUNC) {
         Ok(f) => f,
         Err(e) => {
             println!("[usertests] t54 dup: create sib = {:?}", e);
@@ -378,7 +378,7 @@ fn t_stdio() -> bool {
     // Routing stdout diretto (niente shell): println! nel file con stdio
     // attivo; clear SEMPRE (anche sui fail: l'output della suite non deve
     // sparire in un file).
-    let fd = match civis::open("/t54out.txt", civis::O_CREAT | civis::O_TRUNC) {
+    let fd = match civis::open("/t54out.txt", civis::OPEN_CREATE | civis::OPEN_TRUNC) {
         Ok(f) => f,
         Err(e) => {
             println!("[usertests] t54 stdio: create = {:?}", e);

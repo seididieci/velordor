@@ -93,13 +93,13 @@ pub use syscall_numbers::{
 /// `kind` per R_STAT (Fase 19.2): bit 0-1 tipo + bit 7 readonly.
 pub use syscall_numbers::{STAT_DEVICE, STAT_DIR, STAT_FILE, STAT_READONLY};
 
-/// Flag `open` (Fase 18.2: O_CREAT; Fase 40: O_TRUNC/O_APPEND) + origini
-/// `SEEK_*` per R_LSEEK + sentinelle di errore FS (Fase 40: il server
-/// distingue i rifiuti, il client li mappa nel tipo errore POSIX).
+/// Flag `open` (Fase 18.2: OPEN_CREATE; Fase 40: OPEN_TRUNC/OPEN_APPEND) +
+/// origini `SEEK_*` per R_LSEEK + sentinelle di errore FS (Fase 40: il server
+/// distingue i rifiuti, il flavour li mappa in `posix::Error` al bordo).
 pub use syscall_numbers::{
-    O_APPEND, O_CREAT, O_TRUNC, SEEK_CUR, SEEK_END, SEEK_SET, ERR_BUSY, ERR_EXISTS,
-    ERR_INVALID, ERR_ISDIR, ERR_NOTDIR, ERR_NOTFOUND, ERR_READONLY, ERR_EMPTY, ERR_CLOSED,
-    ERR_NOSPC,
+    OPEN_APPEND, OPEN_CREATE, OPEN_TRUNC, SEEK_CURRENT, SEEK_END, SEEK_START, ERR_BUSY,
+    ERR_EXISTS, ERR_INVALID, ERR_ISDIR, ERR_NOTDIR, ERR_NOTFOUND, ERR_READONLY, ERR_EMPTY,
+    ERR_CLOSED, ERR_NOSPC,
 };
 /// Modi `R_SYNC` (Fase 52, P3 durabilita'): nessuna garanzia / barriera con
 /// flush / ogni write stabile (single source in `syscall-numbers`).
@@ -114,6 +114,9 @@ pub use syscall_numbers::{
 /// Fase 44b (job control): causa di morte per Ctrl-C su job non cooperante
 /// (128 + SIGINT, stessa convenzione di `FAULT_EXIT_CODE`).
 pub use syscall_numbers::EXIT_SIGINT;
+/// Maniglie console per SYS_WRITE (bonifica POSIX: non fd, nessun fd-table;
+/// i valori 1/2 sono coincidenza storica coi numeri Unix).
+pub use syscall_numbers::{CONSOLE_ERR, CONSOLE_OUT};
 
 /// Tag IPC FS/boot/kbd (DocsB): single source in `syscall-numbers` (prima
 /// duplicati qui, in cardo/block/init/tty/kbd e come letterali nei test).

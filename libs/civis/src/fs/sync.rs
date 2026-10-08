@@ -683,8 +683,9 @@ pub fn umount(target: &str) -> Result<(), Error> {
 }
 
 /// `lseek(fd, off, whence)`: sposta l'offset di un fd LOCALE (Fase 40, P1).
-/// `whence` = `SEEK_SET`/`SEEK_CUR`/`SEEK_END`; `off` con segno (negativo
-/// lecito verso SEEK_END/CUR, mai sotto zero). Solo Local: su device remoti
+/// `whence` = `SEEK_START`/`SEEK_CURRENT`/`SEEK_END`; `off` con segno
+/// (negativo lecito verso SEEK_END/CURRENT, mai sotto zero). Solo Local:
+/// su device remoti
 /// il server risponde `Invalid` (l'offset vive in cardo). Ritorna il nuovo
 /// offset. A rifiuto l'offset resta quello di prima (two-phase server-side).
 #[inline]

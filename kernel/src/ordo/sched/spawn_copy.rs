@@ -1,8 +1,9 @@
-//! `fork` — duplicazione COW dell'address space (Fase 34, ADR-0024).
+//! `spawn_copy` — duplicazione COW dell'address space (Fase 34, ADR-0024).
 //!
-//! `fork_current` crea un figlio del processo corrente che condivide le pagine
-//! owned in COW (`vmm_user::fork_share`) e riprende come ritorno dalla syscall
-//! con `rax = 0` (fake kernel stack + `fork_child_exit`, mai copia dello stack
+//! `spawn_copy_current` crea un figlio-copia del processo corrente che
+//! condivide le pagine owned in COW (`vmm_user::spawn_copy_share`) e riprende
+//! come ritorno dalla syscall con `rax = 0` (fake kernel stack +
+//! `spawn_copy_child_exit`, mai copia dello stack
 //! del padre). Il figlio NON eredita: canali (tranne nascita), fd lato server,
 //! registrazioni, ring FS (finestre non mappate: uso = kill rumoroso), porte
 //! I/O (bitmap vuota, least privilege), CBS, messaggi. Ritorna
@@ -14,18 +15,18 @@ use crate::ordo::process::{Process, STACK_FRAMES};
 use super::ctx::SCHED;
 use super::queue::Scheduler;
 use crate::syscall::{
-    fork_child_exit, SAVED_R8, SAVED_R9, SAVED_R10, SAVED_R11, SAVED_R13, SAVED_R14,
+    spawn_copy_child_exit, SAVED_R8, SAVED_R9, SAVED_R10, SAVED_R11, SAVED_R13, SAVED_R14,
     SAVED_R15, SAVED_RBX, SAVED_RBP, SAVED_RCX, SAVED_RDI, SAVED_RDX, SAVED_RSI,
     SAVED_USER_R12, SAVED_USER_RSP,
 };
 
-/// Duplica il processo corrente in COW. Chiamato da `sys_fork` (il chiamante
+/// Duplica il processo corrente in COW. Chiamato da `sys_spawn_copy` (il chiamante
 /// e' in esecuzione in syscall: il suo stato user e' sullo stack kernel a
 /// offset noti da `rsp0`). SCHED lock trattenuto per tutta l'operazione.
-pub fn fork_current() -> Option<(usize, usize)> {
+pub fn spawn_copy_current() -> Option<(usize, usize)> {
     let mut guard = SCHED.lock();
     let sched = guard.as_mut().expect("scheduler non inizializzato");
-    let parent_pid = sched.current.expect("fork senza processo corrente");
+    let parent_pid = sched.current.expect("spawn_copy senza processo corrente");
 
     let child_pid = sched.alloc_pid()?;
     // S-T: il canale di nascita e' leader↔figlio (il thread chiama ma opera
@@ -62,7 +63,7 @@ pub fn fork_current() -> Option<(usize, usize)> {
             crate::arc::vmm_user::heap_brk(p_mm),
         )
     };
-    // Solo processi user forkabili (cr3 propria, mai quella kernel).
+    // Solo processi user duplicabili (cr3 propria, mai quella kernel).
     if p_cr3 == crate::arc::vmm_user::kernel_cr3() {
         crate::relay::channels::release_pid(child_pid);
         sched.release_pid(child_pid);
@@ -77,7 +78,7 @@ pub fn fork_current() -> Option<(usize, usize)> {
             return None;
         }
     };
-    if !crate::arc::vmm_user::fork_share(p_cr3, child_cr3) {
+    if !crate::arc::vmm_user::spawn_copy_share(p_cr3, child_cr3) {
         unwind(sched, child_pid, Some(child_cr3), None, None);
         return None;
     }
@@ -114,7 +115,7 @@ pub fn fork_current() -> Option<(usize, usize)> {
                 core::ptr::read((src - soff) as *const u64),
             );
         };
-        core::ptr::write(dst as *mut u64, fork_child_exit as *const () as u64);
+        core::ptr::write(dst as *mut u64, spawn_copy_child_exit as *const () as u64);
         cp(8, SAVED_R11);
         cp(16, SAVED_RCX);
         cp(24, SAVED_RDX);
@@ -129,7 +130,7 @@ pub fn fork_current() -> Option<(usize, usize)> {
         crate::ordo::context::CpuContext {
             rbx: rd(SAVED_RBX),
             rbp: rd(SAVED_RBP),
-            r12: 0, // scartato: fork_child_exit fa pop r12 dallo stack finto
+            r12: 0, // scartato: spawn_copy_child_exit fa pop r12 dallo stack finto
             r13: rd(SAVED_R13),
             r14: rd(SAVED_R14),
             r15: rd(SAVED_R15),
@@ -144,7 +145,7 @@ pub fn fork_current() -> Option<(usize, usize)> {
         crate::text::add_ref(p_text);
     }
     let child = unsafe {
-        Process::create_fork(
+        Process::create_spawn_copy(
             p_name, p_owned, p_nlen, p_prio, p_req, p_parent, child_cr3,
             stack_base, stack_top, saved, tss_slot, tss_sel, p_text, p_hash,
         )
@@ -155,11 +156,11 @@ pub fn fork_current() -> Option<(usize, usize)> {
     // Niente `set_parent_chan` (riprenderebe SCHED, gia' trattenuto qui):
     // assegnazione diretta sotto lock.
     sched.processes[child_pid].parent_chan = Some(chan);
-    crate::serial_println!("[fork] pid={} → figlio pid={} canale={}", parent_pid, child_pid, chan);
+    crate::serial_println!("[spawn_copy] pid={} → figlio pid={} canale={}", parent_pid, child_pid, chan);
     Some((child_pid, chan))
 }
 
-/// Unwind di un fork fallito: distrugge lo spazio parziale del figlio (i
+/// Unwind di uno spawn_copy fallito: distrugge lo spazio parziale del figlio (i
 /// `deref` bilanciano da soli le condivisioni), libera stack/TSS, canale e
 /// PID. Il padre resta valido (pagine COW-izzate si privatizzano al write).
 fn unwind(

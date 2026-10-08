@@ -339,7 +339,7 @@ pub fn t_client_death_purge() -> bool {
         println!("[usertests] t26: smoke short read hello.txt");
         return false;
     }
-    let Ok(fw) = civis::open("ut26.bin", civis::O_CREAT) else {
+    let Ok(fw) = civis::open("ut26.bin", civis::OPEN_CREATE) else {
         println!("[usertests] t26: smoke open ut26.bin FAILED");
         return false;
     };

@@ -45,7 +45,7 @@
 //!  45. readdir figli immediati (56.3)
 //!  46. rmdir non-vuota = errore (56.3)
 //!  47. overwrite a offset (read-modify-write) (56.3)
-//!  48. O_TRUNC + O_APPEND (56.3)
+//!  48. OPEN_TRUNC + OPEN_APPEND (56.3)
 //!  49. delete file: dir resta (RAM), rmdir ok, stat sparita (56.3)
 //!  50. bounce cardo + remount: file intatti, vuote perse (56.3)
 //! Con `ARCA_IMG=1` (gate) i drive ci sono sempre; senza, solo 1-3 e 7-13
@@ -240,7 +240,7 @@ fn real_main(_sp: u64) -> ! {
     // 2. ramfs: content_hash via R_GET_HASH == ricalcolo indipendente.
     let payload = b"velordo-arcafs-p5-content";
     let mut rt_ok = false;
-    if let Ok(fd) = civis::open("/sarca.txt", civis::O_CREAT) {
+    if let Ok(fd) = civis::open("/sarca.txt", civis::OPEN_CREATE) {
         let w = civis::write_fs(fd, payload, payload.len());
         let _ = civis::close(fd);
         if w == Ok(payload.len()) {
@@ -252,7 +252,7 @@ fn real_main(_sp: u64) -> ! {
 
     // 3. tamper: contenuto diverso -> hash diverso (e non quello vecchio).
     let mut tamper_ok = false;
-    if let Ok(fd) = civis::open("/sarca.txt", civis::O_TRUNC) {
+    if let Ok(fd) = civis::open("/sarca.txt", civis::OPEN_TRUNC) {
         let other = b"velordo-arcafs-p5-TAMPERED";
         let w = civis::write_fs(fd, other, other.len());
         let _ = civis::close(fd);
@@ -984,10 +984,10 @@ fn real_main(_sp: u64) -> ! {
         let v42 = civis::remove("/arca/mai-esistita").is_err();
         c.ok("posix rmdir inesistente errore", v42);
         // 43. mkdir su file = errore.
-        let v43 = wr_all("/arca/f56", civis::O_CREAT, b"x") && civis::mkdir("/arca/f56").is_err();
+        let v43 = wr_all("/arca/f56", civis::OPEN_CREATE, b"x") && civis::mkdir("/arca/f56").is_err();
         c.ok("posix mkdir su file errore", v43);
         // 44. file round-trip write/read/stat.
-        let v44 = wr_all("/arca/p56/f", civis::O_CREAT, b"ciao-posix")
+        let v44 = wr_all("/arca/p56/f", civis::OPEN_CREATE, b"ciao-posix")
             && matches!(rd_all("/arca/p56/f"), Some(v) if v.as_slice() == b"ciao-posix")
             && {
                 let mut st = civis::Stat { size: 0, kind: 0, readonly: false, mtime: 0 };
@@ -1001,10 +1001,10 @@ fn real_main(_sp: u64) -> ! {
         let v46 = civis::remove("/arca/p56").is_err();
         c.ok("posix rmdir non-vuota errore", v46);
         // 47. overwrite a offset (read-modify-write, coda intatta).
-        let v47 = wr_all("/arca/p56/rw", civis::O_CREAT, b"HelloWorld123")
+        let v47 = wr_all("/arca/p56/rw", civis::OPEN_CREATE, b"HelloWorld123")
             && match civis::open("/arca/p56/rw", 0) {
                 Ok(fd) => {
-                    let r = civis::lseek(fd, 5, civis::SEEK_SET) == Ok(5)
+                    let r = civis::lseek(fd, 5, civis::SEEK_START) == Ok(5)
                         && civis::write_fs(fd, b"XX", 2) == Ok(2);
                     let _ = civis::close(fd);
                     r && matches!(rd_all("/arca/p56/rw"), Some(v) if v.as_slice() == b"HelloXXrld123")
@@ -1012,11 +1012,11 @@ fn real_main(_sp: u64) -> ! {
                 Err(_) => false,
             };
         c.ok("posix overwrite a offset", v47);
-        // 48. O_TRUNC azzera, O_APPEND concatena.
-        let v48 = wr_all("/arca/p56/rw", civis::O_TRUNC, b"")
+        // 48. OPEN_TRUNC azzera, OPEN_APPEND concatena.
+        let v48 = wr_all("/arca/p56/rw", civis::OPEN_TRUNC, b"")
             && rd_all("/arca/p56/rw") == Some(alloc::vec::Vec::new())
-            && wr_all("/arca/p56/rw", civis::O_APPEND, b"ab")
-            && wr_all("/arca/p56/rw", civis::O_APPEND, b"cd")
+            && wr_all("/arca/p56/rw", civis::OPEN_APPEND, b"ab")
+            && wr_all("/arca/p56/rw", civis::OPEN_APPEND, b"cd")
             && matches!(rd_all("/arca/p56/rw"), Some(v) if v.as_slice() == b"abcd");
         c.ok("posix trunc+append", v48);
         // 49. delete file: la dir resta (set RAM), rmdir ok, stat sparita.
@@ -1028,7 +1028,7 @@ fn real_main(_sp: u64) -> ! {
         c.ok("posix delete+rmdir", v49);
         // 50. bounce cardo + remount: file intatti, vuote perse.
         let v50 = civis::mkdir("/arca/keep").is_ok()
-            && wr_all("/arca/keep/v", civis::O_CREAT, b"persistente")
+            && wr_all("/arca/keep/v", civis::OPEN_CREATE, b"persistente")
             && civis::mkdir("/arca/vuota").is_ok()
             && civis::init_bounce(civis::Service::Cardo).is_ok()
             && civis::poll_wait(1000, civis::POLL_PERIOD_TICKS, || {
@@ -1046,11 +1046,11 @@ fn real_main(_sp: u64) -> ! {
         // 55. rename S1.1 su namespace Arca: file, replace, dir con figli,
         // errori tipizzati (file→dir ISDIR, assente NOTFOUND).
         let v55 = civis::mkdir("/arca/rn").is_ok()
-            && wr_all("/arca/rn/a.txt", civis::O_CREAT, b"rename-me")
+            && wr_all("/arca/rn/a.txt", civis::OPEN_CREATE, b"rename-me")
             && civis::rename("/arca/rn/a.txt", "/arca/rn/b.txt").is_ok()
             && matches!(rd_all("/arca/rn/b.txt"), Some(v) if v.as_slice() == b"rename-me")
             && civis::open("/arca/rn/a.txt", 0).is_err()
-            && wr_all("/arca/rn/c.txt", civis::O_CREAT, b"secondo")
+            && wr_all("/arca/rn/c.txt", civis::OPEN_CREATE, b"secondo")
             && civis::rename("/arca/rn/c.txt", "/arca/rn/b.txt").is_ok()
             && matches!(rd_all("/arca/rn/b.txt"), Some(v) if v.as_slice() == b"secondo")
             && civis::rename("/arca/rn/mai", "/arca/rn/x").is_err()
@@ -1071,7 +1071,7 @@ fn real_main(_sp: u64) -> ! {
                 civis::stat("/arca/s56/link", &mut st).is_ok() && st.is_symlink()
             }
             && civis::open("/arca/s56/link", 0).is_err()
-            && wr_all("/arca/s56/real.txt", civis::O_CREAT, b"arc-link")
+            && wr_all("/arca/s56/real.txt", civis::OPEN_CREATE, b"arc-link")
             && matches!(rd_all("/arca/s56/link"), Some(v) if v.as_slice() == b"arc-link")
             && civis::symlink("/arca/s56/dang", "/arca/s56/altri").is_ok()
             && civis::open("/arca/s56/dang", 0).is_err();

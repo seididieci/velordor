@@ -79,12 +79,12 @@ pub(crate) const SAVED_R15: u64 = 120;
 /// `switch_to` atterra qui con uno stack finto `[r11..user_rsp]` copiato dal
 /// padre (stesso layout dei push dell'entry: 8 registri + r12 + rsp).
 /// Ripristina TUTTI i registri user come l'epilogo normale, con `rax = 0` (nel
-/// figlio fork ritorna 0), poi `sysretq` (RIP da `rcx`, RFLAGS da `r11`).
+/// figlio-copia ritorna 0), poi `sysretq` (RIP da `rcx`, RFLAGS da `r11`).
 /// Epilogo dedicato che NON legge `PERCPU.ipc_override` (stale dopo altre
 /// syscall: clobbererebbe i registri del figlio). Mai chiamato dal percorso
 /// normale.
 #[unsafe(naked)]
-pub(crate) unsafe extern "C" fn fork_child_exit() -> ! {
+pub(crate) unsafe extern "C" fn spawn_copy_child_exit() -> ! {
     core::arch::naked_asm!(
         "xor eax, eax",
         "pop r11",

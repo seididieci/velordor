@@ -95,7 +95,7 @@ pub fn t_hello() -> bool {
 }
 
 pub fn t_ramfs_write_chunk() -> bool {
-    let Ok(fd) = civis::open("utdata.bin", civis::O_CREAT) else {
+    let Ok(fd) = civis::open("utdata.bin", civis::OPEN_CREATE) else {
         return false;
     };
     // 3 chunk da 3000 (9 KiB totali > 1 pagina ring da 4088 B): multi-call

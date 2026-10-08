@@ -10,7 +10,9 @@ use core::arch::asm;
 
 // Numeri syscall (single source: syscall-numbers del repo; duplicati qui
 // perche' la PAL non puo' dipendere dai crate Velordo in questa fase).
+// `con` e' una maniglia console, non un fd POSIX (1/2 = coincidenza storica).
 const SYS_WRITE: u64 = 2;
+const CONSOLE_OUT: u64 = 1;
 const SYS_EXIT: u64 = 0;
 const SYS_GET_TICKS: u64 = 22;
 const SYS_SBRK: u64 = 25;
@@ -35,11 +37,13 @@ pub(crate) unsafe fn syscall4(n: u64, a: u64, b: u64, c: u64, d: u64) -> i64 {
     r
 }
 
-pub(crate) fn write_fd(fd: u64, buf: &[u8]) -> usize {
+pub(crate) fn write_console(buf: &[u8]) -> usize {
     if buf.is_empty() {
         return 0;
     }
-    let r = unsafe { syscall4(SYS_WRITE, fd, buf.as_ptr().addr() as u64, buf.len() as u64, 0) };
+    let r = unsafe {
+        syscall4(SYS_WRITE, CONSOLE_OUT, buf.as_ptr().addr() as u64, buf.len() as u64, 0)
+    };
     if r < 0 { 0 } else { r as usize }
 }
 
