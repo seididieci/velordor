@@ -2199,3 +2199,10 @@
           rlib (embed-metadata=no), panic=abort solo per il target.
           Rinviati a S2: thread/fs/net/SystemTime. Gate invariato verde
           (5/5 + 7/7 + 56/56 + 4/4 + 58/58 + 11/11 + shell 10/10).
+          Bonifica POSIX (ADR-0048): SYS_SPAWN_COPY (45), OPEN_*/SEEK_*,
+          maniglie CONSOLE_*, OsStr proprio, morte 3-7 eliminate; wrapper
+          fork() nel flavour. Gate verde + flake v29 noto (testsarca 55/56
+          al primo run, 56/56 al secondo). Principio "niente POSIX dentro"
+          in AGENTS.md. Lezioni build: kernel incorpora rector (ordine
+          userland→kernel obbligatorio), fingerprint cargo e hardlink
+          falsano i mtime (wipe per rebuild veri).

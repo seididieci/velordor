@@ -178,6 +178,17 @@ Voci con scope e vittoria dichiarati (non date).
        SystemTime/test-harness, `singlethread = false`.
        Vittoria conseguita: std gira nativo. Prossimo: S2 (sysroot nativo
        + rustc).
+- [x] **Bonifica POSIX negli interni + ADR-0048 scope S2** (chiusa):
+       `SYS_FORK`→`SYS_SPAWN_COPY` (45), `O_*`→`OPEN_*`,
+       `SEEK_*`→`SEEK_START/CURRENT/END`, maniglie `CONSOLE_OUT/ERR`
+       (numeri 1/2 invariati), `OsStr` proprio, costanti FS morte (3-7)
+       eliminate; wrapper `fork()` resta nel flavour. Principio ADR-0048:
+       niente POSIX dentro (solo personalita'), gate `rg` verificabili.
+       Survey+L0+L1: strada A percorribile (Os::Other by-design, std
+       compila + 1 riga build.rs, arm foglia per-crate, linker nostro con
+       trigger, due target, panic abort, pipe riusata). Vittoria S2:
+       rustc nativo che ricompila un programma sostanzioso. Prossimo:
+       S2.0 (argv/env).
 - [x] **S-T thread kernel 1:1 + TLS + futex** (chiusa, ADR-0046): thread =
        PCB con gruppo (cr3/canali/fd/heap/VMA condivisi col leader, stack/
        TSS/FS/coda propri); pool 32→128 (bitmask u128, TSS pool, VMA 64);

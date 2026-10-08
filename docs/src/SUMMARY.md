@@ -75,3 +75,4 @@
 - [ADR-0045: Self-hosting rustc — survey S0, gap PAL + scala S1…Sn](./adr/0045-selfhosting-s0.md)
 - [ADR-0046: Thread kernel 1:1 + TLS + futex (S-T)](./adr/0046-thread-kernel-futex.md)
 - [ADR-0047: PAL std Velordo — hello std nativo (S1.3)](./adr/0047-pal-std-velordo.md)
+- [ADR-0048: Scope S2 — toolchain Rust nativa](./adr/0048-scope-s2-toolchain-nativa.md)

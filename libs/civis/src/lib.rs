@@ -95,7 +95,7 @@ pub use syscall_numbers::{STAT_DEVICE, STAT_DIR, STAT_FILE, STAT_READONLY};
 
 /// Flag `open` (Fase 18.2: OPEN_CREATE; Fase 40: OPEN_TRUNC/OPEN_APPEND) +
 /// origini `SEEK_*` per R_LSEEK + sentinelle di errore FS (Fase 40: il server
-/// distingue i rifiuti, il flavour li mappa in `posix::Error` al bordo).
+/// distingue i rifiuti, la personalita' li traduce in errno al bordo).
 pub use syscall_numbers::{
     OPEN_APPEND, OPEN_CREATE, OPEN_TRUNC, SEEK_CURRENT, SEEK_END, SEEK_START, ERR_BUSY,
     ERR_EXISTS, ERR_INVALID, ERR_ISDIR, ERR_NOTDIR, ERR_NOTFOUND, ERR_READONLY, ERR_EMPTY,

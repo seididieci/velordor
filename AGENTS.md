@@ -72,6 +72,15 @@ cd docs && mdbook serve
    meccanismo→personalita' e' l'hook `civis::persona` (routing stdout,
    installato da `libr::entry!`). REGOLA: il meccanismo non usa mai POSIX
    (verifica `rg "posix::" libs/civis/src` → zero).
+10. **Niente POSIX dentro (ADR-0048)**: POSIX appare SOLO come personalita'
+    in `flavours/posix` (compatibilita'); mai nel kernel, nel meccanismo
+    (`civis`, ABI syscall, PAL `std`) o nei servizi nativi. La PAL si adatta
+    a Velordo, mai il contrario (nessuna syscall nasce per `std`/POSIX;
+    noun test per le nuove). Gate: `rg "posix::" libs/civis/src kernel/src`
+    → zero; `rg "os::unix" pal/` → zero. Bonificate le coincidenze
+    (`SYS_SPAWN_COPY`, `OPEN_*`/`SEEK_*`, maniglie `CONSOLE_*`, `OsStr`
+    proprio); residui documentati in ADR-0048 (numeri 1/2, ELF, verbi
+    open/read/write, fd-protocol).
 
 ## File Structure
 
