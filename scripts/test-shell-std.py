@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Test shell STD (S1.3): hello std nativo (println + Vec + Mutex + HashMap
-+ Instant) via `run`. Fuori dal gate default: gira solo se il binario esiste
-(seed condizionale da scripts/build-pal.sh); altrimenti SKIP rumoroso ma
-exit 0 (mai rosso per assenza).
+"""Test shell STD (S1.3 + S2.0): hello std nativo (println + Vec + Mutex +
+HashMap + Instant + argv/env/cwd) via `run`. Fuori dal gate default: gira
+solo se il binario esiste (seed condizionale da scripts/build-pal.sh);
+altrimenti SKIP rumoroso ma exit 0 (mai rosso per assenza).
 Uso: python3 scripts/test-shell-std.py [--no-prep]
 """
 import sys, os
@@ -35,6 +35,13 @@ def main():
         c.check("stdhello mutex", b"[stdhello] mutex=41" in out)
         c.check("stdhello hashmap", b"[stdhello] hashmap[chiave]=7" in out)
         c.check("stdhello instant", b"[stdhello] instant ok" in out)
+        # S2.0: argv/env/cwd (export prima, run con argv dopo).
+        sh.run_out("export VELORDO_S2=s2ok")
+        out = sh.run_out("run /fat/test/stdhello.bin foo bar")
+        c.check("stdhello argv", b"[stdhello] argv=foo,bar" in out)
+        c.check("stdhello env", b"[stdhello] env VELORDO_S2=s2ok" in out)
+        c.check("stdhello set_var", b"[stdhello] set_var STD_SET=42" in out)
+        c.check("stdhello cwd", b"[stdhello] cwd=/" in out)
         c.check("stdhello DONE", b"[stdhello] DONE" in out)
         return 0 if c.ok else 1
     except RuntimeError as e:

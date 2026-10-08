@@ -82,7 +82,7 @@ ls "$DEST" | head -14
 
 # 4. Hello std: println! + Vec + Mutex + HashMap + Instant (niente fs/net).
 cat > "$WORK/hello.rs" << 'EOF'
-//! S1.3: hello std per Velordo (println! + Vec + Mutex + HashMap + Instant).
+//! S2.0: hello std per Velordo (S1.3 + argv/env/current_dir).
 #![feature(restricted_std)]
 fn main() {
     println!("[stdhello] ciao da std su Velordo");
@@ -103,6 +103,23 @@ fn main() {
         spin += 1;
     }
     println!("[stdhello] instant ok spin={}", spin);
+    // S2.0: argv (argv[0] = path digitato), env, cwd.
+    let argv: Vec<String> = std::env::args().skip(1).collect();
+    println!("[stdhello] argv={}", argv.join(","));
+    match std::env::var("VELORDO_S2") {
+        Ok(v) => println!("[stdhello] env VELORDO_S2={}", v),
+        Err(_) => println!("[stdhello] env VELORDO_S2 missing"),
+    }
+    println!("[stdhello] env count={}", std::env::vars().count());
+    std::env::set_var("STD_SET", "42");
+    println!(
+        "[stdhello] set_var STD_SET={}",
+        std::env::var("STD_SET").unwrap_or_default()
+    );
+    match std::env::current_dir() {
+        Ok(p) => println!("[stdhello] cwd={}", p.display()),
+        Err(_) => println!("[stdhello] cwd ERR"),
+    }
     println!("[stdhello] DONE");
 }
 EOF

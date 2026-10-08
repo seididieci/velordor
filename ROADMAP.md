@@ -189,6 +189,13 @@ Voci con scope e vittoria dichiarati (non date).
        trigger, due target, panic abort, pipe riusata). Vittoria S2:
        rustc nativo che ricompila un programma sostanzioso. Prossimo:
        S2.0 (argv/env).
+- [x] **S2.0 argv+env PAL** (chiusa): `sys/args` + `sys/env` (modello
+       hermit, `OsStringExt` nostro) + `sys/paths` (getcwd/chdir veri su
+       S1.1, temp `/tmp`; exe/home unsupported) + envp derivato in
+       `pal::init`; `_start` naked (fix: il prologo falsava RSP con
+       argc>0). Kernel/shell invariati. test-shell-std.py 6→10
+       (argv/env/set_var/cwd), fuori gate con SKIP. Prossimo: S2.1
+       (mmap/munmap/mprotect + free).
 - [x] **S-T thread kernel 1:1 + TLS + futex** (chiusa, ADR-0046): thread =
        PCB con gruppo (cr3/canali/fd/heap/VMA condivisi col leader, stack/
        TSS/FS/coda propri); pool 32→128 (bitmask u128, TSS pool, VMA 64);

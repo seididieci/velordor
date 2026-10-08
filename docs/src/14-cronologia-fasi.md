@@ -2206,3 +2206,10 @@
           in AGENTS.md. Lezioni build: kernel incorpora rector (ordine
           userland→kernel obbligatorio), fingerprint cargo e hardlink
           falsano i mtime (wipe per rebuild veri).
+          S2.0 argv+env (PAL, zero kernel): sys/args + sys/env (modello
+          hermit) + sys/paths (getcwd/chdir veri, temp /tmp) + envp derivato
+          in pal::init; hello esteso + test-shell-std 6→10 (argv/env/
+          set_var/cwd via export+run). Lezione: _start DEVE essere naked
+          (il prologo spostava RSP: con argc=0 funzionava per caso).
+          Kernel/shell/civis invariati (layout_argv, serialize, export
+          esistevano e bastano). Gate invariato.

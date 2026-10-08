@@ -25,6 +25,9 @@ NEW_FILES = [
     "sys/io/error/velordo.rs",
     "os/velordo/mod.rs",
     "os/velordo/os_str.rs",
+    "sys/args/velordo.rs",
+    "sys/env/velordo.rs",
+    "sys/paths/velordo.rs",
 ]
 
 # (file-relativo-a-std/src, anchor, inserimento): anchor deve occorrere UNA volta.
@@ -86,6 +89,33 @@ ARMS = [
         '#[cfg(target_os = "uefi")]\npub mod uefi;\n',
         '#[cfg(target_os = "uefi")]\npub mod uefi;\n#[cfg(target_os = "velordo")]\npub mod velordo;\n',
         "inplace",
+    ),
+    (
+        "sys/args/mod.rs",
+        '    target_os = "wasi",\n    target_os = "xous",\n))]\nmod common;',
+        '    target_os = "wasi",\n    target_os = "xous",\n    target_os = "velordo",\n))]\nmod common;',
+        "inplace",
+    ),
+    (
+        "sys/args/mod.rs",
+        '    target_os = "xous" => {\n        mod xous;\n        pub use xous::*;\n    }\n',
+        '    target_os = "velordo" => {\n        mod velordo;\n        pub use velordo::*;\n    }\n',
+    ),
+    (
+        "sys/env/mod.rs",
+        '    target_os = "wasi",\n    target_os = "xous",\n))]\nmod common;',
+        '    target_os = "wasi",\n    target_os = "xous",\n    target_os = "velordo",\n))]\nmod common;',
+        "inplace",
+    ),
+    (
+        "sys/env/mod.rs",
+        '    target_os = "xous" => {\n        mod xous;\n        pub use xous::*;\n    }\n',
+        '    target_os = "velordo" => {\n        mod velordo;\n        pub use velordo::*;\n    }\n',
+    ),
+    (
+        "sys/paths/mod.rs",
+        '    target_os = "hermit" => {\n        mod hermit;\n        #[expect(dead_code)]\n        mod unsupported;\n        mod imp {\n            pub use super::hermit::{getcwd, temp_dir};\n            pub use super::unsupported::{\n                JoinPathsError, SplitPaths, chdir, current_exe, home_dir, join_paths, split_paths,\n            };\n        }\n    }\n',
+        '    target_os = "velordo" => {\n        mod velordo;\n        #[expect(dead_code)]\n        mod unsupported;\n        mod imp {\n            pub use super::velordo::{chdir, getcwd, temp_dir};\n            pub use super::unsupported::{\n                JoinPathsError, SplitPaths, current_exe, home_dir, join_paths, split_paths,\n            };\n        }\n    }\n',
     ),
 ]
 

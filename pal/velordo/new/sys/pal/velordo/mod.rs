@@ -13,6 +13,8 @@ use core::arch::asm;
 // `con` e' una maniglia console, non un fd POSIX (1/2 = coincidenza storica).
 const SYS_WRITE: u64 = 2;
 const CONSOLE_OUT: u64 = 1;
+pub(crate) const SYS_CHDIR: u64 = 59;
+pub(crate) const SYS_GETCWD: u64 = 60;
 const SYS_EXIT: u64 = 0;
 const SYS_GET_TICKS: u64 = 22;
 const SYS_SBRK: u64 = 25;
@@ -74,8 +76,14 @@ pub fn exit(code: i32) -> ! {
     exit_process(code)
 }
 
-pub unsafe fn init(_argc: isize, _argv: *const *const u8, _sigpipe: u8) {
-    // argv vuoto (argc=0 dal kernel): sys::args non ha stato da init.
+pub unsafe fn init(argc: isize, argv: *const *const u8, _sigpipe: u8) {
+    // argv dal kernel (argc=0 se spawn senza args): registra argc/argv.
+    unsafe {
+        crate::sys::args::init(argc, argv);
+    }
+    // envp segue argv[argc] == NULL (layout steso da `layout_argv`).
+    let envp = argv.wrapping_add(argc.max(0) as usize + 1);
+    crate::sys::env::init(envp as *const *const crate::ffi::c_char);
     // Niente SIGPIPE (niente segnali), niente sanitize fd (niente fd).
 }
 
@@ -95,19 +103,25 @@ pub fn unsupported_err() -> crate::io::Error {
 
 #[cfg(not(test))]
 mod c_compat {
-    /// Entry del programma (S1.3): il kernel salta a USER_CODE (= `_start`,
-    /// KEEP nel linker script) con RSP allo stack user. Legge argc da [rsp]
-    /// e chiama il wrapper `main` generato dal compilatore (== lang_start:
-    /// rt::init -> user main -> cleanup -> exit). argc del kernel e' 0
-    /// (argv ignorato: sys::args e' stub vuoto in v1).
+    /// Entry del programma (S1.3, S2.0): il kernel salta a USER_CODE
+    /// (= `_start`, KEEP nel linker script) con RSP allo stack user. DEVE
+    /// essere naked: un prologo normale sposterebbe RSP prima della lettura
+    /// di argc (con argc=0 funzionava per caso). Cattura RSP subito e salta
+    /// alla continuazione Rust.
     #[unsafe(no_mangle)]
+    #[unsafe(naked)]
     pub extern "C" fn _start() -> ! {
+        core::arch::naked_asm!("mov rdi, rsp", "jmp {entry}", entry = sym __velordo_start,);
+    }
+
+    unsafe extern "C" fn __velordo_start(sp: u64) -> ! {
+        // Layout kernel (`layout_argv`): [argc][argv..][NULL][envp..][NULL].
+        // Lo stack sotto `sp` e' libero (prologo/call sicuri, allineati).
         let (argc, argv): (isize, *const *const u8);
         unsafe {
-            let rsp: *const u64;
-            core::arch::asm!("mov {}, rsp", out(reg) rsp, options(nostack, preserves_flags));
-            argc = (rsp as *const isize).read() as isize;
-            argv = (rsp as *const *const u8).add(1);
+            let base = core::ptr::with_exposed_provenance::<u64>(sp as usize);
+            argc = (base as *const isize).read();
+            argv = (base as *const *const u8).add(1);
         }
         unsafe extern "C" {
             fn main(argc: isize, argv: *const *const u8) -> isize;
